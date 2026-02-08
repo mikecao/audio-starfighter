@@ -1,7 +1,9 @@
 import "./styles.css";
+import { analyzeAudioTrack } from "./audio/analyze-track";
 import { setupScene } from "./render/scene";
 import { createSimulation, type SimulationSnapshot } from "./game/sim";
 import { createDebugHud } from "./ui/debugHud";
+import { createAudioPanel } from "./ui/audioPanel";
 
 const app = document.querySelector<HTMLDivElement>("#app");
 
@@ -12,6 +14,11 @@ if (!app) {
 const scene = setupScene(app);
 const sim = createSimulation();
 const hud = createDebugHud(app);
+const audioPanel = createAudioPanel(app, {
+  onAnalyze(file) {
+    return analyzeAudioTrack(file);
+  }
+});
 
 let previousFrameTime = performance.now();
 let accumulatorSeconds = 0;
@@ -32,6 +39,7 @@ function animate(frameTimeMs: number): void {
 
   const alpha = accumulatorSeconds / fixedStepSeconds;
   const snapshot: SimulationSnapshot = sim.getSnapshot();
+  const analysis = audioPanel.getLatestAnalysis();
 
   scene.update(snapshot, alpha);
   scene.render();
@@ -40,7 +48,9 @@ function animate(frameTimeMs: number): void {
     simTimeSeconds: snapshot.simTimeSeconds,
     simTick: snapshot.simTick,
     enemyCount: snapshot.enemyCount,
-    projectileCount: snapshot.projectileCount
+    projectileCount: snapshot.projectileCount,
+    bpm: analysis?.beat.bpm ?? null,
+    cueCount: analysis?.cues.length ?? 0
   });
 
   requestAnimationFrame(animate);

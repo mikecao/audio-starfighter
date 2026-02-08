@@ -73,3 +73,49 @@ canvas {
   margin: 0;
   color: #f0f7ff;
 }
+
+.audio-panel {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  width: min(380px, calc(100% - 2rem));
+  padding: 0.8rem 0.9rem;
+  border-radius: 0.6rem;
+  border: 1px solid rgb(128 160 215 / 40%);
+  background: rgb(4 11 26 / 78%);
+  backdrop-filter: blur(5px);
+}
+
+.audio-panel__title {
+  margin: 0 0 0.55rem;
+  font-size: 0.82rem;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: #b3dcff;
+}
+
+.audio-panel__file {
+  width: 100%;
+  margin: 0 0 0.55rem;
+  font: inherit;
+  color: #d9e8ff;
+}
+
+.audio-panel__status,
+.audio-panel__stats {
+  margin: 0 0 0.45rem;
+  font-family: "Consolas", "Courier New", monospace;
+  font-size: 0.72rem;
+  color: #f0f7ff;
+}
+
+.audio-panel__stats {
+  color: #9eb4d3;
+}
+
+.audio-panel__timeline {
+  width: 100%;
+  height: auto;
+  border: 1px solid rgb(95 132 196 / 40%);
+  border-radius: 0.35rem;
+}
