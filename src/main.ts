@@ -33,6 +33,7 @@ let appliedAnalysisRef: object | null = null;
 
 let previousFrameTime = performance.now();
 let accumulatorSeconds = 0;
+let lastSimTimeSeconds = 0;
 const fixedStepSeconds = 1 / 60;
 const maxFrameSeconds = 0.25;
 
@@ -41,7 +42,13 @@ function animate(frameTimeMs: number): void {
   previousFrameTime = frameTimeMs;
 
   const frameSeconds = Math.min(rawFrameSeconds, maxFrameSeconds);
-  accumulatorSeconds += frameSeconds;
+  const audioPlaybackTimeSecondsPreStep = audioPanel.getAudioPlaybackTime();
+  const driftSecondsPreStep =
+    audioPlaybackTimeSecondsPreStep > 0
+      ? lastSimTimeSeconds - audioPlaybackTimeSecondsPreStep
+      : 0;
+  const simRateCorrection = clamp(1 - driftSecondsPreStep * 0.25, 0.9, 1.1);
+  accumulatorSeconds += frameSeconds * simRateCorrection;
 
   while (accumulatorSeconds >= fixedStepSeconds) {
     sim.step(fixedStepSeconds);
@@ -50,6 +57,7 @@ function animate(frameTimeMs: number): void {
 
   const alpha = accumulatorSeconds / fixedStepSeconds;
   const snapshot: SimulationSnapshot = sim.getSnapshot();
+  lastSimTimeSeconds = snapshot.simTimeSeconds;
   const analysis = audioPanel.getLatestAnalysis();
   const audioPlaybackTimeSeconds = audioPanel.getAudioPlaybackTime();
   const playbackDriftMs =
@@ -95,3 +103,7 @@ requestAnimationFrame(animate);
 window.addEventListener("resize", () => {
   scene.resize();
 });
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
