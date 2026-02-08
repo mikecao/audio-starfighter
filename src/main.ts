@@ -18,7 +18,8 @@ const audioPanel = createAudioPanel(app, {
   onAnalyze(file) {
     return analyzeAudioTrack(file);
   },
-  onStartRun(analysis) {
+  onStartRun(analysis, seed) {
+    sim.setRandomSeed(seed);
     sim.setIntensityTimeline(
       analysis.frames.map((frame) => ({
         timeSeconds: frame.timeSeconds,

@@ -2,7 +2,7 @@ import type { AudioAnalysisResult } from "../audio/types";
 
 type AudioPanelHandlers = {
   onAnalyze: (file: File) => Promise<AudioAnalysisResult>;
-  onStartRun: (analysis: AudioAnalysisResult) => void;
+  onStartRun: (analysis: AudioAnalysisResult, seed: number) => void;
 };
 
 export type AudioPanel = {
@@ -52,6 +52,21 @@ export function createAudioPanel(
   runButton.textContent = "Start Synced Run";
   runButton.disabled = true;
   panel.appendChild(runButton);
+
+  const seedRow = document.createElement("div");
+  seedRow.className = "audio-panel__seed-row";
+  const seedLabel = document.createElement("label");
+  seedLabel.className = "audio-panel__seed-label";
+  seedLabel.textContent = "Run Seed";
+  seedLabel.htmlFor = "run-seed";
+  const seedInput = document.createElement("input");
+  seedInput.className = "audio-panel__seed-input";
+  seedInput.id = "run-seed";
+  seedInput.type = "number";
+  seedInput.value = "7";
+  seedInput.step = "1";
+  seedRow.append(seedLabel, seedInput);
+  panel.appendChild(seedRow);
 
   const audio = document.createElement("audio");
   audio.className = "audio-panel__audio";
@@ -115,7 +130,8 @@ export function createAudioPanel(
     if (!latestAnalysis) {
       return;
     }
-    handlers.onStartRun(latestAnalysis);
+    const seed = Number(seedInput.value);
+    handlers.onStartRun(latestAnalysis, Number.isFinite(seed) ? seed : 7);
     playbackTimeSeconds = 0;
     audio.currentTime = 0;
     void audio.play().catch(() => {
