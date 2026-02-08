@@ -1,5 +1,7 @@
 import type { AudioAnalysisResult } from "../audio/types";
 
+const RUN_SEED_STORAGE_KEY = "audio-starfighter.run-seed";
+
 type AudioPanelHandlers = {
   onAnalyze: (file: File) => Promise<AudioAnalysisResult>;
   onStartRun: (analysis: AudioAnalysisResult, seed: number) => void;
@@ -70,7 +72,7 @@ export function createAudioPanel(
   seedInput.className = "audio-panel__seed-input";
   seedInput.id = "run-seed";
   seedInput.type = "number";
-  seedInput.value = "7";
+  seedInput.value = loadSeedFromStorage();
   seedInput.step = "1";
   seedRow.append(seedLabel, seedInput);
   panel.appendChild(seedRow);
@@ -163,6 +165,10 @@ export function createAudioPanel(
     status.textContent = `Run restarted for ${latestAnalysis.fileName}`;
   });
 
+  seedInput.addEventListener("change", () => {
+    saveSeedToStorage(seedInput.value);
+  });
+
   drawPlaceholder(canvas, "No data");
 
   return {
@@ -182,6 +188,26 @@ export function createAudioPanel(
       return !audio.paused && !audio.ended;
     }
   };
+}
+
+function loadSeedFromStorage(): string {
+  try {
+    const value = window.localStorage.getItem(RUN_SEED_STORAGE_KEY);
+    if (value === null || value.trim() === "") {
+      return "7";
+    }
+    return value;
+  } catch {
+    return "7";
+  }
+}
+
+function saveSeedToStorage(value: string): void {
+  try {
+    window.localStorage.setItem(RUN_SEED_STORAGE_KEY, value);
+  } catch {
+    // Ignore storage failures.
+  }
 }
 
 function drawTimeline(
