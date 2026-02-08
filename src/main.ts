@@ -17,6 +17,10 @@ const hud = createDebugHud(app);
 const audioPanel = createAudioPanel(app, {
   onAnalyze(file) {
     return analyzeAudioTrack(file);
+  },
+  onStartRun(analysis) {
+    sim.startTrackRun(analysis.cues.map((cue) => cue.timeSeconds));
+    appliedAnalysisRef = analysis;
   }
 });
 let appliedAnalysisRef: object | null = null;

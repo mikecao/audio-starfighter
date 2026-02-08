@@ -117,6 +117,7 @@ export type Simulation = {
   step: (deltaSeconds: number) => void;
   getSnapshot: () => SimulationSnapshot;
   setCueTimeline: (cueTimesSeconds: number[]) => void;
+  startTrackRun: (cueTimesSeconds: number[]) => void;
 };
 
 export function createSimulation(): Simulation {
@@ -241,8 +242,37 @@ export function createSimulation(): Simulation {
           timeSeconds: state.cueStartOffsetSeconds + time,
           planned: false
         }));
+    },
+    startTrackRun(cueTimesSeconds) {
+      resetRunState(state);
+      state.cueTimeline = cueTimesSeconds
+        .filter((time) => Number.isFinite(time) && time >= 0)
+        .map((time) => ({
+          timeSeconds: time,
+          planned: false
+        }));
     }
   };
+}
+
+function resetRunState(state: SimulationState): void {
+  state.simTimeSeconds = 0;
+  state.simTick = 0;
+  state.shipX = -6;
+  state.shipY = 0;
+  state.shipShieldAlpha = 0;
+  state.enemies = [];
+  state.projectiles = [];
+  state.enemyProjectiles = [];
+  state.explosions = [];
+  state.nextEnemySpawnTime = 0.4;
+  state.nextPlayerFireTime = 0.2;
+  state.spawnIndex = 0;
+  state.nextEnemyId = 1;
+  state.cueResolvedCount = 0;
+  state.cueMissedCount = 0;
+  state.cumulativeCueErrorMs = 0;
+  state.cueStartOffsetSeconds = 0;
 }
 
 function spawnEnemies(state: SimulationState): void {

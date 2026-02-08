@@ -2,6 +2,7 @@ import type { AudioAnalysisResult } from "../audio/types";
 
 type AudioPanelHandlers = {
   onAnalyze: (file: File) => Promise<AudioAnalysisResult>;
+  onStartRun: (analysis: AudioAnalysisResult) => void;
 };
 
 export type AudioPanel = {
@@ -42,6 +43,13 @@ export function createAudioPanel(
   canvas.height = 130;
   panel.appendChild(canvas);
 
+  const runButton = document.createElement("button");
+  runButton.className = "audio-panel__run";
+  runButton.type = "button";
+  runButton.textContent = "Start Synced Run";
+  runButton.disabled = true;
+  panel.appendChild(runButton);
+
   container.appendChild(panel);
 
   let latestAnalysis: AudioAnalysisResult | null = null;
@@ -65,6 +73,7 @@ export function createAudioPanel(
       }
 
       latestAnalysis = analysis;
+      runButton.disabled = false;
       status.textContent = `Analyzed ${analysis.fileName}`;
       stats.textContent = [
         `BPM ${analysis.beat.bpm.toFixed(1)}`,
@@ -82,7 +91,16 @@ export function createAudioPanel(
       status.textContent = "Analysis failed";
       stats.textContent = message;
       drawPlaceholder(canvas, "Analysis failed");
+      runButton.disabled = true;
     }
+  });
+
+  runButton.addEventListener("click", () => {
+    if (!latestAnalysis) {
+      return;
+    }
+    handlers.onStartRun(latestAnalysis);
+    status.textContent = `Synced run started for ${latestAnalysis.fileName}`;
   });
 
   drawPlaceholder(canvas, "No data");
