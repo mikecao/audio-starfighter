@@ -1,0 +1,24 @@
+{
+  "name": "audio-starfighter",
+  "version": "0.1.0",
+  "description": "Audio-driven side-scrolling 3D shooter",
+  "license": "MIT",
+  "author": "",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "three": "^0.179.1"
+  },
+  "devDependencies": {
+    "@types/three": "^0.182.0",
+    "typescript": "^5.9.2",
+    "vite": "^7.1.3",
+    "vitest": "^2.1.1"
+  }
+}

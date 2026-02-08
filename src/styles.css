@@ -1,0 +1,75 @@
+:root {
+  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+  color: #d8e5ff;
+  background: #030712;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+}
+
+#app {
+  position: relative;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 20% 20%, rgb(40 58 99 / 45%), transparent 55%),
+    radial-gradient(circle at 85% 75%, rgb(15 124 145 / 35%), transparent 45%),
+    linear-gradient(180deg, #040a16 0%, #030711 100%);
+}
+
+canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.debug-hud {
+  position: absolute;
+  top: 1rem;
+  left: 1rem;
+  min-width: 190px;
+  padding: 0.75rem 0.9rem;
+  border-radius: 0.6rem;
+  border: 1px solid rgb(128 160 215 / 40%);
+  background: rgb(4 11 26 / 75%);
+  backdrop-filter: blur(5px);
+}
+
+.debug-hud__title {
+  margin: 0 0 0.4rem;
+  font-size: 0.82rem;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: #b3dcff;
+}
+
+.debug-hud__list {
+  margin: 0;
+  display: grid;
+  gap: 0.25rem;
+}
+
+.debug-hud__row {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  font-family: "Consolas", "Courier New", monospace;
+  font-size: 0.74rem;
+}
+
+.debug-hud__row dt {
+  color: #9eb4d3;
+}
+
+.debug-hud__row dd {
+  margin: 0;
+  color: #f0f7ff;
+}
