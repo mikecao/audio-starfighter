@@ -55,7 +55,10 @@ function animate(frameTimeMs: number): void {
     enemyCount: snapshot.enemyCount,
     projectileCount: snapshot.projectileCount,
     bpm: analysis?.beat.bpm ?? null,
-    cueCount: analysis?.cues.length ?? 0
+    cueCount: analysis?.cues.length ?? 0,
+    cueResolvedCount: snapshot.cueResolvedCount,
+    cueMissedCount: snapshot.cueMissedCount,
+    avgCueErrorMs: snapshot.avgCueErrorMs
   });
 
   requestAnimationFrame(animate);

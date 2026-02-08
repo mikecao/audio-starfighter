@@ -6,6 +6,9 @@ type HudMetrics = {
   projectileCount: number;
   bpm: number | null;
   cueCount: number;
+  cueResolvedCount: number;
+  cueMissedCount: number;
+  avgCueErrorMs: number;
 };
 
 export type DebugHud = {
@@ -32,7 +35,10 @@ export function createDebugHud(container: HTMLElement): DebugHud {
     { key: "enemyCount", label: "Enemies" },
     { key: "projectileCount", label: "Projectiles" },
     { key: "bpm", label: "BPM" },
-    { key: "cueCount", label: "Cues" }
+    { key: "cueCount", label: "Cues" },
+    { key: "cueResolvedCount", label: "Cue Hits" },
+    { key: "cueMissedCount", label: "Cue Misses" },
+    { key: "avgCueErrorMs", label: "Cue Error" }
   ] as const;
 
   const valueNodes = new Map<string, HTMLElement>();
@@ -64,6 +70,9 @@ export function createDebugHud(container: HTMLElement): DebugHud {
       valueNodes.get("bpm")!.textContent =
         metrics.bpm === null ? "-" : metrics.bpm.toFixed(1);
       valueNodes.get("cueCount")!.textContent = String(metrics.cueCount);
+      valueNodes.get("cueResolvedCount")!.textContent = String(metrics.cueResolvedCount);
+      valueNodes.get("cueMissedCount")!.textContent = String(metrics.cueMissedCount);
+      valueNodes.get("avgCueErrorMs")!.textContent = `${metrics.avgCueErrorMs.toFixed(1)}ms`;
     }
   };
 }

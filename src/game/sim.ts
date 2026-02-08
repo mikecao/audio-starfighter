@@ -32,6 +32,9 @@ export type SimulationSnapshot = {
     alpha: number;
   }>;
   shieldAlpha: number;
+  cueResolvedCount: number;
+  cueMissedCount: number;
+  avgCueErrorMs: number;
 };
 
 type EnemyPattern = "straight" | "sine" | "arc";
@@ -104,6 +107,9 @@ type SimulationState = {
   nextEnemyId: number;
   cueTimeline: ScheduledCue[];
   cueStartOffsetSeconds: number;
+  cueResolvedCount: number;
+  cueMissedCount: number;
+  cumulativeCueErrorMs: number;
   rng: () => number;
 };
 
@@ -130,6 +136,9 @@ export function createSimulation(): Simulation {
     nextEnemyId: 1,
     cueTimeline: [],
     cueStartOffsetSeconds: 0,
+    cueResolvedCount: 0,
+    cueMissedCount: 0,
+    cumulativeCueErrorMs: 0,
     rng: createMulberry32(7)
   };
 
@@ -212,11 +221,20 @@ export function createSimulation(): Simulation {
             alpha: 1 - normalizedAge
           };
         }),
-        shieldAlpha: state.shipShieldAlpha
+        shieldAlpha: state.shipShieldAlpha,
+        cueResolvedCount: state.cueResolvedCount,
+        cueMissedCount: state.cueMissedCount,
+        avgCueErrorMs:
+          state.cueResolvedCount > 0
+            ? state.cumulativeCueErrorMs / state.cueResolvedCount
+            : 0
       };
     },
     setCueTimeline(cueTimesSeconds) {
       state.cueStartOffsetSeconds = state.simTimeSeconds;
+      state.cueResolvedCount = 0;
+      state.cueMissedCount = 0;
+      state.cumulativeCueErrorMs = 0;
       state.cueTimeline = cueTimesSeconds
         .filter((time) => Number.isFinite(time) && time >= 0)
         .map((time) => ({
@@ -444,6 +462,7 @@ function resolveDueCueExplosions(state: SimulationState): void {
     if (!cue) {
       break;
     }
+    const cueErrorMs = Math.abs(state.simTimeSeconds - cue.timeSeconds) * 1000;
 
     let targetIndex = state.enemies.findIndex(
       (enemy) => enemy.scheduledCueTime !== null && Math.abs(enemy.scheduledCueTime - cue.timeSeconds) < 0.06
@@ -457,6 +476,10 @@ function resolveDueCueExplosions(state: SimulationState): void {
       const enemy = state.enemies[targetIndex];
       spawnExplosion(state, enemy.x, enemy.y, enemy.z);
       state.enemies.splice(targetIndex, 1);
+      state.cueResolvedCount += 1;
+      state.cumulativeCueErrorMs += cueErrorMs;
+    } else {
+      state.cueMissedCount += 1;
     }
   }
 }
