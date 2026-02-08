@@ -512,22 +512,23 @@ function resolveDueCueExplosions(state: SimulationState): void {
     return;
   }
 
-  while (state.cueTimeline.length > 0 && state.cueTimeline[0].timeSeconds <= state.simTimeSeconds) {
+  while (
+    state.cueTimeline.length > 0 &&
+    state.cueTimeline[0].timeSeconds <= state.simTimeSeconds
+  ) {
     const cue = state.cueTimeline.shift();
     if (!cue) {
       break;
     }
     const cueErrorMs = Math.abs(state.simTimeSeconds - cue.timeSeconds) * 1000;
 
-    let targetIndex = state.enemies.findIndex(
-      (enemy) => enemy.scheduledCueTime !== null && Math.abs(enemy.scheduledCueTime - cue.timeSeconds) < 0.06
+    const targetIndex = state.enemies.findIndex(
+      (enemy) =>
+        enemy.scheduledCueTime !== null &&
+        Math.abs(enemy.scheduledCueTime - cue.timeSeconds) < 0.06
     );
 
-    if (targetIndex < 0 && state.enemies.length > 0) {
-      targetIndex = findClosestEnemyIndex(state.enemies, state.shipX, state.shipY);
-    }
-
-    if (targetIndex >= 0) {
+    if (targetIndex >= 0 && scheduledEnemyHasPlayerShotNearby(state, state.enemies[targetIndex])) {
       const enemy = state.enemies[targetIndex];
       spawnExplosion(state, enemy.x, enemy.y, enemy.z);
       state.enemies.splice(targetIndex, 1);
@@ -537,6 +538,21 @@ function resolveDueCueExplosions(state: SimulationState): void {
       state.cueMissedCount += 1;
     }
   }
+}
+
+function scheduledEnemyHasPlayerShotNearby(state: SimulationState, enemy: Enemy): boolean {
+  const hitRadius = enemy.radius + 0.28;
+  const hitRadiusSq = hitRadius * hitRadius;
+
+  for (const projectile of state.projectiles) {
+    const dx = projectile.x - enemy.x;
+    const dy = projectile.y - enemy.y;
+    if (dx * dx + dy * dy <= hitRadiusSq) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 function findCueCandidate(
@@ -644,24 +660,6 @@ function findBestTarget(enemies: Enemy[], shipX: number, shipY: number): Enemy |
   }
 
   return bestEnemy;
-}
-
-function findClosestEnemyIndex(enemies: Enemy[], x: number, y: number): number {
-  let index = -1;
-  let bestDistance = Number.POSITIVE_INFINITY;
-
-  for (let i = 0; i < enemies.length; i += 1) {
-    const enemy = enemies[i];
-    const dx = enemy.x - x;
-    const dy = enemy.y - y;
-    const distance = dx * dx + dy * dy;
-    if (distance < bestDistance) {
-      bestDistance = distance;
-      index = i;
-    }
-  }
-
-  return index;
 }
 
 function spawnEnemyProjectile(state: SimulationState, enemy: Enemy): void {
