@@ -64,6 +64,7 @@ function animate(frameTimeMs: number): void {
 
   scene.update(snapshot, alpha);
   scene.render();
+  audioPanel.setPlaybackTime(snapshot.simTimeSeconds);
   hud.update({
     fps: frameSeconds > 0 ? 1 / frameSeconds : 0,
     simTimeSeconds: snapshot.simTimeSeconds,

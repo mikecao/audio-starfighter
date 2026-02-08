@@ -7,6 +7,7 @@ type AudioPanelHandlers = {
 
 export type AudioPanel = {
   getLatestAnalysis: () => AudioAnalysisResult | null;
+  setPlaybackTime: (timeSeconds: number) => void;
 };
 
 export function createAudioPanel(
@@ -60,6 +61,7 @@ export function createAudioPanel(
   let latestAnalysis: AudioAnalysisResult | null = null;
   let requestId = 0;
   let trackUrl: string | null = null;
+  let playbackTimeSeconds = 0;
 
   fileInput.addEventListener("change", async () => {
     const file = fileInput.files?.[0];
@@ -94,7 +96,7 @@ export function createAudioPanel(
         `Confidence ${(analysis.beat.confidence * 100).toFixed(0)}%`
       ].join(" | ");
 
-      drawTimeline(canvas, analysis);
+      drawTimeline(canvas, analysis, playbackTimeSeconds);
     } catch (error) {
       if (currentRequestId !== requestId) {
         return;
@@ -112,6 +114,7 @@ export function createAudioPanel(
       return;
     }
     handlers.onStartRun(latestAnalysis);
+    playbackTimeSeconds = 0;
     audio.currentTime = 0;
     void audio.play().catch(() => {
       status.textContent = "Press play to start audio playback.";
@@ -124,11 +127,21 @@ export function createAudioPanel(
   return {
     getLatestAnalysis() {
       return latestAnalysis;
+    },
+    setPlaybackTime(timeSeconds) {
+      playbackTimeSeconds = Math.max(0, timeSeconds);
+      if (latestAnalysis) {
+        drawTimeline(canvas, latestAnalysis, playbackTimeSeconds);
+      }
     }
   };
 }
 
-function drawTimeline(canvas: HTMLCanvasElement, analysis: AudioAnalysisResult): void {
+function drawTimeline(
+  canvas: HTMLCanvasElement,
+  analysis: AudioAnalysisResult,
+  playbackTimeSeconds = 0
+): void {
   const context = canvas.getContext("2d");
   if (!context) {
     return;
@@ -177,6 +190,14 @@ function drawTimeline(canvas: HTMLCanvasElement, analysis: AudioAnalysisResult):
     context.lineTo(x, 0);
     context.stroke();
   }
+
+  const playheadX = (playbackTimeSeconds / analysis.durationSeconds) * width;
+  context.strokeStyle = "rgba(251, 191, 36, 0.95)";
+  context.lineWidth = 2;
+  context.beginPath();
+  context.moveTo(playheadX, 0);
+  context.lineTo(playheadX, height);
+  context.stroke();
 }
 
 function drawPlaceholder(canvas: HTMLCanvasElement, text: string): void {
