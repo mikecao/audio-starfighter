@@ -8,6 +8,7 @@ type AudioPanelHandlers = {
 export type AudioPanel = {
   getLatestAnalysis: () => AudioAnalysisResult | null;
   setPlaybackTime: (timeSeconds: number) => void;
+  getAudioPlaybackTime: () => number;
 };
 
 export function createAudioPanel(
@@ -133,6 +134,9 @@ export function createAudioPanel(
       if (latestAnalysis) {
         drawTimeline(canvas, latestAnalysis, playbackTimeSeconds);
       }
+    },
+    getAudioPlaybackTime() {
+      return audio.currentTime;
     }
   };
 }

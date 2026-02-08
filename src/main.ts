@@ -51,6 +51,11 @@ function animate(frameTimeMs: number): void {
   const alpha = accumulatorSeconds / fixedStepSeconds;
   const snapshot: SimulationSnapshot = sim.getSnapshot();
   const analysis = audioPanel.getLatestAnalysis();
+  const audioPlaybackTimeSeconds = audioPanel.getAudioPlaybackTime();
+  const playbackDriftMs =
+    analysis && audioPlaybackTimeSeconds > 0
+      ? (snapshot.simTimeSeconds - audioPlaybackTimeSeconds) * 1000
+      : null;
   if (analysis && analysis !== appliedAnalysisRef) {
     sim.setIntensityTimeline(
       analysis.frames.map((frame) => ({
@@ -78,7 +83,8 @@ function animate(frameTimeMs: number): void {
     avgCueErrorMs: snapshot.avgCueErrorMs,
     currentIntensity: snapshot.currentIntensity,
     score: snapshot.score,
-    combo: snapshot.combo
+    combo: snapshot.combo,
+    playbackDriftMs
   });
 
   requestAnimationFrame(animate);
