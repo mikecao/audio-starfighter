@@ -53,6 +53,13 @@ export function createAudioPanel(
   runButton.disabled = true;
   panel.appendChild(runButton);
 
+  const restartButton = document.createElement("button");
+  restartButton.className = "audio-panel__run audio-panel__run--secondary";
+  restartButton.type = "button";
+  restartButton.textContent = "Restart Run";
+  restartButton.disabled = true;
+  panel.appendChild(restartButton);
+
   const seedRow = document.createElement("div");
   seedRow.className = "audio-panel__seed-row";
   const seedLabel = document.createElement("label");
@@ -99,6 +106,7 @@ export function createAudioPanel(
 
       latestAnalysis = analysis;
       runButton.disabled = false;
+      restartButton.disabled = false;
       if (trackUrl) {
         URL.revokeObjectURL(trackUrl);
       }
@@ -123,6 +131,7 @@ export function createAudioPanel(
       stats.textContent = message;
       drawPlaceholder(canvas, "Analysis failed");
       runButton.disabled = true;
+      restartButton.disabled = true;
     }
   });
 
@@ -138,6 +147,20 @@ export function createAudioPanel(
       status.textContent = "Press play to start audio playback.";
     });
     status.textContent = `Synced run started for ${latestAnalysis.fileName}`;
+  });
+
+  restartButton.addEventListener("click", () => {
+    if (!latestAnalysis) {
+      return;
+    }
+    const seed = Number(seedInput.value);
+    handlers.onStartRun(latestAnalysis, Number.isFinite(seed) ? seed : 7);
+    playbackTimeSeconds = 0;
+    audio.currentTime = 0;
+    void audio.play().catch(() => {
+      status.textContent = "Press play to restart audio playback.";
+    });
+    status.textContent = `Run restarted for ${latestAnalysis.fileName}`;
   });
 
   drawPlaceholder(canvas, "No data");

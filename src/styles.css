@@ -138,6 +138,12 @@ canvas {
   cursor: not-allowed;
 }
 
+.audio-panel__run--secondary {
+  margin-top: 0.35rem;
+  border-color: rgb(244 114 182 / 35%);
+  color: #ffd7eb;
+}
+
 .audio-panel__audio {
   margin-top: 0.55rem;
   width: 100%;
