@@ -106,6 +106,13 @@ window.addEventListener("resize", () => {
   scene.resize();
 });
 
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) {
+    accumulatorSeconds = 0;
+    previousFrameTime = performance.now();
+  }
+});
+
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
