@@ -9,6 +9,7 @@ export type AudioPanel = {
   getLatestAnalysis: () => AudioAnalysisResult | null;
   setPlaybackTime: (timeSeconds: number) => void;
   getAudioPlaybackTime: () => number;
+  isAudioPlaying: () => boolean;
 };
 
 export function createAudioPanel(
@@ -137,6 +138,9 @@ export function createAudioPanel(
     },
     getAudioPlaybackTime() {
       return audio.currentTime;
+    },
+    isAudioPlaying() {
+      return !audio.paused && !audio.ended;
     }
   };
 }

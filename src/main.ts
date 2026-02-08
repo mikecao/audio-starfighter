@@ -42,13 +42,22 @@ function animate(frameTimeMs: number): void {
   previousFrameTime = frameTimeMs;
 
   const frameSeconds = Math.min(rawFrameSeconds, maxFrameSeconds);
+  const analysis = audioPanel.getLatestAnalysis();
   const audioPlaybackTimeSecondsPreStep = audioPanel.getAudioPlaybackTime();
+  const freezeForPausedAudio =
+    analysis !== null &&
+    audioPlaybackTimeSecondsPreStep > 0 &&
+    !audioPanel.isAudioPlaying();
   const driftSecondsPreStep =
     audioPlaybackTimeSecondsPreStep > 0
       ? lastSimTimeSeconds - audioPlaybackTimeSecondsPreStep
       : 0;
   const simRateCorrection = clamp(1 - driftSecondsPreStep * 0.25, 0.9, 1.1);
-  accumulatorSeconds += frameSeconds * simRateCorrection;
+  if (freezeForPausedAudio) {
+    accumulatorSeconds = 0;
+  } else {
+    accumulatorSeconds += frameSeconds * simRateCorrection;
+  }
 
   while (accumulatorSeconds >= fixedStepSeconds) {
     sim.step(fixedStepSeconds);
@@ -58,7 +67,6 @@ function animate(frameTimeMs: number): void {
   const alpha = accumulatorSeconds / fixedStepSeconds;
   const snapshot: SimulationSnapshot = sim.getSnapshot();
   lastSimTimeSeconds = snapshot.simTimeSeconds;
-  const analysis = audioPanel.getLatestAnalysis();
   const audioPlaybackTimeSeconds = audioPanel.getAudioPlaybackTime();
   const playbackDriftMs =
     analysis && audioPlaybackTimeSeconds > 0
