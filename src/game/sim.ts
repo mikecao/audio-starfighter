@@ -38,6 +38,8 @@ export type SimulationSnapshot = {
   currentIntensity: number;
   score: number;
   combo: number;
+  pendingCueCount: number;
+  plannedCueCount: number;
 };
 
 type EnemyPattern = "straight" | "sine" | "arc";
@@ -247,7 +249,9 @@ export function createSimulation(): Simulation {
             : 0,
         currentIntensity: getIntensityAtTime(state, state.simTimeSeconds),
         score: state.score,
-        combo: state.combo
+        combo: state.combo,
+        pendingCueCount: state.cueTimeline.length,
+        plannedCueCount: countPlannedCues(state.cueTimeline)
       };
     },
     setCueTimeline(cueTimesSeconds) {
@@ -617,6 +621,16 @@ function enemyAlreadyAssignedToCue(cues: ScheduledCue[], enemyId: number): boole
     }
   }
   return false;
+}
+
+function countPlannedCues(cues: ScheduledCue[]): number {
+  let count = 0;
+  for (const cue of cues) {
+    if (cue.planned) {
+      count += 1;
+    }
+  }
+  return count;
 }
 
 function predictEnemyPosition(enemy: Enemy, dt: number): { x: number; y: number } {

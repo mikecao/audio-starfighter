@@ -32,6 +32,7 @@ describe("simulation cue scheduling", () => {
     expect(afterReset.projectileCount).toBe(0);
     expect(afterReset.score).toBe(0);
     expect(afterReset.combo).toBe(0);
+    expect(afterReset.pendingCueCount).toBe(3);
   });
 
   it("interpolates current intensity from provided timeline samples", () => {

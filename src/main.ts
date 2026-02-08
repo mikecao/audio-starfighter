@@ -100,7 +100,9 @@ function animate(frameTimeMs: number): void {
     currentIntensity: snapshot.currentIntensity,
     score: snapshot.score,
     combo: snapshot.combo,
-    playbackDriftMs
+    playbackDriftMs,
+    pendingCueCount: snapshot.pendingCueCount,
+    plannedCueCount: snapshot.plannedCueCount
   });
 
   requestAnimationFrame(animate);
