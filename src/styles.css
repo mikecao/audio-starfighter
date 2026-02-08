@@ -137,3 +137,9 @@ canvas {
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+.audio-panel__audio {
+  margin-top: 0.55rem;
+  width: 100%;
+  height: 28px;
+}

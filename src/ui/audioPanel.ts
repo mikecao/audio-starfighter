@@ -50,10 +50,16 @@ export function createAudioPanel(
   runButton.disabled = true;
   panel.appendChild(runButton);
 
+  const audio = document.createElement("audio");
+  audio.className = "audio-panel__audio";
+  audio.controls = true;
+  panel.appendChild(audio);
+
   container.appendChild(panel);
 
   let latestAnalysis: AudioAnalysisResult | null = null;
   let requestId = 0;
+  let trackUrl: string | null = null;
 
   fileInput.addEventListener("change", async () => {
     const file = fileInput.files?.[0];
@@ -74,6 +80,12 @@ export function createAudioPanel(
 
       latestAnalysis = analysis;
       runButton.disabled = false;
+      if (trackUrl) {
+        URL.revokeObjectURL(trackUrl);
+      }
+      trackUrl = URL.createObjectURL(file);
+      audio.src = trackUrl;
+      audio.load();
       status.textContent = `Analyzed ${analysis.fileName}`;
       stats.textContent = [
         `BPM ${analysis.beat.bpm.toFixed(1)}`,
@@ -100,6 +112,10 @@ export function createAudioPanel(
       return;
     }
     handlers.onStartRun(latestAnalysis);
+    audio.currentTime = 0;
+    void audio.play().catch(() => {
+      status.textContent = "Press play to start audio playback.";
+    });
     status.textContent = `Synced run started for ${latestAnalysis.fileName}`;
   });
 
