@@ -1,12 +1,16 @@
 import {
   AmbientLight,
+  BufferGeometry,
   BoxGeometry,
   Color,
   DirectionalLight,
+  Float32BufferAttribute,
   Group,
   Mesh,
   MeshStandardMaterial,
   PerspectiveCamera,
+  Points,
+  PointsMaterial,
   Scene,
   SphereGeometry,
   Vector3,
@@ -113,6 +117,11 @@ export function setupScene(container: HTMLElement): RenderScene {
     scene.add(lane);
   }
 
+  const nearStars = createStarLayer(180, 0x93c5fd, 3.2, 0.06);
+  const farStars = createStarLayer(120, 0x334155, 1.6, 0.04);
+  scene.add(farStars.points);
+  scene.add(nearStars.points);
+
   function resize(): void {
     const width = container.clientWidth;
     const height = container.clientHeight;
@@ -134,6 +143,8 @@ export function setupScene(container: HTMLElement): RenderScene {
       shieldMesh.position.copy(shipMesh.position);
       shieldMaterial.opacity = snapshot.shieldAlpha * 0.45;
       shieldMesh.scale.setScalar(1 + snapshot.shieldAlpha * 0.5);
+      updateStarLayer(farStars, snapshot.simTimeSeconds);
+      updateStarLayer(nearStars, snapshot.simTimeSeconds);
 
       syncMeshPool(enemyMeshes, snapshot.enemies.length, enemyGroup, () => {
         const mesh = new Mesh(enemyGeometry, enemyMaterial);
@@ -232,4 +243,63 @@ function syncMeshPool(
     meshes.push(mesh);
     parent.add(mesh);
   }
+}
+
+type StarLayer = {
+  points: Points;
+  basePositions: Float32Array;
+  animatedPositions: Float32Array;
+  speed: number;
+};
+
+function createStarLayer(
+  count: number,
+  color: number,
+  speed: number,
+  size: number
+): StarLayer {
+  const basePositions = new Float32Array(count * 3);
+  for (let i = 0; i < count; i += 1) {
+    const offset = i * 3;
+    basePositions[offset] = -18 + Math.random() * 36;
+    basePositions[offset + 1] = -8 + Math.random() * 16;
+    basePositions[offset + 2] = -7 - Math.random() * 6;
+  }
+
+  const animatedPositions = new Float32Array(basePositions);
+  const geometry = new BufferGeometry();
+  geometry.setAttribute("position", new Float32BufferAttribute(animatedPositions, 3));
+
+  const material = new PointsMaterial({
+    color,
+    size,
+    sizeAttenuation: true,
+    transparent: true,
+    opacity: 0.85
+  });
+
+  return {
+    points: new Points(geometry, material),
+    basePositions,
+    animatedPositions,
+    speed
+  };
+}
+
+function updateStarLayer(layer: StarLayer, simTimeSeconds: number): void {
+  const loopWidth = 36;
+  const minX = -18;
+
+  for (let i = 0; i < layer.basePositions.length; i += 3) {
+    const baseX = layer.basePositions[i];
+    const traveled = (simTimeSeconds * layer.speed) % loopWidth;
+    let x = baseX - traveled;
+    while (x < minX) {
+      x += loopWidth;
+    }
+    layer.animatedPositions[i] = x;
+  }
+
+  const position = layer.points.geometry.getAttribute("position");
+  position.needsUpdate = true;
 }
