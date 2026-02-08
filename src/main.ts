@@ -47,8 +47,16 @@ const audioPanel = createAudioPanel(app, {
       simTimeSeconds: latestSnapshot.simTimeSeconds,
       cueResolvedCount: latestSnapshot.cueResolvedCount,
       cueMissedCount: latestSnapshot.cueMissedCount,
+      cueHitRate:
+        latestSnapshot.cueResolvedCount + latestSnapshot.cueMissedCount > 0
+          ? latestSnapshot.cueResolvedCount /
+            (latestSnapshot.cueResolvedCount + latestSnapshot.cueMissedCount)
+          : 0,
+      pendingCueCount: latestSnapshot.pendingCueCount,
+      plannedCueCount: latestSnapshot.plannedCueCount,
       avgCueErrorMs: latestSnapshot.avgCueErrorMs,
       score: latestSnapshot.score,
+      bestScore: currentBestScore,
       combo: latestSnapshot.combo,
       playbackDriftMs:
         analysis && audioPanel.getAudioPlaybackTime() > 0
