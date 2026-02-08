@@ -15,6 +15,7 @@ type HudMetrics = {
   playbackDriftMs: number | null;
   pendingCueCount: number;
   plannedCueCount: number;
+  bestScore: number;
 };
 
 export type DebugHud = {
@@ -51,7 +52,8 @@ export function createDebugHud(container: HTMLElement): DebugHud {
     { key: "playbackDriftMs", label: "Drift" },
     { key: "pendingCueCount", label: "Cue Queue" },
     { key: "plannedCueCount", label: "Cue Planned" },
-    { key: "cueHitRate", label: "Cue Hit %" }
+    { key: "cueHitRate", label: "Cue Hit %" },
+    { key: "bestScore", label: "Best Score" }
   ] as const;
 
   const valueNodes = new Map<string, HTMLElement>();
@@ -96,6 +98,7 @@ export function createDebugHud(container: HTMLElement): DebugHud {
       const totalResolved = metrics.cueResolvedCount + metrics.cueMissedCount;
       const hitRate = totalResolved > 0 ? (metrics.cueResolvedCount / totalResolved) * 100 : 0;
       valueNodes.get("cueHitRate")!.textContent = `${hitRate.toFixed(1)}%`;
+      valueNodes.get("bestScore")!.textContent = String(metrics.bestScore);
     }
   };
 }

@@ -6,6 +6,8 @@ import { createSimulation, type SimulationSnapshot } from "./game/sim";
 import { createDebugHud } from "./ui/debugHud";
 import { createAudioPanel } from "./ui/audioPanel";
 
+const BEST_SCORE_STORAGE_PREFIX = "audio-starfighter.best-score";
+
 const app = document.querySelector<HTMLDivElement>("#app");
 
 if (!app) {
@@ -16,6 +18,8 @@ const scene = setupScene(app);
 const sim = createSimulation();
 const hud = createDebugHud(app);
 let latestSnapshot: SimulationSnapshot = sim.getSnapshot();
+let currentBestScore = 0;
+let currentRunKey: string | null = null;
 const audioPanel = createAudioPanel(app, {
   onAnalyze(file) {
     return analyzeAudioTrack(file);
@@ -25,6 +29,8 @@ const audioPanel = createAudioPanel(app, {
     sim.setIntensityTimeline(buildIntensityTimeline(analysis.frames));
     sim.startTrackRun(analysis.cues.map((cue) => cue.timeSeconds));
     appliedAnalysisRef = analysis;
+    currentRunKey = buildBestScoreKey(analysis.fileName, seed);
+    currentBestScore = loadBestScore(currentRunKey);
   },
   onExportSummary(seed) {
     const analysis = audioPanel.getLatestAnalysis();
@@ -99,6 +105,13 @@ function animate(frameTimeMs: number): void {
     sim.setIntensityTimeline(buildIntensityTimeline(analysis.frames));
     sim.setCueTimeline(analysis.cues.map((cue) => cue.timeSeconds));
     appliedAnalysisRef = analysis;
+    currentRunKey = buildBestScoreKey(analysis.fileName, 7);
+    currentBestScore = loadBestScore(currentRunKey);
+  }
+
+  if (currentRunKey && snapshot.score > currentBestScore) {
+    currentBestScore = snapshot.score;
+    saveBestScore(currentRunKey, currentBestScore);
   }
 
   scene.update(snapshot, alpha);
@@ -120,7 +133,8 @@ function animate(frameTimeMs: number): void {
     combo: snapshot.combo,
     playbackDriftMs,
     pendingCueCount: snapshot.pendingCueCount,
-    plannedCueCount: snapshot.plannedCueCount
+    plannedCueCount: snapshot.plannedCueCount,
+    bestScore: currentBestScore
   });
 
   requestAnimationFrame(animate);
@@ -175,4 +189,29 @@ function buildIntensityTimeline(frames: FeatureFrame[]): Array<{
   }
 
   return output;
+}
+
+function buildBestScoreKey(fileName: string, seed: number): string {
+  return `${BEST_SCORE_STORAGE_PREFIX}:${fileName}:${seed}`;
+}
+
+function loadBestScore(key: string): number {
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (raw === null) {
+      return 0;
+    }
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) ? parsed : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function saveBestScore(key: string, value: number): void {
+  try {
+    window.localStorage.setItem(key, String(value));
+  } catch {
+    // Ignore storage failures.
+  }
 }
