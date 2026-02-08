@@ -92,6 +92,7 @@ type Explosion = {
 type ScheduledCue = {
   timeSeconds: number;
   planned: boolean;
+  assignedEnemyId: number | null;
 };
 
 type IntensitySample = {
@@ -258,7 +259,8 @@ export function createSimulation(): Simulation {
         .filter((time) => Number.isFinite(time) && time >= 0)
         .map((time) => ({
           timeSeconds: state.cueStartOffsetSeconds + time,
-          planned: false
+          planned: false,
+          assignedEnemyId: null
         }));
     },
     startTrackRun(cueTimesSeconds) {
@@ -267,7 +269,8 @@ export function createSimulation(): Simulation {
         .filter((time) => Number.isFinite(time) && time >= 0)
         .map((time) => ({
           timeSeconds: time,
-          planned: false
+          planned: false,
+          assignedEnemyId: null
         }));
     },
     setIntensityTimeline(samples) {
@@ -514,6 +517,7 @@ function planCueShots(state: SimulationState): void {
 
     candidate.enemy.scheduledCueTime = cue.timeSeconds;
     cue.planned = true;
+    cue.assignedEnemyId = candidate.enemy.id;
   }
 }
 
@@ -532,11 +536,10 @@ function resolveDueCueExplosions(state: SimulationState): void {
     }
     const cueErrorMs = Math.abs(state.simTimeSeconds - cue.timeSeconds) * 1000;
 
-    const targetIndex = state.enemies.findIndex(
-      (enemy) =>
-        enemy.scheduledCueTime !== null &&
-        Math.abs(enemy.scheduledCueTime - cue.timeSeconds) < 0.06
-    );
+    const targetIndex =
+      cue.assignedEnemyId === null
+        ? -1
+        : state.enemies.findIndex((enemy) => enemy.id === cue.assignedEnemyId);
 
     if (targetIndex >= 0 && scheduledEnemyHasPlayerShotNearby(state, state.enemies[targetIndex])) {
       const enemy = state.enemies[targetIndex];
@@ -576,7 +579,7 @@ function findCueCandidate(
   let bestScore = Number.POSITIVE_INFINITY;
 
   for (const enemy of state.enemies) {
-    if (enemy.scheduledCueTime !== null) {
+    if (enemy.scheduledCueTime !== null || enemyAlreadyAssignedToCue(state.cueTimeline, enemy.id)) {
       continue;
     }
 
@@ -605,6 +608,15 @@ function findCueCandidate(
   }
 
   return best;
+}
+
+function enemyAlreadyAssignedToCue(cues: ScheduledCue[], enemyId: number): boolean {
+  for (const cue of cues) {
+    if (cue.assignedEnemyId === enemyId) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function predictEnemyPosition(enemy: Enemy, dt: number): { x: number; y: number } {

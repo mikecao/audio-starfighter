@@ -12,6 +12,7 @@ describe("simulation cue scheduling", () => {
 
     const snapshot = sim.getSnapshot();
     expect(snapshot.cueResolvedCount + snapshot.cueMissedCount).toBe(5);
+    expect(snapshot.cueResolvedCount).toBeLessThanOrEqual(5);
   });
 
   it("resets accumulated state when starting a new synced run", () => {
