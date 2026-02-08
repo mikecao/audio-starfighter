@@ -26,7 +26,10 @@ export type RenderScene = {
 
 export function setupScene(container: HTMLElement): RenderScene {
   const scene = new Scene();
-  scene.background = new Color("#070b14");
+  const lowEnergyBg = new Color("#070b14");
+  const highEnergyBg = new Color("#1a1426");
+  const currentBg = lowEnergyBg.clone();
+  scene.background = currentBg;
 
   const camera = new PerspectiveCamera(60, 1, 0.1, 200);
   camera.position.set(0, 0, 20);
@@ -66,7 +69,9 @@ export function setupScene(container: HTMLElement): RenderScene {
   const enemyMaterial = new MeshStandardMaterial({
     color: "#f87171",
     roughness: 0.35,
-    metalness: 0.2
+    metalness: 0.2,
+    emissive: "#7f1d1d",
+    emissiveIntensity: 0.2
   });
   const enemyGeometry = new BoxGeometry(0.85, 0.85, 0.85);
   const enemyGroup = new Group();
@@ -143,6 +148,13 @@ export function setupScene(container: HTMLElement): RenderScene {
       shieldMesh.position.copy(shipMesh.position);
       shieldMaterial.opacity = snapshot.shieldAlpha * 0.45;
       shieldMesh.scale.setScalar(1 + snapshot.shieldAlpha * 0.5);
+
+      const intensity = snapshot.currentIntensity;
+      currentBg.copy(lowEnergyBg).lerp(highEnergyBg, intensity);
+      shipMaterial.emissive.set("#0e7490");
+      shipMaterial.emissiveIntensity = 0.08 + intensity * 0.3;
+      enemyMaterial.emissive.set("#7f1d1d");
+      enemyMaterial.emissiveIntensity = 0.18 + intensity * 0.6;
       updateStarLayer(farStars, snapshot.simTimeSeconds);
       updateStarLayer(nearStars, snapshot.simTimeSeconds);
 
