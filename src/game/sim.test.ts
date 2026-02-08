@@ -50,4 +50,37 @@ describe("simulation cue scheduling", () => {
     expect(snapshot.currentIntensity).toBeGreaterThan(0.45);
     expect(snapshot.currentIntensity).toBeLessThan(0.55);
   });
+
+  it("produces deterministic outcomes for the same seed and inputs", () => {
+    const simA = createSimulation();
+    const simB = createSimulation();
+
+    const intensityTimeline = [
+      { timeSeconds: 0, intensity: 0.3 },
+      { timeSeconds: 1.5, intensity: 0.9 },
+      { timeSeconds: 3, intensity: 0.2 }
+    ];
+    const cueTimeline = [0.8, 1.6, 2.4, 3.2];
+
+    simA.setRandomSeed(42);
+    simB.setRandomSeed(42);
+    simA.setIntensityTimeline(intensityTimeline);
+    simB.setIntensityTimeline(intensityTimeline);
+    simA.startTrackRun(cueTimeline);
+    simB.startTrackRun(cueTimeline);
+
+    for (let i = 0; i < 60 * 5; i += 1) {
+      simA.step(1 / 60);
+      simB.step(1 / 60);
+    }
+
+    const a = simA.getSnapshot();
+    const b = simB.getSnapshot();
+    expect(a.enemyCount).toBe(b.enemyCount);
+    expect(a.projectileCount).toBe(b.projectileCount);
+    expect(a.cueResolvedCount).toBe(b.cueResolvedCount);
+    expect(a.cueMissedCount).toBe(b.cueMissedCount);
+    expect(a.score).toBe(b.score);
+    expect(a.combo).toBe(b.combo);
+  });
 });

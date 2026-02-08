@@ -124,6 +124,7 @@ type SimulationState = {
   score: number;
   combo: number;
   intensityTimeline: IntensitySample[];
+  randomSeed: number;
   rng: () => number;
 };
 
@@ -133,6 +134,7 @@ export type Simulation = {
   setCueTimeline: (cueTimesSeconds: number[]) => void;
   startTrackRun: (cueTimesSeconds: number[]) => void;
   setIntensityTimeline: (samples: IntensitySample[]) => void;
+  setRandomSeed: (seed: number) => void;
 };
 
 export function createSimulation(): Simulation {
@@ -158,6 +160,7 @@ export function createSimulation(): Simulation {
     score: 0,
     combo: 0,
     intensityTimeline: [],
+    randomSeed: 7,
     rng: createMulberry32(7)
   };
 
@@ -285,6 +288,11 @@ export function createSimulation(): Simulation {
           intensity: clamp(sample.intensity, 0, 1)
         }))
         .sort((a, b) => a.timeSeconds - b.timeSeconds);
+    },
+    setRandomSeed(seed) {
+      const normalized = normalizeSeed(seed);
+      state.randomSeed = normalized;
+      state.rng = createMulberry32(normalized);
     }
   };
 }
@@ -309,6 +317,7 @@ function resetRunState(state: SimulationState): void {
   state.score = 0;
   state.combo = 0;
   state.cueStartOffsetSeconds = 0;
+  state.rng = createMulberry32(state.randomSeed);
 }
 
 function spawnEnemies(state: SimulationState): void {
@@ -773,4 +782,12 @@ function createMulberry32(seed: number): () => number {
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
+}
+
+function normalizeSeed(value: number): number {
+  if (!Number.isFinite(value)) {
+    return 7;
+  }
+  const int = Math.trunc(value);
+  return int >>> 0;
 }
