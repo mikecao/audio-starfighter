@@ -4,5 +4,20 @@ export default defineConfig({
   server: {
     port: 5173,
     open: false
+  },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes("node_modules/three")) {
+            return "three-vendor";
+          }
+          if (id.includes("node_modules")) {
+            return "vendor";
+          }
+          return undefined;
+        }
+      }
+    }
   }
 });
