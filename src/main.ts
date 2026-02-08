@@ -1,5 +1,6 @@
 import "./styles.css";
 import { analyzeAudioTrack } from "./audio/analyze-track";
+import type { FeatureFrame } from "./audio/types";
 import { setupScene } from "./render/scene";
 import { createSimulation, type SimulationSnapshot } from "./game/sim";
 import { createDebugHud } from "./ui/debugHud";
@@ -20,12 +21,7 @@ const audioPanel = createAudioPanel(app, {
   },
   onStartRun(analysis, seed) {
     sim.setRandomSeed(seed);
-    sim.setIntensityTimeline(
-      analysis.frames.map((frame) => ({
-        timeSeconds: frame.timeSeconds,
-        intensity: frame.intensity
-      }))
-    );
+    sim.setIntensityTimeline(buildIntensityTimeline(analysis.frames));
     sim.startTrackRun(analysis.cues.map((cue) => cue.timeSeconds));
     appliedAnalysisRef = analysis;
   }
@@ -74,12 +70,7 @@ function animate(frameTimeMs: number): void {
       ? (snapshot.simTimeSeconds - audioPlaybackTimeSeconds) * 1000
       : null;
   if (analysis && analysis !== appliedAnalysisRef) {
-    sim.setIntensityTimeline(
-      analysis.frames.map((frame) => ({
-        timeSeconds: frame.timeSeconds,
-        intensity: frame.intensity
-      }))
-    );
+    sim.setIntensityTimeline(buildIntensityTimeline(analysis.frames));
     sim.setCueTimeline(analysis.cues.map((cue) => cue.timeSeconds));
     appliedAnalysisRef = analysis;
   }
@@ -117,4 +108,38 @@ window.addEventListener("resize", () => {
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
+}
+
+function buildIntensityTimeline(frames: FeatureFrame[]): Array<{
+  timeSeconds: number;
+  intensity: number;
+}> {
+  if (frames.length === 0) {
+    return [];
+  }
+
+  const output: Array<{ timeSeconds: number; intensity: number }> = [];
+  const targetIntervalSeconds = 1 / 30;
+  let nextTime = 0;
+
+  for (const frame of frames) {
+    if (frame.timeSeconds < nextTime) {
+      continue;
+    }
+    output.push({
+      timeSeconds: frame.timeSeconds,
+      intensity: frame.intensity
+    });
+    nextTime = frame.timeSeconds + targetIntervalSeconds;
+  }
+
+  const last = frames[frames.length - 1];
+  if (output[output.length - 1]?.timeSeconds !== last.timeSeconds) {
+    output.push({
+      timeSeconds: last.timeSeconds,
+      intensity: last.intensity
+    });
+  }
+
+  return output;
 }
