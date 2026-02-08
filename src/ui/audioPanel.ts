@@ -177,6 +177,13 @@ export function createAudioPanel(
     saveSeedToStorage(seedInput.value);
   });
 
+  window.addEventListener("beforeunload", () => {
+    if (trackUrl) {
+      URL.revokeObjectURL(trackUrl);
+      trackUrl = null;
+    }
+  });
+
   window.addEventListener("keydown", (event) => {
     const tag = (event.target as HTMLElement | null)?.tagName;
     if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") {
