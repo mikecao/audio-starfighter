@@ -76,7 +76,9 @@ function animate(frameTimeMs: number): void {
     cueResolvedCount: snapshot.cueResolvedCount,
     cueMissedCount: snapshot.cueMissedCount,
     avgCueErrorMs: snapshot.avgCueErrorMs,
-    currentIntensity: snapshot.currentIntensity
+    currentIntensity: snapshot.currentIntensity,
+    score: snapshot.score,
+    combo: snapshot.combo
   });
 
   requestAnimationFrame(animate);

@@ -10,6 +10,8 @@ type HudMetrics = {
   cueMissedCount: number;
   avgCueErrorMs: number;
   currentIntensity: number;
+  score: number;
+  combo: number;
 };
 
 export type DebugHud = {
@@ -40,7 +42,9 @@ export function createDebugHud(container: HTMLElement): DebugHud {
     { key: "cueResolvedCount", label: "Cue Hits" },
     { key: "cueMissedCount", label: "Cue Misses" },
     { key: "avgCueErrorMs", label: "Cue Error" },
-    { key: "currentIntensity", label: "Intensity" }
+    { key: "currentIntensity", label: "Intensity" },
+    { key: "score", label: "Score" },
+    { key: "combo", label: "Combo" }
   ] as const;
 
   const valueNodes = new Map<string, HTMLElement>();
@@ -76,6 +80,8 @@ export function createDebugHud(container: HTMLElement): DebugHud {
       valueNodes.get("cueMissedCount")!.textContent = String(metrics.cueMissedCount);
       valueNodes.get("avgCueErrorMs")!.textContent = `${metrics.avgCueErrorMs.toFixed(1)}ms`;
       valueNodes.get("currentIntensity")!.textContent = metrics.currentIntensity.toFixed(2);
+      valueNodes.get("score")!.textContent = String(metrics.score);
+      valueNodes.get("combo")!.textContent = `${metrics.combo}x`;
     }
   };
 }

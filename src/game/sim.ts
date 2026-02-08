@@ -36,6 +36,8 @@ export type SimulationSnapshot = {
   cueMissedCount: number;
   avgCueErrorMs: number;
   currentIntensity: number;
+  score: number;
+  combo: number;
 };
 
 type EnemyPattern = "straight" | "sine" | "arc";
@@ -116,6 +118,8 @@ type SimulationState = {
   cueResolvedCount: number;
   cueMissedCount: number;
   cumulativeCueErrorMs: number;
+  score: number;
+  combo: number;
   intensityTimeline: IntensitySample[];
   rng: () => number;
 };
@@ -148,6 +152,8 @@ export function createSimulation(): Simulation {
     cueResolvedCount: 0,
     cueMissedCount: 0,
     cumulativeCueErrorMs: 0,
+    score: 0,
+    combo: 0,
     intensityTimeline: [],
     rng: createMulberry32(7)
   };
@@ -238,7 +244,9 @@ export function createSimulation(): Simulation {
           state.cueResolvedCount > 0
             ? state.cumulativeCueErrorMs / state.cueResolvedCount
             : 0,
-        currentIntensity: getIntensityAtTime(state, state.simTimeSeconds)
+        currentIntensity: getIntensityAtTime(state, state.simTimeSeconds),
+        score: state.score,
+        combo: state.combo
       };
     },
     setCueTimeline(cueTimesSeconds) {
@@ -291,6 +299,8 @@ function resetRunState(state: SimulationState): void {
   state.cueResolvedCount = 0;
   state.cueMissedCount = 0;
   state.cumulativeCueErrorMs = 0;
+  state.score = 0;
+  state.combo = 0;
   state.cueStartOffsetSeconds = 0;
 }
 
@@ -534,8 +544,11 @@ function resolveDueCueExplosions(state: SimulationState): void {
       state.enemies.splice(targetIndex, 1);
       state.cueResolvedCount += 1;
       state.cumulativeCueErrorMs += cueErrorMs;
+      state.combo += 1;
+      state.score += 100 + Math.min(900, state.combo * 10);
     } else {
       state.cueMissedCount += 1;
+      state.combo = 0;
     }
   }
 }
