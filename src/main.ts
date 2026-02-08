@@ -19,6 +19,12 @@ const audioPanel = createAudioPanel(app, {
     return analyzeAudioTrack(file);
   },
   onStartRun(analysis) {
+    sim.setIntensityTimeline(
+      analysis.frames.map((frame) => ({
+        timeSeconds: frame.timeSeconds,
+        intensity: frame.intensity
+      }))
+    );
     sim.startTrackRun(analysis.cues.map((cue) => cue.timeSeconds));
     appliedAnalysisRef = analysis;
   }
@@ -46,6 +52,12 @@ function animate(frameTimeMs: number): void {
   const snapshot: SimulationSnapshot = sim.getSnapshot();
   const analysis = audioPanel.getLatestAnalysis();
   if (analysis && analysis !== appliedAnalysisRef) {
+    sim.setIntensityTimeline(
+      analysis.frames.map((frame) => ({
+        timeSeconds: frame.timeSeconds,
+        intensity: frame.intensity
+      }))
+    );
     sim.setCueTimeline(analysis.cues.map((cue) => cue.timeSeconds));
     appliedAnalysisRef = analysis;
   }
@@ -62,7 +74,8 @@ function animate(frameTimeMs: number): void {
     cueCount: analysis?.cues.length ?? 0,
     cueResolvedCount: snapshot.cueResolvedCount,
     cueMissedCount: snapshot.cueMissedCount,
-    avgCueErrorMs: snapshot.avgCueErrorMs
+    avgCueErrorMs: snapshot.avgCueErrorMs,
+    currentIntensity: snapshot.currentIntensity
   });
 
   requestAnimationFrame(animate);

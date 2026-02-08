@@ -35,6 +35,7 @@ export type SimulationSnapshot = {
   cueResolvedCount: number;
   cueMissedCount: number;
   avgCueErrorMs: number;
+  currentIntensity: number;
 };
 
 type EnemyPattern = "straight" | "sine" | "arc";
@@ -91,6 +92,11 @@ type ScheduledCue = {
   planned: boolean;
 };
 
+type IntensitySample = {
+  timeSeconds: number;
+  intensity: number;
+};
+
 type SimulationState = {
   simTimeSeconds: number;
   simTick: number;
@@ -110,6 +116,7 @@ type SimulationState = {
   cueResolvedCount: number;
   cueMissedCount: number;
   cumulativeCueErrorMs: number;
+  intensityTimeline: IntensitySample[];
   rng: () => number;
 };
 
@@ -118,6 +125,7 @@ export type Simulation = {
   getSnapshot: () => SimulationSnapshot;
   setCueTimeline: (cueTimesSeconds: number[]) => void;
   startTrackRun: (cueTimesSeconds: number[]) => void;
+  setIntensityTimeline: (samples: IntensitySample[]) => void;
 };
 
 export function createSimulation(): Simulation {
@@ -140,6 +148,7 @@ export function createSimulation(): Simulation {
     cueResolvedCount: 0,
     cueMissedCount: 0,
     cumulativeCueErrorMs: 0,
+    intensityTimeline: [],
     rng: createMulberry32(7)
   };
 
@@ -228,7 +237,8 @@ export function createSimulation(): Simulation {
         avgCueErrorMs:
           state.cueResolvedCount > 0
             ? state.cumulativeCueErrorMs / state.cueResolvedCount
-            : 0
+            : 0,
+        currentIntensity: getIntensityAtTime(state, state.simTimeSeconds)
       };
     },
     setCueTimeline(cueTimesSeconds) {
@@ -251,6 +261,15 @@ export function createSimulation(): Simulation {
           timeSeconds: time,
           planned: false
         }));
+    },
+    setIntensityTimeline(samples) {
+      state.intensityTimeline = samples
+        .filter((sample) => Number.isFinite(sample.timeSeconds))
+        .map((sample) => ({
+          timeSeconds: Math.max(0, sample.timeSeconds),
+          intensity: clamp(sample.intensity, 0, 1)
+        }))
+        .sort((a, b) => a.timeSeconds - b.timeSeconds);
     }
   };
 }
@@ -277,6 +296,7 @@ function resetRunState(state: SimulationState): void {
 
 function spawnEnemies(state: SimulationState): void {
   while (state.simTimeSeconds >= state.nextEnemySpawnTime) {
+    const intensity = getIntensityAtTime(state, state.simTimeSeconds);
     const lane = (state.spawnIndex % 5) - 2;
     const patternSelector = state.spawnIndex % 3;
     const pattern: EnemyPattern =
@@ -287,7 +307,7 @@ function spawnEnemies(state: SimulationState): void {
       x: 13 + state.rng() * 2.5,
       y: lane * 1.6,
       z: 0,
-      vx: -2.7 - state.rng() * 1.1,
+      vx: -2.5 - intensity * 1.8 - state.rng() * 0.95,
       ageSeconds: 0,
       pattern,
       baseY: lane * 1.6,
@@ -295,17 +315,19 @@ function spawnEnemies(state: SimulationState): void {
       amplitude: 0.35 + state.rng() * 1.25,
       frequency: 1 + state.rng() * 1.4,
       radius: 0.44,
-      fireCooldownSeconds: 0.65 + state.rng() * 0.75,
+      fireCooldownSeconds: 0.5 + (1 - intensity) * 0.8 + state.rng() * 0.5,
       scheduledCueTime: null
     });
 
     state.spawnIndex += 1;
-    state.nextEnemySpawnTime += 0.62 + state.rng() * 0.32;
+    const cadence = 0.9 - intensity * 0.5;
+    state.nextEnemySpawnTime += clamp(cadence + state.rng() * 0.35, 0.28, 1.1);
   }
 }
 
 function fireProjectiles(state: SimulationState): void {
   while (state.simTimeSeconds >= state.nextPlayerFireTime) {
+    const intensity = getIntensityAtTime(state, state.simTimeSeconds);
     const projectileSpeed = 14;
     const shipX = state.shipX + 0.65;
     const shipY = state.shipY;
@@ -335,11 +357,14 @@ function fireProjectiles(state: SimulationState): void {
       radius: 0.16
     });
 
-    state.nextPlayerFireTime += 0.17;
+    const interval = 0.2 - intensity * 0.08;
+    state.nextPlayerFireTime += clamp(interval, 0.1, 0.24);
   }
 }
 
 function updateEnemies(state: SimulationState, deltaSeconds: number): void {
+  const intensity = getIntensityAtTime(state, state.simTimeSeconds);
+
   for (const enemy of state.enemies) {
     enemy.ageSeconds += deltaSeconds;
     enemy.x += enemy.vx * deltaSeconds;
@@ -361,7 +386,7 @@ function updateEnemies(state: SimulationState, deltaSeconds: number): void {
     enemy.fireCooldownSeconds -= deltaSeconds;
     if (enemy.fireCooldownSeconds <= 0 && enemy.x > state.shipX + 2.5) {
       spawnEnemyProjectile(state, enemy);
-      enemy.fireCooldownSeconds = 1 + state.rng() * 1.2;
+      enemy.fireCooldownSeconds = 0.5 + (1 - intensity) * 1 + state.rng() * 0.55;
     }
   }
 }
@@ -668,6 +693,35 @@ function spawnExplosion(state: SimulationState, x: number, y: number, z: number)
     ageSeconds: 0,
     lifetimeSeconds: 0.33
   });
+}
+
+function getIntensityAtTime(state: SimulationState, timeSeconds: number): number {
+  const timeline = state.intensityTimeline;
+  if (timeline.length === 0) {
+    return 0.5;
+  }
+
+  if (timeSeconds <= timeline[0].timeSeconds) {
+    return timeline[0].intensity;
+  }
+
+  const last = timeline[timeline.length - 1];
+  if (timeSeconds >= last.timeSeconds) {
+    return last.intensity;
+  }
+
+  for (let i = 1; i < timeline.length; i += 1) {
+    const next = timeline[i];
+    if (timeSeconds > next.timeSeconds) {
+      continue;
+    }
+    const prev = timeline[i - 1];
+    const span = Math.max(next.timeSeconds - prev.timeSeconds, 1e-6);
+    const t = (timeSeconds - prev.timeSeconds) / span;
+    return prev.intensity + (next.intensity - prev.intensity) * t;
+  }
+
+  return last.intensity;
 }
 
 function createMulberry32(seed: number): () => number {

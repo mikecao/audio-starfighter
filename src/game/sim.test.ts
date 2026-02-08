@@ -30,4 +30,20 @@ describe("simulation cue scheduling", () => {
     expect(afterReset.enemyCount).toBe(0);
     expect(afterReset.projectileCount).toBe(0);
   });
+
+  it("interpolates current intensity from provided timeline samples", () => {
+    const sim = createSimulation();
+    sim.setIntensityTimeline([
+      { timeSeconds: 0, intensity: 0 },
+      { timeSeconds: 2, intensity: 1 }
+    ]);
+
+    for (let i = 0; i < 60; i += 1) {
+      sim.step(1 / 60);
+    }
+
+    const snapshot = sim.getSnapshot();
+    expect(snapshot.currentIntensity).toBeGreaterThan(0.45);
+    expect(snapshot.currentIntensity).toBeLessThan(0.55);
+  });
 });
