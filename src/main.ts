@@ -15,6 +15,7 @@ if (!app) {
 const scene = setupScene(app);
 const sim = createSimulation();
 const hud = createDebugHud(app);
+let latestSnapshot: SimulationSnapshot = sim.getSnapshot();
 const audioPanel = createAudioPanel(app, {
   onAnalyze(file) {
     return analyzeAudioTrack(file);
@@ -24,6 +25,30 @@ const audioPanel = createAudioPanel(app, {
     sim.setIntensityTimeline(buildIntensityTimeline(analysis.frames));
     sim.startTrackRun(analysis.cues.map((cue) => cue.timeSeconds));
     appliedAnalysisRef = analysis;
+  },
+  onExportSummary(seed) {
+    const analysis = audioPanel.getLatestAnalysis();
+    if (!analysis) {
+      return null;
+    }
+
+    return {
+      exportedAtIso: new Date().toISOString(),
+      trackFileName: analysis.fileName,
+      seed,
+      bpm: analysis.beat.bpm,
+      cueCount: analysis.cues.length,
+      simTimeSeconds: latestSnapshot.simTimeSeconds,
+      cueResolvedCount: latestSnapshot.cueResolvedCount,
+      cueMissedCount: latestSnapshot.cueMissedCount,
+      avgCueErrorMs: latestSnapshot.avgCueErrorMs,
+      score: latestSnapshot.score,
+      combo: latestSnapshot.combo,
+      playbackDriftMs:
+        analysis && audioPanel.getAudioPlaybackTime() > 0
+          ? (latestSnapshot.simTimeSeconds - audioPanel.getAudioPlaybackTime()) * 1000
+          : null
+    };
   }
 });
 let appliedAnalysisRef: object | null = null;
@@ -63,6 +88,7 @@ function animate(frameTimeMs: number): void {
 
   const alpha = accumulatorSeconds / fixedStepSeconds;
   const snapshot: SimulationSnapshot = sim.getSnapshot();
+  latestSnapshot = snapshot;
   lastSimTimeSeconds = snapshot.simTimeSeconds;
   const audioPlaybackTimeSeconds = audioPanel.getAudioPlaybackTime();
   const playbackDriftMs =

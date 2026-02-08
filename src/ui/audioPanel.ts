@@ -5,6 +5,7 @@ const RUN_SEED_STORAGE_KEY = "audio-starfighter.run-seed";
 type AudioPanelHandlers = {
   onAnalyze: (file: File) => Promise<AudioAnalysisResult>;
   onStartRun: (analysis: AudioAnalysisResult, seed: number) => void;
+  onExportSummary: (seed: number) => Record<string, unknown> | null;
 };
 
 export type AudioPanel = {
@@ -61,6 +62,13 @@ export function createAudioPanel(
   restartButton.textContent = "Restart Run";
   restartButton.disabled = true;
   panel.appendChild(restartButton);
+
+  const exportButton = document.createElement("button");
+  exportButton.className = "audio-panel__run audio-panel__run--secondary";
+  exportButton.type = "button";
+  exportButton.textContent = "Export Summary";
+  exportButton.disabled = false;
+  panel.appendChild(exportButton);
 
   const seedRow = document.createElement("div");
   seedRow.className = "audio-panel__seed-row";
@@ -143,6 +151,26 @@ export function createAudioPanel(
 
   restartButton.addEventListener("click", () => {
     startRun("restart");
+  });
+
+  exportButton.addEventListener("click", () => {
+    const seed = Number(seedInput.value);
+    const normalizedSeed = Number.isFinite(seed) ? seed : 7;
+    const summary = handlers.onExportSummary(normalizedSeed);
+    if (!summary) {
+      status.textContent = "No run summary available yet.";
+      return;
+    }
+
+    const json = JSON.stringify(summary, null, 2);
+    const blob = new Blob([json], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `run-summary-${Date.now()}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+    status.textContent = "Run summary exported.";
   });
 
   seedInput.addEventListener("change", () => {
