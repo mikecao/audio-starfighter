@@ -19,6 +19,11 @@ export type SimulationSnapshot = {
     y: number;
     z: number;
   }>;
+  enemyProjectiles: Array<{
+    x: number;
+    y: number;
+    z: number;
+  }>;
   explosions: Array<{
     x: number;
     y: number;
@@ -26,11 +31,13 @@ export type SimulationSnapshot = {
     scale: number;
     alpha: number;
   }>;
+  shieldAlpha: number;
 };
 
 type EnemyPattern = "straight" | "sine" | "arc";
 
 type Enemy = {
+  id: number;
   x: number;
   y: number;
   z: number;
@@ -42,9 +49,22 @@ type Enemy = {
   amplitude: number;
   frequency: number;
   radius: number;
+  fireCooldownSeconds: number;
+  scheduledCueTime: number | null;
 };
 
 type Projectile = {
+  x: number;
+  y: number;
+  z: number;
+  vx: number;
+  vy: number;
+  ageSeconds: number;
+  maxLifetimeSeconds: number;
+  radius: number;
+};
+
+type EnemyProjectile = {
   x: number;
   y: number;
   z: number;
@@ -63,23 +83,34 @@ type Explosion = {
   lifetimeSeconds: number;
 };
 
+type ScheduledCue = {
+  timeSeconds: number;
+  planned: boolean;
+};
+
 type SimulationState = {
   simTimeSeconds: number;
   simTick: number;
   shipX: number;
   shipY: number;
+  shipShieldAlpha: number;
   enemies: Enemy[];
   projectiles: Projectile[];
+  enemyProjectiles: EnemyProjectile[];
   explosions: Explosion[];
   nextEnemySpawnTime: number;
   nextPlayerFireTime: number;
   spawnIndex: number;
+  nextEnemyId: number;
+  cueTimeline: ScheduledCue[];
+  cueStartOffsetSeconds: number;
   rng: () => number;
 };
 
 export type Simulation = {
   step: (deltaSeconds: number) => void;
   getSnapshot: () => SimulationSnapshot;
+  setCueTimeline: (cueTimesSeconds: number[]) => void;
 };
 
 export function createSimulation(): Simulation {
@@ -88,12 +119,17 @@ export function createSimulation(): Simulation {
     simTick: 0,
     shipX: -6,
     shipY: 0,
+    shipShieldAlpha: 0,
     enemies: [],
     projectiles: [],
+    enemyProjectiles: [],
     explosions: [],
     nextEnemySpawnTime: 0.4,
     nextPlayerFireTime: 0.2,
     spawnIndex: 0,
+    nextEnemyId: 1,
+    cueTimeline: [],
+    cueStartOffsetSeconds: 0,
     rng: createMulberry32(7)
   };
 
@@ -102,15 +138,22 @@ export function createSimulation(): Simulation {
       state.simTimeSeconds += deltaSeconds;
       state.simTick += 1;
 
-      state.shipY = Math.sin(state.simTimeSeconds * 1.4) * 1.8;
       state.shipX = -6 + Math.sin(state.simTimeSeconds * 0.35) * 0.75;
+      const baseY = Math.sin(state.simTimeSeconds * 1.4) * 1.8;
+      state.shipY = steerShipY(state, baseY, deltaSeconds);
 
       spawnEnemies(state);
+      planCueShots(state);
       fireProjectiles(state);
       updateEnemies(state, deltaSeconds);
       updateProjectiles(state, deltaSeconds);
+      updateEnemyProjectiles(state, deltaSeconds);
       updateExplosions(state, deltaSeconds);
       resolvePlayerProjectileCollisions(state);
+      resolveEnemyProjectileShipCollisions(state);
+      resolveDueCueExplosions(state);
+
+      state.shipShieldAlpha = Math.max(0, state.shipShieldAlpha - deltaSeconds * 2.8);
 
       state.enemies = state.enemies.filter((enemy) => enemy.x > -16);
       state.projectiles = state.projectiles.filter(
@@ -118,6 +161,13 @@ export function createSimulation(): Simulation {
           projectile.ageSeconds < projectile.maxLifetimeSeconds &&
           projectile.x > -15 &&
           projectile.x < 20 &&
+          Math.abs(projectile.y) < 11
+      );
+      state.enemyProjectiles = state.enemyProjectiles.filter(
+        (projectile) =>
+          projectile.ageSeconds < projectile.maxLifetimeSeconds &&
+          projectile.x > -18 &&
+          projectile.x < 16 &&
           Math.abs(projectile.y) < 11
       );
       state.explosions = state.explosions.filter(
@@ -134,7 +184,7 @@ export function createSimulation(): Simulation {
           z: 0
         },
         enemyCount: state.enemies.length,
-        projectileCount: state.projectiles.length,
+        projectileCount: state.projectiles.length + state.enemyProjectiles.length,
         enemies: state.enemies.map((enemy) => ({
           x: enemy.x,
           y: enemy.y,
@@ -142,6 +192,11 @@ export function createSimulation(): Simulation {
           rotationZ: enemy.phase + enemy.ageSeconds * 2
         })),
         projectiles: state.projectiles.map((projectile) => ({
+          x: projectile.x,
+          y: projectile.y,
+          z: projectile.z
+        })),
+        enemyProjectiles: state.enemyProjectiles.map((projectile) => ({
           x: projectile.x,
           y: projectile.y,
           z: projectile.z
@@ -156,8 +211,18 @@ export function createSimulation(): Simulation {
             scale: 0.5 + normalizedAge * 1.5,
             alpha: 1 - normalizedAge
           };
-        })
+        }),
+        shieldAlpha: state.shipShieldAlpha
       };
+    },
+    setCueTimeline(cueTimesSeconds) {
+      state.cueStartOffsetSeconds = state.simTimeSeconds;
+      state.cueTimeline = cueTimesSeconds
+        .filter((time) => Number.isFinite(time) && time >= 0)
+        .map((time) => ({
+          timeSeconds: state.cueStartOffsetSeconds + time,
+          planned: false
+        }));
     }
   };
 }
@@ -170,6 +235,7 @@ function spawnEnemies(state: SimulationState): void {
       patternSelector === 0 ? "straight" : patternSelector === 1 ? "sine" : "arc";
 
     state.enemies.push({
+      id: state.nextEnemyId++,
       x: 13 + state.rng() * 2.5,
       y: lane * 1.6,
       z: 0,
@@ -180,7 +246,9 @@ function spawnEnemies(state: SimulationState): void {
       phase: state.rng() * Math.PI * 2,
       amplitude: 0.35 + state.rng() * 1.25,
       frequency: 1 + state.rng() * 1.4,
-      radius: 0.44
+      radius: 0.44,
+      fireCooldownSeconds: 0.65 + state.rng() * 0.75,
+      scheduledCueTime: null
     });
 
     state.spawnIndex += 1;
@@ -241,11 +309,25 @@ function updateEnemies(state: SimulationState, deltaSeconds: number): void {
           (enemy.amplitude * 0.55) +
         Math.sin(enemy.ageSeconds * 0.9) * 0.45;
     }
+
+    enemy.fireCooldownSeconds -= deltaSeconds;
+    if (enemy.fireCooldownSeconds <= 0 && enemy.x > state.shipX + 2.5) {
+      spawnEnemyProjectile(state, enemy);
+      enemy.fireCooldownSeconds = 1 + state.rng() * 1.2;
+    }
   }
 }
 
 function updateProjectiles(state: SimulationState, deltaSeconds: number): void {
   for (const projectile of state.projectiles) {
+    projectile.ageSeconds += deltaSeconds;
+    projectile.x += projectile.vx * deltaSeconds;
+    projectile.y += projectile.vy * deltaSeconds;
+  }
+}
+
+function updateEnemyProjectiles(state: SimulationState, deltaSeconds: number): void {
+  for (const projectile of state.enemyProjectiles) {
     projectile.ageSeconds += deltaSeconds;
     projectile.x += projectile.vx * deltaSeconds;
     projectile.y += projectile.vy * deltaSeconds;
@@ -277,13 +359,7 @@ function resolvePlayerProjectileCollisions(state: SimulationState): void {
       if (dx * dx + dy * dy <= radius * radius) {
         destroyedEnemies.add(e);
         destroyedProjectiles.add(p);
-        state.explosions.push({
-          x: enemy.x,
-          y: enemy.y,
-          z: enemy.z,
-          ageSeconds: 0,
-          lifetimeSeconds: 0.33
-        });
+        spawnExplosion(state, enemy.x, enemy.y, enemy.z);
         break;
       }
     }
@@ -297,6 +373,178 @@ function resolvePlayerProjectileCollisions(state: SimulationState): void {
       (_, index) => !destroyedProjectiles.has(index)
     );
   }
+}
+
+function resolveEnemyProjectileShipCollisions(state: SimulationState): void {
+  const kept: EnemyProjectile[] = [];
+
+  for (const projectile of state.enemyProjectiles) {
+    const dx = projectile.x - state.shipX;
+    const dy = projectile.y - state.shipY;
+    const radius = projectile.radius + 0.52;
+    if (dx * dx + dy * dy <= radius * radius) {
+      state.shipShieldAlpha = 1;
+      continue;
+    }
+
+    kept.push(projectile);
+  }
+
+  state.enemyProjectiles = kept;
+}
+
+function planCueShots(state: SimulationState): void {
+  if (state.cueTimeline.length === 0 || state.enemies.length === 0) {
+    return;
+  }
+
+  for (const cue of state.cueTimeline) {
+    if (cue.planned) {
+      continue;
+    }
+
+    const leadSeconds = cue.timeSeconds - state.simTimeSeconds;
+    if (leadSeconds < 0.2 || leadSeconds > 0.9) {
+      continue;
+    }
+
+    const candidate = findCueCandidate(state, cue.timeSeconds);
+    if (!candidate) {
+      continue;
+    }
+
+    const shipX = state.shipX + 0.65;
+    const shipY = state.shipY;
+    const dx = candidate.futureX - shipX;
+    const dy = candidate.futureY - shipY;
+
+    state.projectiles.push({
+      x: shipX,
+      y: shipY,
+      z: 0,
+      vx: dx / leadSeconds,
+      vy: dy / leadSeconds,
+      ageSeconds: 0,
+      maxLifetimeSeconds: leadSeconds + 0.12,
+      radius: 0.16
+    });
+
+    candidate.enemy.scheduledCueTime = cue.timeSeconds;
+    cue.planned = true;
+  }
+}
+
+function resolveDueCueExplosions(state: SimulationState): void {
+  if (state.cueTimeline.length === 0) {
+    return;
+  }
+
+  while (state.cueTimeline.length > 0 && state.cueTimeline[0].timeSeconds <= state.simTimeSeconds) {
+    const cue = state.cueTimeline.shift();
+    if (!cue) {
+      break;
+    }
+
+    let targetIndex = state.enemies.findIndex(
+      (enemy) => enemy.scheduledCueTime !== null && Math.abs(enemy.scheduledCueTime - cue.timeSeconds) < 0.06
+    );
+
+    if (targetIndex < 0 && state.enemies.length > 0) {
+      targetIndex = findClosestEnemyIndex(state.enemies, state.shipX, state.shipY);
+    }
+
+    if (targetIndex >= 0) {
+      const enemy = state.enemies[targetIndex];
+      spawnExplosion(state, enemy.x, enemy.y, enemy.z);
+      state.enemies.splice(targetIndex, 1);
+    }
+  }
+}
+
+function findCueCandidate(
+  state: SimulationState,
+  cueTimeSeconds: number
+): { enemy: Enemy; futureX: number; futureY: number } | null {
+  let best: { enemy: Enemy; futureX: number; futureY: number } | null = null;
+  let bestScore = Number.POSITIVE_INFINITY;
+
+  for (const enemy of state.enemies) {
+    if (enemy.scheduledCueTime !== null) {
+      continue;
+    }
+
+    const dt = cueTimeSeconds - state.simTimeSeconds;
+    if (dt <= 0) {
+      continue;
+    }
+
+    const future = predictEnemyPosition(enemy, dt);
+    const dx = future.x - state.shipX;
+    const dy = future.y - state.shipY;
+    const score = Math.abs(dy) * 1.5 + dx * 0.4;
+
+    if (future.x <= state.shipX + 0.8 || future.x >= 18) {
+      continue;
+    }
+
+    if (score < bestScore) {
+      bestScore = score;
+      best = {
+        enemy,
+        futureX: future.x,
+        futureY: future.y
+      };
+    }
+  }
+
+  return best;
+}
+
+function predictEnemyPosition(enemy: Enemy, dt: number): { x: number; y: number } {
+  const age = enemy.ageSeconds + dt;
+  const x = enemy.x + enemy.vx * dt;
+  let y = enemy.baseY;
+
+  if (enemy.pattern === "sine") {
+    y = enemy.baseY + Math.sin(enemy.phase + age * enemy.frequency) * enemy.amplitude;
+  } else if (enemy.pattern === "arc") {
+    y =
+      enemy.baseY +
+      Math.sin(enemy.phase + age * enemy.frequency * 1.2) * (enemy.amplitude * 0.55) +
+      Math.sin(age * 0.9) * 0.45;
+  }
+
+  return { x, y };
+}
+
+function steerShipY(state: SimulationState, baseY: number, deltaSeconds: number): number {
+  let avoidance = 0;
+
+  for (const projectile of state.enemyProjectiles) {
+    if (projectile.vx >= -0.2) {
+      continue;
+    }
+
+    const timeToShipX = (state.shipX - projectile.x) / projectile.vx;
+    if (timeToShipX < 0 || timeToShipX > 0.9) {
+      continue;
+    }
+
+    const predictedY = projectile.y + projectile.vy * timeToShipX;
+    const deltaY = baseY - predictedY;
+    const distance = Math.abs(deltaY);
+    if (distance > 1.6) {
+      continue;
+    }
+
+    const weight = (1.6 - distance) / 1.6;
+    avoidance += (deltaY >= 0 ? 1 : -1) * weight;
+  }
+
+  const dodgeOffset = clamp(avoidance * 1.35, -2, 2);
+  const targetY = clamp(baseY + dodgeOffset, -4.2, 4.2);
+  const steer = clamp((targetY - state.shipY) * 4.8 * deltaSeconds, -0.4, 0.4);
+  return state.shipY + steer;
 }
 
 function findBestTarget(enemies: Enemy[], shipX: number, shipY: number): Enemy | null {
@@ -320,6 +568,55 @@ function findBestTarget(enemies: Enemy[], shipX: number, shipY: number): Enemy |
   return bestEnemy;
 }
 
+function findClosestEnemyIndex(enemies: Enemy[], x: number, y: number): number {
+  let index = -1;
+  let bestDistance = Number.POSITIVE_INFINITY;
+
+  for (let i = 0; i < enemies.length; i += 1) {
+    const enemy = enemies[i];
+    const dx = enemy.x - x;
+    const dy = enemy.y - y;
+    const distance = dx * dx + dy * dy;
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      index = i;
+    }
+  }
+
+  return index;
+}
+
+function spawnEnemyProjectile(state: SimulationState, enemy: Enemy): void {
+  const speed = 6.8 + state.rng() * 2;
+  const jitter = (state.rng() - 0.5) * 0.55;
+  const targetX = state.shipX - 0.2;
+  const targetY = state.shipY + jitter;
+  const dx = targetX - enemy.x;
+  const dy = targetY - enemy.y;
+  const magnitude = Math.hypot(dx, dy) || 1;
+
+  state.enemyProjectiles.push({
+    x: enemy.x - 0.5,
+    y: enemy.y,
+    z: 0,
+    vx: (dx / magnitude) * speed,
+    vy: (dy / magnitude) * speed,
+    ageSeconds: 0,
+    maxLifetimeSeconds: 3,
+    radius: 0.18
+  });
+}
+
+function spawnExplosion(state: SimulationState, x: number, y: number, z: number): void {
+  state.explosions.push({
+    x,
+    y,
+    z,
+    ageSeconds: 0,
+    lifetimeSeconds: 0.33
+  });
+}
+
 function createMulberry32(seed: number): () => number {
   let t = seed >>> 0;
   return () => {
@@ -328,4 +625,8 @@ function createMulberry32(seed: number): () => number {
     value ^= value + Math.imul(value ^ (value >>> 7), 61 | value);
     return ((value ^ (value >>> 14)) >>> 0) / 4294967296;
   };
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
 }

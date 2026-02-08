@@ -47,6 +47,17 @@ export function setupScene(container: HTMLElement): RenderScene {
   });
   const shipMesh = new Mesh(shipGeometry, shipMaterial);
   scene.add(shipMesh);
+  const shieldMaterial = new MeshStandardMaterial({
+    color: "#7dd3fc",
+    transparent: true,
+    opacity: 0,
+    emissive: "#38bdf8",
+    emissiveIntensity: 0.5,
+    roughness: 0.2,
+    metalness: 0
+  });
+  const shieldMesh = new Mesh(new SphereGeometry(0.8, 16, 12), shieldMaterial);
+  scene.add(shieldMesh);
 
   const enemyMaterial = new MeshStandardMaterial({
     color: "#f87171",
@@ -67,6 +78,16 @@ export function setupScene(container: HTMLElement): RenderScene {
   const projectileGroup = new Group();
   scene.add(projectileGroup);
   const projectileMeshes: Mesh[] = [];
+  const enemyProjectileMaterial = new MeshStandardMaterial({
+    color: "#fb7185",
+    roughness: 0.25,
+    metalness: 0.1,
+    emissive: "#f43f5e",
+    emissiveIntensity: 0.7
+  });
+  const enemyProjectileGroup = new Group();
+  scene.add(enemyProjectileGroup);
+  const enemyProjectileMeshes: Mesh[] = [];
 
   const explosionGeometry = new SphereGeometry(0.4, 10, 8);
   const explosionMaterial = new MeshStandardMaterial({
@@ -110,6 +131,9 @@ export function setupScene(container: HTMLElement): RenderScene {
     update(snapshot) {
       shipMesh.position.set(snapshot.ship.x, snapshot.ship.y, snapshot.ship.z);
       shipMesh.rotation.z = snapshot.ship.y * -0.08;
+      shieldMesh.position.copy(shipMesh.position);
+      shieldMaterial.opacity = snapshot.shieldAlpha * 0.45;
+      shieldMesh.scale.setScalar(1 + snapshot.shieldAlpha * 0.5);
 
       syncMeshPool(enemyMeshes, snapshot.enemies.length, enemyGroup, () => {
         const mesh = new Mesh(enemyGeometry, enemyMaterial);
@@ -141,6 +165,27 @@ export function setupScene(container: HTMLElement): RenderScene {
       for (let i = 0; i < projectileMeshes.length; i += 1) {
         const mesh = projectileMeshes[i];
         const projectile = snapshot.projectiles[i];
+        if (!projectile) {
+          mesh.visible = false;
+          continue;
+        }
+        mesh.visible = true;
+        mesh.position.set(projectile.x, projectile.y, projectile.z);
+      }
+
+      syncMeshPool(
+        enemyProjectileMeshes,
+        snapshot.enemyProjectiles.length,
+        enemyProjectileGroup,
+        () => {
+          const mesh = new Mesh(projectileGeometry, enemyProjectileMaterial);
+          mesh.visible = false;
+          return mesh;
+        }
+      );
+      for (let i = 0; i < enemyProjectileMeshes.length; i += 1) {
+        const mesh = enemyProjectileMeshes[i];
+        const projectile = snapshot.enemyProjectiles[i];
         if (!projectile) {
           mesh.visible = false;
           continue;

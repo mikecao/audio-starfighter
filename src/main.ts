@@ -19,6 +19,7 @@ const audioPanel = createAudioPanel(app, {
     return analyzeAudioTrack(file);
   }
 });
+let appliedAnalysisFileName: string | null = null;
 
 let previousFrameTime = performance.now();
 let accumulatorSeconds = 0;
@@ -40,6 +41,10 @@ function animate(frameTimeMs: number): void {
   const alpha = accumulatorSeconds / fixedStepSeconds;
   const snapshot: SimulationSnapshot = sim.getSnapshot();
   const analysis = audioPanel.getLatestAnalysis();
+  if (analysis && analysis.fileName !== appliedAnalysisFileName) {
+    sim.setCueTimeline(analysis.cues.map((cue) => cue.timeSeconds));
+    appliedAnalysisFileName = analysis.fileName;
+  }
 
   scene.update(snapshot, alpha);
   scene.render();
