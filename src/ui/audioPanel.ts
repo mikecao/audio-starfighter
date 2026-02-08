@@ -138,35 +138,39 @@ export function createAudioPanel(
   });
 
   runButton.addEventListener("click", () => {
-    if (!latestAnalysis) {
-      return;
-    }
-    const seed = Number(seedInput.value);
-    handlers.onStartRun(latestAnalysis, Number.isFinite(seed) ? seed : 7);
-    playbackTimeSeconds = 0;
-    audio.currentTime = 0;
-    void audio.play().catch(() => {
-      status.textContent = "Press play to start audio playback.";
-    });
-    status.textContent = `Synced run started for ${latestAnalysis.fileName}`;
+    startRun("start");
   });
 
   restartButton.addEventListener("click", () => {
-    if (!latestAnalysis) {
-      return;
-    }
-    const seed = Number(seedInput.value);
-    handlers.onStartRun(latestAnalysis, Number.isFinite(seed) ? seed : 7);
-    playbackTimeSeconds = 0;
-    audio.currentTime = 0;
-    void audio.play().catch(() => {
-      status.textContent = "Press play to restart audio playback.";
-    });
-    status.textContent = `Run restarted for ${latestAnalysis.fileName}`;
+    startRun("restart");
   });
 
   seedInput.addEventListener("change", () => {
     saveSeedToStorage(seedInput.value);
+  });
+
+  window.addEventListener("keydown", (event) => {
+    const tag = (event.target as HTMLElement | null)?.tagName;
+    if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") {
+      return;
+    }
+
+    if (event.code === "Space") {
+      event.preventDefault();
+      if (audio.paused) {
+        void audio.play().catch(() => {
+          status.textContent = "Press play to start audio playback.";
+        });
+      } else {
+        audio.pause();
+      }
+      return;
+    }
+
+    if (event.code === "KeyR") {
+      event.preventDefault();
+      startRun("restart");
+    }
   });
 
   drawPlaceholder(canvas, "No data");
@@ -188,6 +192,27 @@ export function createAudioPanel(
       return !audio.paused && !audio.ended;
     }
   };
+
+  function startRun(mode: "start" | "restart"): void {
+    if (!latestAnalysis) {
+      return;
+    }
+
+    const seed = Number(seedInput.value);
+    handlers.onStartRun(latestAnalysis, Number.isFinite(seed) ? seed : 7);
+    playbackTimeSeconds = 0;
+    audio.currentTime = 0;
+    void audio.play().catch(() => {
+      status.textContent =
+        mode === "start"
+          ? "Press play to start audio playback."
+          : "Press play to restart audio playback.";
+    });
+    status.textContent =
+      mode === "start"
+        ? `Synced run started for ${latestAnalysis.fileName}`
+        : `Run restarted for ${latestAnalysis.fileName}`;
+  }
 }
 
 function loadSeedFromStorage(): string {
