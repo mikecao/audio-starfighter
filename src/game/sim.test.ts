@@ -129,4 +129,23 @@ describe("simulation cue scheduling", () => {
     const snapshot = sim.getSnapshot();
     expect(snapshot.moodProfile).toBe("aggressive");
   });
+
+  it("increases combat pressure in aggressive mood versus calm", () => {
+    const calm = createSimulation();
+    const aggressive = createSimulation();
+    calm.setRandomSeed(99);
+    aggressive.setRandomSeed(99);
+    calm.setMoodProfile("calm");
+    aggressive.setMoodProfile("aggressive");
+
+    for (let i = 0; i < 60 * 6; i += 1) {
+      calm.step(1 / 60);
+      aggressive.step(1 / 60);
+    }
+
+    const calmSnapshot = calm.getSnapshot();
+    const aggressiveSnapshot = aggressive.getSnapshot();
+    expect(aggressiveSnapshot.projectileCount).toBeGreaterThanOrEqual(calmSnapshot.projectileCount);
+    expect(aggressiveSnapshot.enemyCount).toBeGreaterThanOrEqual(calmSnapshot.enemyCount);
+  });
 });
