@@ -5,6 +5,7 @@ import { setupScene } from "./render/scene";
 import { createSimulation, type SimulationSnapshot } from "./game/sim";
 import { createDebugHud } from "./ui/debugHud";
 import { createAudioPanel } from "./ui/audioPanel";
+import { createEventTimeline } from "./ui/eventTimeline";
 
 const BEST_SCORE_STORAGE_PREFIX = "audio-starfighter.best-score";
 
@@ -17,9 +18,13 @@ if (!app) {
 const scene = setupScene(app);
 const sim = createSimulation();
 const hud = createDebugHud(app);
+const eventTimeline = createEventTimeline(app);
 let latestSnapshot: SimulationSnapshot = sim.getSnapshot();
 let currentBestScore = 0;
 let currentRunKey: string | null = null;
+let cachedTimelineAnalysisRef: object | null = null;
+let cachedTimelineCues: Array<{ timeSeconds: number; source: "beat" | "peak" }> | null = null;
+let usingBeatFallback = false;
 const audioPanel = createAudioPanel(app, {
   onAnalyze(file) {
     return analyzeAudioTrack(file);
@@ -130,6 +135,36 @@ function animate(frameTimeMs: number): void {
   scene.update(snapshot, alpha);
   scene.render();
   audioPanel.setPlaybackTime(snapshot.simTimeSeconds);
+  if (analysis !== cachedTimelineAnalysisRef) {
+    if (analysis) {
+      if (analysis.cues.length > 0) {
+        cachedTimelineCues = analysis.cues.map((cue) => ({
+          timeSeconds: cue.timeSeconds,
+          source: cue.source
+        }));
+        usingBeatFallback = false;
+      } else {
+        cachedTimelineCues = analysis.beat.beatTimesSeconds.map((timeSeconds) => ({
+          timeSeconds,
+          source: "beat" as const
+        }));
+        usingBeatFallback = true;
+      }
+    } else {
+      cachedTimelineCues = null;
+      usingBeatFallback = false;
+    }
+    cachedTimelineAnalysisRef = analysis;
+  }
+
+  eventTimeline.update({
+    simTimeSeconds: snapshot.simTimeSeconds,
+    audioTimeSeconds: analysis && audioPlaybackTimeSeconds > 0 ? audioPlaybackTimeSeconds : null,
+    cueResolvedCount: snapshot.cueResolvedCount,
+    cueMissedCount: snapshot.cueMissedCount,
+    cues: cachedTimelineCues,
+    usingBeatFallback
+  });
   hud.update({
     fps: frameSeconds > 0 ? 1 / frameSeconds : 0,
     simTimeSeconds: snapshot.simTimeSeconds,
