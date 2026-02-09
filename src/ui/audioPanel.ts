@@ -96,6 +96,7 @@ export function createAudioPanel(
   let requestId = 0;
   let trackUrl: string | null = null;
   let playbackTimeSeconds = 0;
+  let lastTimelineDrawPlaybackTime = -1;
 
   fileInput.addEventListener("change", async () => {
     const file = fileInput.files?.[0];
@@ -133,6 +134,7 @@ export function createAudioPanel(
       ].join(" | ");
 
       drawTimeline(canvas, analysis, playbackTimeSeconds);
+      lastTimelineDrawPlaybackTime = playbackTimeSeconds;
     } catch (error) {
       if (currentRequestId !== requestId) {
         return;
@@ -218,7 +220,16 @@ export function createAudioPanel(
     setPlaybackTime(timeSeconds) {
       playbackTimeSeconds = Math.max(0, timeSeconds);
       if (latestAnalysis) {
+        const shouldRedraw =
+          lastTimelineDrawPlaybackTime < 0 ||
+          Math.abs(playbackTimeSeconds - lastTimelineDrawPlaybackTime) >= 1 / 30 ||
+          playbackTimeSeconds === 0 ||
+          playbackTimeSeconds >= latestAnalysis.durationSeconds;
+        if (!shouldRedraw) {
+          return;
+        }
         drawTimeline(canvas, latestAnalysis, playbackTimeSeconds);
+        lastTimelineDrawPlaybackTime = playbackTimeSeconds;
       }
     },
     getAudioPlaybackTime() {
@@ -237,6 +248,7 @@ export function createAudioPanel(
     const seed = Number(seedInput.value);
     handlers.onStartRun(latestAnalysis, Number.isFinite(seed) ? seed : 7);
     playbackTimeSeconds = 0;
+    lastTimelineDrawPlaybackTime = -1;
     audio.currentTime = 0;
     void audio.play().catch(() => {
       status.textContent =
