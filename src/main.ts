@@ -54,6 +54,7 @@ const audioPanel = createAudioPanel(app, {
           : 0,
       pendingCueCount: latestSnapshot.pendingCueCount,
       plannedCueCount: latestSnapshot.plannedCueCount,
+      queuedCueShotCount: latestSnapshot.queuedCueShotCount,
       avgCueErrorMs: latestSnapshot.avgCueErrorMs,
       score: latestSnapshot.score,
       bestScore: currentBestScore,
