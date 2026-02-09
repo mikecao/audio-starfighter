@@ -61,6 +61,7 @@ type Enemy = {
   radius: number;
   fireCooldownSeconds: number;
   scheduledCueTime: number | null;
+  cuePrimed: boolean;
 };
 
 type Projectile = {
@@ -283,6 +284,7 @@ export function createSimulation(): Simulation {
       state.plannedCueShots = [];
       for (const enemy of state.enemies) {
         enemy.scheduledCueTime = null;
+        enemy.cuePrimed = false;
       }
       state.cueTimeline = cueTimesSeconds
         .filter((time) => Number.isFinite(time) && time >= 0)
@@ -372,7 +374,8 @@ function spawnEnemies(state: SimulationState): void {
       fireCooldownSeconds:
         (0.5 + (1 - intensity) * 0.8 + state.rng() * 0.5) *
         mood.enemyFireIntervalScale,
-      scheduledCueTime: null
+      scheduledCueTime: null,
+      cuePrimed: false
     });
 
     state.spawnIndex += 1;
@@ -479,7 +482,7 @@ function resolvePlayerProjectileCollisions(state: SimulationState): void {
   for (let p = 0; p < state.projectiles.length; p += 1) {
     const projectile = state.projectiles[p];
 
-    for (let e = 0; e < state.enemies.length; e += 1) {
+      for (let e = 0; e < state.enemies.length; e += 1) {
       if (destroyedEnemies.has(e)) {
         continue;
       }
@@ -489,6 +492,15 @@ function resolvePlayerProjectileCollisions(state: SimulationState): void {
       const dy = enemy.y - projectile.y;
       const radius = enemy.radius + projectile.radius;
       if (dx * dx + dy * dy <= radius * radius) {
+        const timeUntilCue =
+          enemy.scheduledCueTime === null ? Number.POSITIVE_INFINITY : enemy.scheduledCueTime - state.simTimeSeconds;
+
+        if (enemy.scheduledCueTime !== null && timeUntilCue > 0.04) {
+          enemy.cuePrimed = true;
+          destroyedProjectiles.add(p);
+          break;
+        }
+
         destroyedEnemies.add(e);
         destroyedProjectiles.add(p);
         spawnExplosion(state, enemy.x, enemy.y, enemy.z);
@@ -630,7 +642,7 @@ function resolveDueCueExplosions(state: SimulationState): void {
         ? -1
         : state.enemies.findIndex((enemy) => enemy.id === cue.assignedEnemyId);
 
-    if (targetIndex >= 0 && scheduledEnemyHasPlayerShotNearby(state, state.enemies[targetIndex])) {
+    if (targetIndex >= 0 && scheduledEnemyHasCueHit(state, state.enemies[targetIndex])) {
       const enemy = state.enemies[targetIndex];
       spawnExplosion(state, enemy.x, enemy.y, enemy.z);
       state.enemies.splice(targetIndex, 1);
@@ -645,7 +657,11 @@ function resolveDueCueExplosions(state: SimulationState): void {
   }
 }
 
-function scheduledEnemyHasPlayerShotNearby(state: SimulationState, enemy: Enemy): boolean {
+function scheduledEnemyHasCueHit(state: SimulationState, enemy: Enemy): boolean {
+  if (enemy.cuePrimed) {
+    return true;
+  }
+
   const hitRadius = enemy.radius + 0.28;
   const hitRadiusSq = hitRadius * hitRadius;
 
