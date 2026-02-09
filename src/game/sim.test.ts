@@ -122,4 +122,11 @@ describe("simulation cue scheduling", () => {
     expect(afterReset.pendingCueCount).toBe(2);
     expect(afterReset.plannedCueCount).toBe(0);
   });
+
+  it("exposes configured mood profile in snapshot", () => {
+    const sim = createSimulation();
+    sim.setMoodProfile("aggressive");
+    const snapshot = sim.getSnapshot();
+    expect(snapshot.moodProfile).toBe("aggressive");
+  });
 });

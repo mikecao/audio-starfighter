@@ -2,12 +2,14 @@ import { detectBeats } from "./beat-detector";
 import { generateCues } from "./cue-generator";
 import { decodeAudioFile } from "./decoder";
 import { extractFeatureFrames } from "./feature-extractor";
+import { classifyMood } from "./mood-classifier";
 import type { AudioAnalysisResult } from "./types";
 
 export async function analyzeAudioTrack(file: File): Promise<AudioAnalysisResult> {
   const track = await decodeAudioFile(file);
   const frames = extractFeatureFrames(track);
   const beat = detectBeats(frames);
+  const mood = classifyMood(frames, beat);
   const cues = generateCues(frames, beat);
 
   return {
@@ -16,6 +18,7 @@ export async function analyzeAudioTrack(file: File): Promise<AudioAnalysisResult
     sampleRate: track.sampleRate,
     frames,
     beat,
+    mood,
     cues
   };
 }

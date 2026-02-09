@@ -126,6 +126,7 @@ export function createAudioPanel(
       status.textContent = `Analyzed ${analysis.fileName}`;
       stats.textContent = [
         `BPM ${analysis.beat.bpm.toFixed(1)}`,
+        `Mood ${analysis.mood.label}`,
         `Cues ${analysis.cues.length}`,
         `Duration ${analysis.durationSeconds.toFixed(1)}s`,
         `Confidence ${(analysis.beat.confidence * 100).toFixed(0)}%`

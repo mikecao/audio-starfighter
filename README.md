@@ -21,6 +21,7 @@ drives game pacing and combat scheduling from that analysis.
 - Audio analysis panel:
   - load and analyze audio file
   - intensity/cue timeline view with playhead
+  - mood classification (`calm`, `driving`, `aggressive`)
   - synced run start/restart and playback controls
   - deterministic run seed input (persisted locally)
   - JSON export of run summary metrics

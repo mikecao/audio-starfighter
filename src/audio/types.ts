@@ -20,6 +20,13 @@ export type BeatAnalysis = {
   confidence: number;
 };
 
+export type MoodLabel = "calm" | "driving" | "aggressive";
+
+export type MoodAnalysis = {
+  label: MoodLabel;
+  confidence: number;
+};
+
 export type CuePoint = {
   timeSeconds: number;
   strength: number;
@@ -32,5 +39,6 @@ export type AudioAnalysisResult = {
   sampleRate: number;
   frames: FeatureFrame[];
   beat: BeatAnalysis;
+  mood: MoodAnalysis;
   cues: CuePoint[];
 };

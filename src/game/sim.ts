@@ -41,6 +41,7 @@ export type SimulationSnapshot = {
   pendingCueCount: number;
   plannedCueCount: number;
   queuedCueShotCount: number;
+  moodProfile: "calm" | "driving" | "aggressive";
 };
 
 type EnemyPattern = "straight" | "sine" | "arc";
@@ -109,6 +110,8 @@ type IntensitySample = {
   intensity: number;
 };
 
+type MoodProfile = "calm" | "driving" | "aggressive";
+
 type SimulationState = {
   simTimeSeconds: number;
   simTick: number;
@@ -132,6 +135,7 @@ type SimulationState = {
   score: number;
   combo: number;
   intensityTimeline: IntensitySample[];
+  moodProfile: MoodProfile;
   randomSeed: number;
   rng: () => number;
 };
@@ -143,6 +147,7 @@ export type Simulation = {
   startTrackRun: (cueTimesSeconds: number[]) => void;
   setIntensityTimeline: (samples: IntensitySample[]) => void;
   setRandomSeed: (seed: number) => void;
+  setMoodProfile: (mood: MoodProfile) => void;
 };
 
 export function createSimulation(): Simulation {
@@ -169,6 +174,7 @@ export function createSimulation(): Simulation {
     score: 0,
     combo: 0,
     intensityTimeline: [],
+    moodProfile: "driving",
     randomSeed: 7,
     rng: createMulberry32(7)
   };
@@ -265,7 +271,8 @@ export function createSimulation(): Simulation {
         combo: state.combo,
         pendingCueCount: state.cueTimeline.length,
         plannedCueCount: countPlannedCues(state.cueTimeline),
-        queuedCueShotCount: state.plannedCueShots.length
+        queuedCueShotCount: state.plannedCueShots.length,
+        moodProfile: state.moodProfile
       };
     },
     setCueTimeline(cueTimesSeconds) {
@@ -308,6 +315,9 @@ export function createSimulation(): Simulation {
       const normalized = normalizeSeed(seed);
       state.randomSeed = normalized;
       state.rng = createMulberry32(normalized);
+    },
+    setMoodProfile(mood) {
+      state.moodProfile = mood;
     }
   };
 }
@@ -333,12 +343,14 @@ function resetRunState(state: SimulationState): void {
   state.score = 0;
   state.combo = 0;
   state.cueStartOffsetSeconds = 0;
+  state.moodProfile = "driving";
   state.rng = createMulberry32(state.randomSeed);
 }
 
 function spawnEnemies(state: SimulationState): void {
   while (state.simTimeSeconds >= state.nextEnemySpawnTime) {
     const intensity = getIntensityAtTime(state, state.simTimeSeconds);
+    const mood = moodParameters(state.moodProfile);
     const lane = (state.spawnIndex % 5) - 2;
     const patternSelector = state.spawnIndex % 3;
     const pattern: EnemyPattern =
@@ -349,7 +361,7 @@ function spawnEnemies(state: SimulationState): void {
       x: 13 + state.rng() * 2.5,
       y: lane * 1.6,
       z: 0,
-      vx: -2.5 - intensity * 1.8 - state.rng() * 0.95,
+      vx: (-2.5 - intensity * 1.8 - state.rng() * 0.95) * mood.enemySpeedScale,
       ageSeconds: 0,
       pattern,
       baseY: lane * 1.6,
@@ -357,12 +369,14 @@ function spawnEnemies(state: SimulationState): void {
       amplitude: 0.35 + state.rng() * 1.25,
       frequency: 1 + state.rng() * 1.4,
       radius: 0.44,
-      fireCooldownSeconds: 0.5 + (1 - intensity) * 0.8 + state.rng() * 0.5,
+      fireCooldownSeconds:
+        (0.5 + (1 - intensity) * 0.8 + state.rng() * 0.5) *
+        mood.enemyFireIntervalScale,
       scheduledCueTime: null
     });
 
     state.spawnIndex += 1;
-    const cadence = 0.9 - intensity * 0.5;
+    const cadence = (0.9 - intensity * 0.5) * mood.spawnIntervalScale;
     state.nextEnemySpawnTime += clamp(cadence + state.rng() * 0.35, 0.28, 1.1);
   }
 }
@@ -370,6 +384,7 @@ function spawnEnemies(state: SimulationState): void {
 function fireProjectiles(state: SimulationState): void {
   while (state.simTimeSeconds >= state.nextPlayerFireTime) {
     const intensity = getIntensityAtTime(state, state.simTimeSeconds);
+    const mood = moodParameters(state.moodProfile);
     const projectileSpeed = 14;
     const shipX = state.shipX + 0.65;
     const shipY = state.shipY;
@@ -399,13 +414,14 @@ function fireProjectiles(state: SimulationState): void {
       radius: 0.16
     });
 
-    const interval = 0.2 - intensity * 0.08;
+    const interval = (0.2 - intensity * 0.08) * mood.playerFireIntervalScale;
     state.nextPlayerFireTime += clamp(interval, 0.1, 0.24);
   }
 }
 
 function updateEnemies(state: SimulationState, deltaSeconds: number): void {
   const intensity = getIntensityAtTime(state, state.simTimeSeconds);
+  const mood = moodParameters(state.moodProfile);
 
   for (const enemy of state.enemies) {
     enemy.ageSeconds += deltaSeconds;
@@ -428,7 +444,8 @@ function updateEnemies(state: SimulationState, deltaSeconds: number): void {
     enemy.fireCooldownSeconds -= deltaSeconds;
     if (enemy.fireCooldownSeconds <= 0 && enemy.x > state.shipX + 2.5) {
       spawnEnemyProjectile(state, enemy);
-      enemy.fireCooldownSeconds = 0.5 + (1 - intensity) * 1 + state.rng() * 0.55;
+      enemy.fireCooldownSeconds =
+        (0.5 + (1 - intensity) * 1 + state.rng() * 0.55) * mood.enemyFireIntervalScale;
     }
   }
 }
@@ -849,4 +866,34 @@ function normalizeSeed(value: number): number {
   }
   const int = Math.trunc(value);
   return int >>> 0;
+}
+
+function moodParameters(mood: MoodProfile): {
+  enemySpeedScale: number;
+  spawnIntervalScale: number;
+  enemyFireIntervalScale: number;
+  playerFireIntervalScale: number;
+} {
+  if (mood === "calm") {
+    return {
+      enemySpeedScale: 0.88,
+      spawnIntervalScale: 1.12,
+      enemyFireIntervalScale: 1.15,
+      playerFireIntervalScale: 1.04
+    };
+  }
+  if (mood === "aggressive") {
+    return {
+      enemySpeedScale: 1.18,
+      spawnIntervalScale: 0.86,
+      enemyFireIntervalScale: 0.82,
+      playerFireIntervalScale: 0.92
+    };
+  }
+  return {
+    enemySpeedScale: 1,
+    spawnIntervalScale: 1,
+    enemyFireIntervalScale: 1,
+    playerFireIntervalScale: 1
+  };
 }

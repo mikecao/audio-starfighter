@@ -26,6 +26,7 @@ const audioPanel = createAudioPanel(app, {
   },
   onStartRun(analysis, seed) {
     sim.setRandomSeed(seed);
+    sim.setMoodProfile(analysis.mood.label);
     sim.setIntensityTimeline(buildIntensityTimeline(analysis.frames));
     sim.startTrackRun(analysis.cues.map((cue) => cue.timeSeconds));
     appliedAnalysisRef = analysis;
@@ -43,6 +44,8 @@ const audioPanel = createAudioPanel(app, {
       trackFileName: analysis.fileName,
       seed,
       bpm: analysis.beat.bpm,
+      mood: analysis.mood.label,
+      moodConfidence: analysis.mood.confidence,
       cueCount: analysis.cues.length,
       simTimeSeconds: latestSnapshot.simTimeSeconds,
       cueResolvedCount: latestSnapshot.cueResolvedCount,
@@ -111,6 +114,7 @@ function animate(frameTimeMs: number): void {
       ? (snapshot.simTimeSeconds - audioPlaybackTimeSeconds) * 1000
       : null;
   if (analysis && analysis !== appliedAnalysisRef) {
+    sim.setMoodProfile(analysis.mood.label);
     sim.setIntensityTimeline(buildIntensityTimeline(analysis.frames));
     sim.setCueTimeline(analysis.cues.map((cue) => cue.timeSeconds));
     appliedAnalysisRef = analysis;
@@ -144,7 +148,8 @@ function animate(frameTimeMs: number): void {
     pendingCueCount: snapshot.pendingCueCount,
     plannedCueCount: snapshot.plannedCueCount,
     queuedCueShotCount: snapshot.queuedCueShotCount,
-    bestScore: currentBestScore
+    bestScore: currentBestScore,
+    moodProfile: snapshot.moodProfile
   });
 
   requestAnimationFrame(animate);
