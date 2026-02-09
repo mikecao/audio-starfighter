@@ -271,6 +271,10 @@ export function createSimulation(): Simulation {
       state.cueResolvedCount = 0;
       state.cueMissedCount = 0;
       state.cumulativeCueErrorMs = 0;
+      state.plannedCueShots = [];
+      for (const enemy of state.enemies) {
+        enemy.scheduledCueTime = null;
+      }
       state.cueTimeline = cueTimesSeconds
         .filter((time) => Number.isFinite(time) && time >= 0)
         .map((time) => ({
