@@ -104,4 +104,22 @@ describe("simulation cue scheduling", () => {
     const afterCue = sim.getSnapshot();
     expect(afterCue.cueResolvedCount + afterCue.cueMissedCount).toBe(1);
   });
+
+  it("resets cue progress when applying a new cue timeline", () => {
+    const sim = createSimulation();
+    sim.startTrackRun([0.5, 1.0]);
+
+    for (let i = 0; i < 60 * 1.2; i += 1) {
+      sim.step(1 / 60);
+    }
+    const beforeReset = sim.getSnapshot();
+    expect(beforeReset.cueResolvedCount + beforeReset.cueMissedCount).toBeGreaterThan(0);
+
+    sim.setCueTimeline([2.0, 2.5]);
+    const afterReset = sim.getSnapshot();
+    expect(afterReset.cueResolvedCount).toBe(0);
+    expect(afterReset.cueMissedCount).toBe(0);
+    expect(afterReset.pendingCueCount).toBe(2);
+    expect(afterReset.plannedCueCount).toBe(0);
+  });
 });
