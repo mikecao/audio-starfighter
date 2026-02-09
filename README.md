@@ -16,13 +16,14 @@ drives game pacing and combat scheduling from that analysis.
   - BPM, cue count, cue hits/misses
   - average cue error
   - simulation/audio drift
-  - cue queue, planned cue count, cue hit rate
+  - cue queue, planned cue count, queued cue shots, cue hit rate
   - score and combo
 - Audio analysis panel:
   - load and analyze audio file
   - intensity/cue timeline view with playhead
   - synced run start/restart and playback controls
   - deterministic run seed input (persisted locally)
+  - JSON export of run summary metrics
 
 ## Run
 
