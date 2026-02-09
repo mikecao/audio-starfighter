@@ -83,4 +83,25 @@ describe("simulation cue scheduling", () => {
     expect(a.score).toBe(b.score);
     expect(a.combo).toBe(b.combo);
   });
+
+  it("keeps cue pending before its time and resolves it afterward", () => {
+    const sim = createSimulation();
+    sim.setRandomSeed(7);
+    sim.startTrackRun([1.0]);
+
+    for (let i = 0; i < 60 * 0.75; i += 1) {
+      sim.step(1 / 60);
+    }
+
+    const beforeCue = sim.getSnapshot();
+    expect(beforeCue.pendingCueCount).toBeGreaterThan(0);
+    expect(beforeCue.cueResolvedCount + beforeCue.cueMissedCount).toBe(0);
+
+    for (let i = 0; i < 60 * 0.6; i += 1) {
+      sim.step(1 / 60);
+    }
+
+    const afterCue = sim.getSnapshot();
+    expect(afterCue.cueResolvedCount + afterCue.cueMissedCount).toBe(1);
+  });
 });

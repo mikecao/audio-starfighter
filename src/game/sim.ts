@@ -97,6 +97,12 @@ type ScheduledCue = {
   assignedEnemyId: number | null;
 };
 
+type PlannedCueShot = {
+  cueTimeSeconds: number;
+  enemyId: number;
+  fireTimeSeconds: number;
+};
+
 type IntensitySample = {
   timeSeconds: number;
   intensity: number;
@@ -121,6 +127,7 @@ type SimulationState = {
   cueResolvedCount: number;
   cueMissedCount: number;
   cumulativeCueErrorMs: number;
+  plannedCueShots: PlannedCueShot[];
   score: number;
   combo: number;
   intensityTimeline: IntensitySample[];
@@ -157,6 +164,7 @@ export function createSimulation(): Simulation {
     cueResolvedCount: 0,
     cueMissedCount: 0,
     cumulativeCueErrorMs: 0,
+    plannedCueShots: [],
     score: 0,
     combo: 0,
     intensityTimeline: [],
@@ -175,6 +183,7 @@ export function createSimulation(): Simulation {
 
       spawnEnemies(state);
       planCueShots(state);
+      fireQueuedCueShots(state);
       fireProjectiles(state);
       updateEnemies(state, deltaSeconds);
       updateProjectiles(state, deltaSeconds);
@@ -314,6 +323,7 @@ function resetRunState(state: SimulationState): void {
   state.cueResolvedCount = 0;
   state.cueMissedCount = 0;
   state.cumulativeCueErrorMs = 0;
+  state.plannedCueShots = [];
   state.score = 0;
   state.combo = 0;
   state.cueStartOffsetSeconds = 0;
@@ -516,6 +526,51 @@ function planCueShots(state: SimulationState): void {
     const shipY = state.shipY;
     const dx = candidate.futureX - shipX;
     const dy = candidate.futureY - shipY;
+    const projectileSpeed = 14;
+    const requiredLeadSeconds = Math.hypot(dx, dy) / projectileSpeed;
+    const fireTimeSeconds = cue.timeSeconds - requiredLeadSeconds;
+    if (fireTimeSeconds < state.simTimeSeconds || fireTimeSeconds > cue.timeSeconds) {
+      continue;
+    }
+
+    candidate.enemy.scheduledCueTime = cue.timeSeconds;
+    cue.planned = true;
+    cue.assignedEnemyId = candidate.enemy.id;
+    state.plannedCueShots.push({
+      cueTimeSeconds: cue.timeSeconds,
+      enemyId: candidate.enemy.id,
+      fireTimeSeconds
+    });
+  }
+}
+
+function fireQueuedCueShots(state: SimulationState): void {
+  if (state.plannedCueShots.length === 0) {
+    return;
+  }
+
+  const remainingShots: PlannedCueShot[] = [];
+  for (const shot of state.plannedCueShots) {
+    if (shot.fireTimeSeconds > state.simTimeSeconds) {
+      remainingShots.push(shot);
+      continue;
+    }
+
+    const enemy = state.enemies.find((candidate) => candidate.id === shot.enemyId);
+    if (!enemy) {
+      continue;
+    }
+
+    const leadSeconds = shot.cueTimeSeconds - state.simTimeSeconds;
+    if (leadSeconds <= 0.02) {
+      continue;
+    }
+
+    const shipX = state.shipX + 0.65;
+    const shipY = state.shipY;
+    const future = predictEnemyPosition(enemy, leadSeconds);
+    const dx = future.x - shipX;
+    const dy = future.y - shipY;
 
     state.projectiles.push({
       x: shipX,
@@ -527,11 +582,9 @@ function planCueShots(state: SimulationState): void {
       maxLifetimeSeconds: leadSeconds + 0.12,
       radius: 0.16
     });
-
-    candidate.enemy.scheduledCueTime = cue.timeSeconds;
-    cue.planned = true;
-    cue.assignedEnemyId = candidate.enemy.id;
   }
+
+  state.plannedCueShots = remainingShots;
 }
 
 function resolveDueCueExplosions(state: SimulationState): void {
