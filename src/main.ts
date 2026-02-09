@@ -142,6 +142,7 @@ function animate(frameTimeMs: number): void {
     playbackDriftMs,
     pendingCueCount: snapshot.pendingCueCount,
     plannedCueCount: snapshot.plannedCueCount,
+    queuedCueShotCount: snapshot.queuedCueShotCount,
     bestScore: currentBestScore
   });
 

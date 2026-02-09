@@ -40,6 +40,7 @@ export type SimulationSnapshot = {
   combo: number;
   pendingCueCount: number;
   plannedCueCount: number;
+  queuedCueShotCount: number;
 };
 
 type EnemyPattern = "straight" | "sine" | "arc";
@@ -263,7 +264,8 @@ export function createSimulation(): Simulation {
         score: state.score,
         combo: state.combo,
         pendingCueCount: state.cueTimeline.length,
-        plannedCueCount: countPlannedCues(state.cueTimeline)
+        plannedCueCount: countPlannedCues(state.cueTimeline),
+        queuedCueShotCount: state.plannedCueShots.length
       };
     },
     setCueTimeline(cueTimesSeconds) {
