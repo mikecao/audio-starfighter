@@ -127,6 +127,15 @@ function blendEnemies(
       damageFlash: lerp(ea.damageFlash, eb.damageFlash, t)
     });
   }
+  if (t < 0.5) {
+    for (let i = count; i < a.length; i += 1) {
+      out.push(a[i]);
+    }
+  } else {
+    for (let i = count; i < b.length; i += 1) {
+      out.push(b[i]);
+    }
+  }
   return out;
 }
 
@@ -147,6 +156,15 @@ function blendProjectiles(
       rotationZ: lerpAngle(pa.rotationZ, pb.rotationZ, t)
     });
   }
+  if (t < 0.5) {
+    for (let i = count; i < a.length; i += 1) {
+      out.push(a[i]);
+    }
+  } else {
+    for (let i = count; i < b.length; i += 1) {
+      out.push(b[i]);
+    }
+  }
   return out;
 }
 
@@ -165,6 +183,15 @@ function blendEnemyProjectiles(
       y: lerp(pa.y, pb.y, t),
       z: lerp(pa.z, pb.z, t)
     });
+  }
+  if (t < 0.5) {
+    for (let i = count; i < a.length; i += 1) {
+      out.push(a[i]);
+    }
+  } else {
+    for (let i = count; i < b.length; i += 1) {
+      out.push(b[i]);
+    }
   }
   return out;
 }
@@ -187,6 +214,15 @@ function blendExplosions(
       alpha: lerp(ea.alpha, eb.alpha, t),
       variant: t < 0.5 ? ea.variant : eb.variant
     });
+  }
+  if (t < 0.5) {
+    for (let i = count; i < a.length; i += 1) {
+      out.push(a[i]);
+    }
+  } else {
+    for (let i = count; i < b.length; i += 1) {
+      out.push(b[i]);
+    }
   }
   return out;
 }
