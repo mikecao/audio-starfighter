@@ -34,8 +34,8 @@ export function setupScene(container: HTMLElement): RenderScene {
   const ORTHO_HALF_HEIGHT = 11.5;
 
   const scene = new Scene();
-  const lowEnergyBg = new Color("#070b14");
-  const highEnergyBg = new Color("#1a1426");
+  const lowEnergyBg = new Color("#070707");
+  const highEnergyBg = new Color("#141414");
   const currentBg = lowEnergyBg.clone();
   scene.background = currentBg;
 
@@ -49,7 +49,7 @@ export function setupScene(container: HTMLElement): RenderScene {
   renderer.domElement.classList.add("main-scene-canvas");
   container.appendChild(renderer.domElement);
 
-  const ambientLight = new AmbientLight("#9bb9ff", 0.45);
+  const ambientLight = new AmbientLight("#c7ced9", 0.4);
   scene.add(ambientLight);
 
   const directionalLight = new DirectionalLight("#fef2c2", 1.1);

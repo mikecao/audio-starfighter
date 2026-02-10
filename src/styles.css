@@ -17,7 +17,7 @@ body,
 }
 
 #app {
-  padding: 0.9rem 0.9rem 1rem;
+  padding: 0;
   overflow-x: hidden;
   background: #030711;
 }
@@ -27,7 +27,7 @@ body,
   width: min(100%, 1920px);
   aspect-ratio: 16 / 9;
   margin: 0 auto;
-  background: rgb(1 4 10 / 92%);
+  background: rgb(7 7 7 / 96%);
   overflow: hidden;
 }
 
@@ -38,7 +38,8 @@ body,
 
 .ui-host {
   width: min(100%, 1920px);
-  margin: 0.9rem auto 0;
+  margin: 0 auto;
+  padding: 0.9rem 0.9rem 1rem;
   display: grid;
   grid-template-areas:
     "toggle toggle"
@@ -319,12 +320,8 @@ body,
 }
 
 @media (max-width: 900px) {
-  #app {
-    padding: 0.6rem 0.6rem 0.85rem;
-  }
-
   .ui-host {
-    margin-top: 0.6rem;
+    padding: 0.6rem 0.6rem 0.85rem;
     grid-template-areas:
       "toggle"
       "timeline"
