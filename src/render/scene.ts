@@ -10,7 +10,7 @@ import {
   MeshBasicMaterial,
   Mesh,
   MeshStandardMaterial,
-  PerspectiveCamera,
+  OrthographicCamera,
   Points,
   PointsMaterial,
   RingGeometry,
@@ -30,6 +30,7 @@ export type RenderScene = {
 export function setupScene(container: HTMLElement): RenderScene {
   const FIXED_RENDER_WIDTH = 1920;
   const FIXED_RENDER_HEIGHT = 1080;
+  const ORTHO_HALF_HEIGHT = 11.5;
 
   const scene = new Scene();
   const lowEnergyBg = new Color("#070b14");
@@ -37,7 +38,7 @@ export function setupScene(container: HTMLElement): RenderScene {
   const currentBg = lowEnergyBg.clone();
   scene.background = currentBg;
 
-  const camera = new PerspectiveCamera(60, 1, 0.1, 200);
+  const camera = new OrthographicCamera(-1, 1, 1, -1, 0.1, 200);
   camera.position.set(0, 0, 20);
   camera.lookAt(new Vector3(0, 0, 0));
 
@@ -159,16 +160,28 @@ export function setupScene(container: HTMLElement): RenderScene {
       return;
     }
 
-    const displayScale = Math.min(1, width / FIXED_RENDER_WIDTH, height / FIXED_RENDER_HEIGHT);
-    const displayWidth = Math.max(1, Math.floor(FIXED_RENDER_WIDTH * displayScale));
-    const displayHeight = Math.max(1, Math.floor(FIXED_RENDER_HEIGHT * displayScale));
+    const targetAspect = FIXED_RENDER_WIDTH / FIXED_RENDER_HEIGHT;
+    let displayWidth = Math.min(width, FIXED_RENDER_WIDTH);
+    let displayHeight = displayWidth / targetAspect;
+
+    if (displayHeight > height) {
+      displayHeight = Math.min(height, FIXED_RENDER_HEIGHT);
+      displayWidth = displayHeight * targetAspect;
+    }
+
+    displayWidth = Math.max(1, displayWidth);
+    displayHeight = Math.max(1, displayHeight);
 
     renderer.domElement.style.width = `${displayWidth}px`;
     renderer.domElement.style.height = `${displayHeight}px`;
-    renderer.domElement.style.left = `${Math.floor((width - displayWidth) * 0.5)}px`;
-    renderer.domElement.style.top = `${Math.floor((height - displayHeight) * 0.5)}px`;
+    renderer.domElement.style.left = `${(width - displayWidth) * 0.5}px`;
+    renderer.domElement.style.top = `${(height - displayHeight) * 0.5}px`;
 
-    camera.aspect = FIXED_RENDER_WIDTH / FIXED_RENDER_HEIGHT;
+    const halfWidth = ORTHO_HALF_HEIGHT * targetAspect;
+    camera.left = -halfWidth;
+    camera.right = halfWidth;
+    camera.top = ORTHO_HALF_HEIGHT;
+    camera.bottom = -ORTHO_HALF_HEIGHT;
     camera.updateProjectionMatrix();
   }
 
@@ -217,6 +230,8 @@ export function setupScene(container: HTMLElement): RenderScene {
         material.emissiveIntensity = (0.18 + intensity * 0.6) + flash * (0.45 + intensity * 0.35);
         material.opacity = entryAlpha;
         mesh.position.set(enemy.x, enemy.y, enemy.z);
+        mesh.rotation.x = 0.48;
+        mesh.rotation.y = 0.58;
         mesh.rotation.z = enemy.rotationZ;
         const flashScale = 1 + enemy.damageFlash * 0.14;
         mesh.scale.setScalar(flashScale);
@@ -369,8 +384,8 @@ function createStarLayer(
   size: number,
   parallaxFactor: number
 ): StarLayer {
-  const fieldWidth = 56;
-  const fieldHeight = 26;
+  const fieldWidth = 74;
+  const fieldHeight = 44;
   const basePositions = new Float32Array(count * 3);
   for (let i = 0; i < count; i += 1) {
     const offset = i * 3;
@@ -384,8 +399,8 @@ function createStarLayer(
 
   const material = new PointsMaterial({
     color,
-    size,
-    sizeAttenuation: true,
+    size: size * 22,
+    sizeAttenuation: false,
     transparent: true,
     opacity: 0.85
   });
