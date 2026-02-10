@@ -13,6 +13,7 @@ export type SimulationSnapshot = {
     y: number;
     z: number;
     rotationZ: number;
+    damageFlash: number;
   }>;
   projectiles: Array<{
     x: number;
@@ -64,6 +65,7 @@ type Enemy = {
   fireCooldownSeconds: number;
   scheduledCueTime: number | null;
   cuePrimed: boolean;
+  damageFlash: number;
 };
 
 type Projectile = {
@@ -119,6 +121,7 @@ const CUE_ASSIGN_MIN_LEAD_SECONDS = 0.2;
 const CUE_ASSIGN_MAX_LEAD_SECONDS = 1.1;
 const CUE_SUPPORT_LEAD_PADDING_SECONDS = 0.55;
 const MAX_CUE_SUPPORT_SPAWNS_PER_STEP = 8;
+const PLAYER_PROJECTILE_SPEED = 22;
 
 type SimulationState = {
   simTimeSeconds: number;
@@ -244,7 +247,8 @@ export function createSimulation(): Simulation {
           x: enemy.x,
           y: enemy.y,
           z: enemy.z,
-          rotationZ: enemy.phase + enemy.ageSeconds * 2
+          rotationZ: enemy.phase + enemy.ageSeconds * 2,
+          damageFlash: enemy.damageFlash
         })),
         projectiles: state.projectiles.map((projectile) => ({
           x: projectile.x,
@@ -294,6 +298,7 @@ export function createSimulation(): Simulation {
       for (const enemy of state.enemies) {
         enemy.scheduledCueTime = null;
         enemy.cuePrimed = false;
+        enemy.damageFlash = 0;
       }
       state.cueTimeline = cueTimesSeconds
         .filter((time) => Number.isFinite(time) && time >= 0)
@@ -376,7 +381,6 @@ function fireProjectiles(state: SimulationState): void {
   while (state.simTimeSeconds >= state.nextPlayerFireTime) {
     const intensity = getIntensityAtTime(state, state.simTimeSeconds);
     const mood = moodParameters(state.moodProfile);
-    const projectileSpeed = 14;
     const shipX = state.shipX + 0.65;
     const shipY = state.shipY;
 
@@ -398,8 +402,8 @@ function fireProjectiles(state: SimulationState): void {
       x: shipX,
       y: shipY,
       z: 0,
-      vx: directionX * projectileSpeed,
-      vy: directionY * projectileSpeed,
+      vx: directionX * PLAYER_PROJECTILE_SPEED,
+      vy: directionY * PLAYER_PROJECTILE_SPEED,
       ageSeconds: 0,
       maxLifetimeSeconds: 1.45,
       radius: 0.16
@@ -432,6 +436,7 @@ function updateEnemies(state: SimulationState, deltaSeconds: number): void {
         Math.sin(enemy.ageSeconds * 0.9) * 0.45;
     }
 
+    enemy.damageFlash = Math.max(0, enemy.damageFlash - deltaSeconds * 8);
     enemy.fireCooldownSeconds -= deltaSeconds;
     if (enemy.fireCooldownSeconds <= 0 && enemy.x > state.shipX + 2.5) {
       spawnEnemyProjectile(state, enemy);
@@ -485,6 +490,7 @@ function resolvePlayerProjectileCollisions(state: SimulationState): void {
 
         if (enemy.scheduledCueTime !== null && timeUntilCue > 0.04) {
           enemy.cuePrimed = true;
+          enemy.damageFlash = 1;
           destroyedProjectiles.add(p);
           break;
         }
@@ -549,8 +555,7 @@ function planCueShots(state: SimulationState): void {
     const shipY = state.shipY;
     const dx = candidate.futureX - shipX;
     const dy = candidate.futureY - shipY;
-    const projectileSpeed = 14;
-    const requiredLeadSeconds = Math.hypot(dx, dy) / projectileSpeed;
+    const requiredLeadSeconds = Math.hypot(dx, dy) / PLAYER_PROJECTILE_SPEED;
     const fireTimeSeconds = cue.timeSeconds - requiredLeadSeconds;
     if (fireTimeSeconds < state.simTimeSeconds || fireTimeSeconds > cue.timeSeconds) {
       continue;
@@ -591,7 +596,8 @@ function spawnAmbientEnemy(state: SimulationState): void {
     fireCooldownSeconds:
       (0.5 + (1 - intensity) * 0.8 + state.rng() * 0.5) * mood.enemyFireIntervalScale,
     scheduledCueTime: null,
-    cuePrimed: false
+    cuePrimed: false,
+    damageFlash: 0
   });
 }
 
@@ -666,7 +672,8 @@ function spawnCueSupportEnemy(state: SimulationState): void {
     radius: 0.44,
     fireCooldownSeconds: (0.9 + state.rng() * 0.7) * mood.enemyFireIntervalScale,
     scheduledCueTime: null,
-    cuePrimed: false
+    cuePrimed: false,
+    damageFlash: 0
   });
 
   state.spawnIndex += 1;
@@ -744,17 +751,10 @@ function resolveDueCueExplosions(state: SimulationState): void {
       state.combo += 1;
       state.score += 100 + Math.min(900, state.combo * 10);
     } else {
-      spawnFallbackCueExplosion(state, cue.timeSeconds);
       state.cueMissedCount += 1;
       state.combo = 0;
     }
   }
-}
-
-function spawnFallbackCueExplosion(state: SimulationState, cueTimeSeconds: number): void {
-  const x = state.shipX + 5.8;
-  const y = Math.sin(cueTimeSeconds * 6.5) * 2.8;
-  spawnExplosion(state, x, y, 0);
 }
 
 function scheduledEnemyHasCueHit(state: SimulationState, enemy: Enemy): boolean {
@@ -961,7 +961,7 @@ function spawnExplosion(state: SimulationState, x: number, y: number, z: number)
     y,
     z,
     ageSeconds: 0,
-    lifetimeSeconds: 0.33
+    lifetimeSeconds: 0.58
   });
 }
 
