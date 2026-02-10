@@ -19,6 +19,7 @@ export type SimulationSnapshot = {
     x: number;
     y: number;
     z: number;
+    rotationZ: number;
   }>;
   enemyProjectiles: Array<{
     x: number;
@@ -253,7 +254,8 @@ export function createSimulation(): Simulation {
         projectiles: state.projectiles.map((projectile) => ({
           x: projectile.x,
           y: projectile.y,
-          z: projectile.z
+          z: projectile.z,
+          rotationZ: Math.atan2(projectile.vy, projectile.vx)
         })),
         enemyProjectiles: state.enemyProjectiles.map((projectile) => ({
           x: projectile.x,

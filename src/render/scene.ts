@@ -88,15 +88,18 @@ export function setupScene(container: HTMLElement): RenderScene {
   scene.add(enemyGroup);
   const enemyMeshes: Mesh[] = [];
 
-  const projectileGeometry = new SphereGeometry(0.15, 12, 8);
+  const playerProjectileGeometry = new BoxGeometry(0.9, 0.06, 0.06);
   const projectileMaterial = new MeshStandardMaterial({
     color: "#22d3ee",
-    roughness: 0.2,
-    metalness: 0.55
+    roughness: 0.15,
+    metalness: 0.7,
+    emissive: "#06b6d4",
+    emissiveIntensity: 0.7
   });
   const projectileGroup = new Group();
   scene.add(projectileGroup);
   const projectileMeshes: Mesh[] = [];
+  const enemyProjectileGeometry = new SphereGeometry(0.15, 12, 8);
   const enemyProjectileMaterial = new MeshStandardMaterial({
     color: "#fb7185",
     roughness: 0.25,
@@ -204,7 +207,7 @@ export function setupScene(container: HTMLElement): RenderScene {
         snapshot.projectiles.length,
         projectileGroup,
         () => {
-          const mesh = new Mesh(projectileGeometry, projectileMaterial);
+          const mesh = new Mesh(playerProjectileGeometry, projectileMaterial);
           mesh.visible = false;
           return mesh;
         }
@@ -218,6 +221,7 @@ export function setupScene(container: HTMLElement): RenderScene {
         }
         mesh.visible = true;
         mesh.position.set(projectile.x, projectile.y, projectile.z);
+        mesh.rotation.z = projectile.rotationZ;
       }
 
       syncMeshPool(
@@ -225,7 +229,7 @@ export function setupScene(container: HTMLElement): RenderScene {
         snapshot.enemyProjectiles.length,
         enemyProjectileGroup,
         () => {
-          const mesh = new Mesh(projectileGeometry, enemyProjectileMaterial);
+          const mesh = new Mesh(enemyProjectileGeometry, enemyProjectileMaterial);
           mesh.visible = false;
           return mesh;
         }
@@ -270,22 +274,27 @@ export function setupScene(container: HTMLElement): RenderScene {
         }
 
         const normalizedAge = clamp01(1 - explosion.alpha);
+        const intensityScale = 0.75 + intensity * 1.45;
+        const intensityGlow = 0.7 + intensity * 0.8;
 
         mesh.visible = true;
         mesh.position.set(explosion.x, explosion.y, explosion.z);
-        mesh.scale.setScalar(explosion.scale * ARCADE_CORE_SCALE_MULTIPLIER);
+        mesh.scale.setScalar(explosion.scale * ARCADE_CORE_SCALE_MULTIPLIER * intensityScale);
         const material = mesh.material as MeshBasicMaterial;
-        material.opacity = Math.max(0, Math.pow(explosion.alpha, 0.55));
+        material.opacity = Math.max(0, Math.pow(explosion.alpha, 0.55) * intensityGlow);
 
         ringMesh.visible = true;
         ringMesh.position.set(explosion.x, explosion.y, explosion.z + 0.01);
-        ringMesh.scale.setScalar(0.9 + normalizedAge * ARCADE_RING_MAX_SCALE);
+        ringMesh.scale.setScalar(0.9 + normalizedAge * ARCADE_RING_MAX_SCALE * intensityScale);
         const ringMaterial = ringMesh.material as MeshBasicMaterial;
-        ringMaterial.opacity = Math.max(0, Math.pow(1 - normalizedAge, 0.8) * 0.95);
+        ringMaterial.opacity = Math.max(
+          0,
+          Math.pow(1 - normalizedAge, 0.8) * (0.6 + intensity * 0.7)
+        );
 
         burst.points.visible = true;
         burst.points.position.set(explosion.x, explosion.y, explosion.z + 0.02);
-        updateExplosionBurst(burst, normalizedAge, explosion.alpha);
+        updateExplosionBurst(burst, normalizedAge, explosion.alpha, intensity);
       }
     },
     render() {
@@ -415,8 +424,14 @@ function createExplosionBurst(seed: number): ExplosionBurst {
   };
 }
 
-function updateExplosionBurst(burst: ExplosionBurst, normalizedAge: number, alpha: number): void {
-  const travel = 0.4 + normalizedAge * 7.8;
+function updateExplosionBurst(
+  burst: ExplosionBurst,
+  normalizedAge: number,
+  alpha: number,
+  intensity: number
+): void {
+  const intensityScale = 0.75 + intensity * 1.45;
+  const travel = (0.4 + normalizedAge * 7.8) * intensityScale;
   const wobble = Math.sin(normalizedAge * Math.PI * 5) * 0.08;
   const positions = burst.positionAttribute.array as Float32Array;
   for (let i = 0; i < burst.baseDirections.length; i += 3) {
@@ -427,8 +442,8 @@ function updateExplosionBurst(burst: ExplosionBurst, normalizedAge: number, alph
   burst.positionAttribute.needsUpdate = true;
 
   const material = burst.points.material as PointsMaterial;
-  material.opacity = Math.max(0, Math.pow(alpha, 0.35));
-  material.size = 12 - normalizedAge * 6;
+  material.opacity = Math.max(0, Math.pow(alpha, 0.35) * (0.65 + intensity * 0.7));
+  material.size = (12 - normalizedAge * 6) * (0.7 + intensity * 0.9);
 }
 
 function hash01(seed: number): number {
