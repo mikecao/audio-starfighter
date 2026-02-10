@@ -142,10 +142,15 @@ export function setupScene(container: HTMLElement): RenderScene {
   const coreColorEnd = new Color("#f97316");
   const coreColor = new Color();
 
-  const nearStars = createStarLayer(180, 0x93c5fd, 3.2, 0.06);
-  const farStars = createStarLayer(120, 0x334155, 1.6, 0.04);
-  scene.add(farStars.points);
-  scene.add(nearStars.points);
+  const closeStars = createStarLayer(130, 0xe0f2fe, 10.5, 0.12, 0.56);
+  const nearStars = createStarLayer(220, 0x93c5fd, 6.6, 0.08, 0.34);
+  const farStars = createStarLayer(150, 0x334155, 3.1, 0.05, 0.14);
+  scene.add(farStars.primary);
+  scene.add(farStars.wrap);
+  scene.add(nearStars.primary);
+  scene.add(nearStars.wrap);
+  scene.add(closeStars.primary);
+  scene.add(closeStars.wrap);
 
   function resize(): void {
     const width = container.clientWidth;
@@ -171,6 +176,7 @@ export function setupScene(container: HTMLElement): RenderScene {
 
   return {
     update(snapshot) {
+      const starTimeSeconds = performance.now() * 0.001;
       shipMesh.position.set(snapshot.ship.x, snapshot.ship.y, snapshot.ship.z);
       shipMesh.rotation.z = snapshot.ship.y * -0.08;
       shieldMesh.position.copy(shipMesh.position);
@@ -181,8 +187,9 @@ export function setupScene(container: HTMLElement): RenderScene {
       currentBg.copy(lowEnergyBg).lerp(highEnergyBg, intensity);
       shipMaterial.emissive.set("#0e7490");
       shipMaterial.emissiveIntensity = 0.08 + intensity * 0.3;
-      updateStarLayer(farStars, snapshot.simTimeSeconds);
-      updateStarLayer(nearStars, snapshot.simTimeSeconds);
+      updateStarLayer(farStars, starTimeSeconds, snapshot.ship.y);
+      updateStarLayer(nearStars, starTimeSeconds, snapshot.ship.y);
+      updateStarLayer(closeStars, starTimeSeconds, snapshot.ship.y);
 
       syncMeshPool(enemyMeshes, snapshot.enemies.length, enemyGroup, () => {
         const mesh = new Mesh(enemyGeometry, enemyMaterial.clone());
@@ -337,10 +344,12 @@ function syncMeshPool(
 }
 
 type StarLayer = {
-  points: Points;
-  basePositions: Float32Array;
-  animatedPositions: Float32Array;
+  primary: Points;
+  wrap: Points;
   speed: number;
+  parallaxFactor: number;
+  loopWidth: number;
+  baseOpacity: number;
 };
 
 type ExplosionBurst = {
@@ -357,7 +366,8 @@ function createStarLayer(
   count: number,
   color: number,
   speed: number,
-  size: number
+  size: number,
+  parallaxFactor: number
 ): StarLayer {
   const fieldWidth = 56;
   const fieldHeight = 26;
@@ -369,9 +379,8 @@ function createStarLayer(
     basePositions[offset + 2] = -7 - Math.random() * 6;
   }
 
-  const animatedPositions = new Float32Array(basePositions);
   const geometry = new BufferGeometry();
-  geometry.setAttribute("position", new Float32BufferAttribute(animatedPositions, 3));
+  geometry.setAttribute("position", new Float32BufferAttribute(basePositions, 3));
 
   const material = new PointsMaterial({
     color,
@@ -381,30 +390,38 @@ function createStarLayer(
     opacity: 0.85
   });
 
+  const primary = new Points(geometry, material);
+  const wrap = new Points(geometry, material.clone());
+  wrap.position.x = fieldWidth;
+  const baseOpacity = 0.7 + (size > 0.08 ? 0.2 : size > 0.05 ? 0.1 : 0);
+
   return {
-    points: new Points(geometry, material),
-    basePositions,
-    animatedPositions,
-    speed
+    primary,
+    wrap,
+    speed,
+    parallaxFactor,
+    loopWidth: fieldWidth,
+    baseOpacity
   };
 }
 
-function updateStarLayer(layer: StarLayer, simTimeSeconds: number): void {
-  const loopWidth = 56;
-  const minX = -28;
+function updateStarLayer(layer: StarLayer, simTimeSeconds: number, shipY: number): void {
+  const traveled = (simTimeSeconds * layer.speed) % layer.loopWidth;
+  const baseX = -traveled;
+  const parallaxYOffset = shipY * layer.parallaxFactor;
+  const driftY = Math.sin(simTimeSeconds * (0.9 + layer.parallaxFactor)) * layer.parallaxFactor * 0.35;
+  const twinkle =
+    layer.baseOpacity + Math.sin(simTimeSeconds * (1.7 + layer.parallaxFactor * 2.2)) * 0.15;
 
-  for (let i = 0; i < layer.basePositions.length; i += 3) {
-    const baseX = layer.basePositions[i];
-    const traveled = (simTimeSeconds * layer.speed) % loopWidth;
-    let x = baseX - traveled;
-    while (x < minX) {
-      x += loopWidth;
-    }
-    layer.animatedPositions[i] = x;
-  }
+  layer.primary.position.x = baseX;
+  layer.primary.position.y = parallaxYOffset + driftY;
+  layer.wrap.position.x = baseX + layer.loopWidth;
+  layer.wrap.position.y = parallaxYOffset + driftY;
 
-  const position = layer.points.geometry.getAttribute("position");
-  position.needsUpdate = true;
+  const primaryMaterial = layer.primary.material as PointsMaterial;
+  const wrapMaterial = layer.wrap.material as PointsMaterial;
+  primaryMaterial.opacity = clamp01(twinkle);
+  wrapMaterial.opacity = clamp01(twinkle * 0.98);
 }
 
 function createExplosionBurst(seed: number): ExplosionBurst {
