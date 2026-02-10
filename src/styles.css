@@ -19,10 +19,7 @@ body,
 #app {
   padding: 0.9rem 0.9rem 1rem;
   overflow-x: hidden;
-  background:
-    radial-gradient(circle at 20% 20%, rgb(40 58 99 / 45%), transparent 55%),
-    radial-gradient(circle at 85% 75%, rgb(15 124 145 / 35%), transparent 45%),
-    linear-gradient(180deg, #040a16 0%, #030711 100%);
+  background: #030711;
 }
 
 .scene-host {

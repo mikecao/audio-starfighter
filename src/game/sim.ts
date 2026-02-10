@@ -42,6 +42,7 @@ export type SimulationSnapshot = {
     scale: number;
     alpha: number;
     variant: number;
+    power: number;
   }>;
   shieldAlpha: number;
   cueResolvedCount: number;
@@ -110,6 +111,7 @@ type Explosion = {
   ageSeconds: number;
   lifetimeSeconds: number;
   variant: number;
+  power: number;
 };
 
 type LaserBeam = {
@@ -177,6 +179,8 @@ type SimulationState = {
   score: number;
   combo: number;
   intensityTimeline: IntensitySample[];
+  intensityFloor: number;
+  intensityCeil: number;
   moodProfile: MoodProfile;
   randomSeed: number;
   rng: () => number;
@@ -220,6 +224,8 @@ export function createSimulation(): Simulation {
     score: 0,
     combo: 0,
     intensityTimeline: [],
+    intensityFloor: 0,
+    intensityCeil: 1,
     moodProfile: "driving",
     randomSeed: 7,
     rng: createMulberry32(7)
@@ -314,7 +320,8 @@ export function createSimulation(): Simulation {
             z: explosion.z,
             scale: 0.5 + normalizedAge * 1.5,
             alpha: 1 - normalizedAge,
-            variant: explosion.variant
+            variant: explosion.variant,
+            power: explosion.power
           };
         }),
         shieldAlpha: state.shipShieldAlpha,
@@ -372,6 +379,26 @@ export function createSimulation(): Simulation {
           intensity: clamp(sample.intensity, 0, 1)
         }))
         .sort((a, b) => a.timeSeconds - b.timeSeconds);
+
+      const intensities = state.intensityTimeline.map((sample) => sample.intensity);
+      if (intensities.length === 0) {
+        state.intensityFloor = 0;
+        state.intensityCeil = 1;
+        return;
+      }
+
+      intensities.sort((a, b) => a - b);
+      const p08 = samplePercentile(intensities, 0.08);
+      const p92 = samplePercentile(intensities, 0.92);
+      const min = intensities[0];
+      const max = intensities[intensities.length - 1];
+      if (p92 - p08 > 0.06) {
+        state.intensityFloor = p08;
+        state.intensityCeil = p92;
+      } else {
+        state.intensityFloor = min;
+        state.intensityCeil = Math.max(min + 0.05, max);
+      }
     },
     setRandomSeed(seed) {
       const normalized = normalizeSeed(seed);
@@ -1210,14 +1237,25 @@ function spawnEnemyProjectile(state: SimulationState, enemy: Enemy, spreadRadian
 }
 
 function spawnExplosion(state: SimulationState, x: number, y: number, z: number): void {
+  const relativeIntensity = getRelativeIntensityAtTime(state, state.simTimeSeconds);
+  const power = clamp(0.12 + Math.pow(relativeIntensity, 2.2) * 2, 0.12, 2.12);
   state.explosions.push({
     x,
     y,
     z,
     ageSeconds: 0,
-    lifetimeSeconds: 0.58,
-    variant: Math.floor(state.rng() * 6)
+    lifetimeSeconds: 0.34 + power * 0.1,
+    variant: Math.floor(state.rng() * 6),
+    power
   });
+}
+
+function getRelativeIntensityAtTime(state: SimulationState, timeSeconds: number): number {
+  const intensity = getIntensityAtTime(state, timeSeconds);
+  const floor = state.intensityFloor;
+  const ceil = state.intensityCeil;
+  const span = Math.max(1e-4, ceil - floor);
+  return clamp((intensity - floor) / span, 0, 1);
 }
 
 function getIntensityAtTime(state: SimulationState, timeSeconds: number): number {
@@ -1261,6 +1299,21 @@ function createMulberry32(seed: number): () => number {
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
+}
+
+function samplePercentile(values: number[], percentile: number): number {
+  if (values.length === 0) {
+    return 0;
+  }
+  if (values.length === 1) {
+    return values[0];
+  }
+  const p = clamp(percentile, 0, 1);
+  const index = p * (values.length - 1);
+  const lo = Math.floor(index);
+  const hi = Math.min(values.length - 1, lo + 1);
+  const t = index - lo;
+  return values[lo] + (values[hi] - values[lo]) * t;
 }
 
 function normalizeSeed(value: number): number {

@@ -363,8 +363,10 @@ export function setupScene(container: HTMLElement): RenderScene {
         }
 
         const normalizedAge = clamp01(1 - explosion.alpha);
-        const intensityScale = 0.75 + intensity * 1.45;
-        const intensityGlow = 0.7 + intensity * 0.8;
+        const peakScale = explosion.power;
+        const peakNormalized = normalizeExplosionPower(explosion.power);
+        const intensityScale = 0.22 + peakScale * 0.88;
+        const intensityGlow = 0.62 + peakNormalized * 1.05;
         const palette = EXPLOSION_PALETTES[explosion.variant % EXPLOSION_PALETTES.length];
 
         mesh.visible = true;
@@ -381,18 +383,20 @@ export function setupScene(container: HTMLElement): RenderScene {
 
         ringMesh.visible = true;
         ringMesh.position.set(explosion.x, explosion.y, explosion.z + 0.01);
-        ringMesh.scale.setScalar(0.9 + normalizedAge * ARCADE_RING_MAX_SCALE * intensityScale);
+        ringMesh.scale.setScalar(
+          0.5 + normalizedAge * ARCADE_RING_MAX_SCALE * (0.42 + peakNormalized * 0.78)
+        );
         const ringMaterial = ringMesh.material as MeshBasicMaterial;
         ringColor.lerpColors(palette.ringStart, palette.ringEnd, normalizedAge);
         ringMaterial.color.copy(ringColor);
         ringMaterial.opacity = Math.max(
           0,
-          Math.pow(1 - normalizedAge, 0.8) * (0.6 + intensity * 0.7)
+          Math.pow(1 - normalizedAge, 0.8) * (0.6 + peakNormalized * 0.9)
         );
 
         burst.points.visible = true;
-        burst.points.position.set(explosion.x, explosion.y, explosion.z + 0.02);
-        updateExplosionBurst(burst, normalizedAge, explosion.alpha, intensity);
+        burst.points.position.set(explosion.x, explosion.y, explosion.z + 0.08);
+        updateExplosionBurst(burst, normalizedAge, explosion.alpha, peakScale);
       }
     },
     render() {
@@ -439,7 +443,7 @@ type ExplosionPalette = {
 };
 
 const ARCADE_PARTICLE_COUNT = 40;
-const ARCADE_CORE_SCALE_MULTIPLIER = 3.4;
+const ARCADE_CORE_SCALE_MULTIPLIER = 2.35;
 const ARCADE_RING_MAX_SCALE = 7.2;
 const EXPLOSION_PALETTES: ExplosionPalette[] = [
   {
@@ -570,7 +574,7 @@ function createExplosionBurst(seed: number): ExplosionBurst {
   geometry.setAttribute("position", positionAttribute);
   const material = new PointsMaterial({
     color: "#fff1b3",
-    size: 4,
+    size: 5.4,
     sizeAttenuation: false,
     transparent: true,
     opacity: 1,
@@ -590,9 +594,10 @@ function updateExplosionBurst(
   burst: ExplosionBurst,
   normalizedAge: number,
   alpha: number,
-  intensity: number
+  peakScale: number
 ): void {
-  const intensityScale = 0.75 + intensity * 1.45;
+  const peakNormalized = normalizeExplosionPower(peakScale);
+  const intensityScale = 0.3 + peakScale * 0.85;
   const travel = (0.4 + normalizedAge * 7.8) * intensityScale;
   const wobble = Math.sin(normalizedAge * Math.PI * 5) * 0.08;
   const positions = burst.positionAttribute.array as Float32Array;
@@ -604,8 +609,11 @@ function updateExplosionBurst(
   burst.positionAttribute.needsUpdate = true;
 
   const material = burst.points.material as PointsMaterial;
-  material.opacity = Math.max(0, Math.pow(alpha, 0.35) * (0.65 + intensity * 0.7));
-  material.size = (4.8 - normalizedAge * 2.6) * (0.65 + intensity * 0.75);
+  material.opacity = Math.max(0, Math.pow(alpha, 0.3) * (0.72 + peakNormalized * 0.92));
+  material.size = Math.max(
+    1.8,
+    (4.5 - normalizedAge * 2.4) * (0.58 + peakNormalized * 1.12)
+  );
 }
 
 function hash01(seed: number): number {
@@ -615,6 +623,10 @@ function hash01(seed: number): number {
 
 function clamp01(value: number): number {
   return Math.max(0, Math.min(1, value));
+}
+
+function normalizeExplosionPower(power: number): number {
+  return clamp01((power - 0.12) / (2.12 - 0.12));
 }
 
 function clamp01Signed(value: number, maxAbs: number): number {

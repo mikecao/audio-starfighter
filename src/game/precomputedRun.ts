@@ -92,7 +92,7 @@ function estimateSnapshotBytes(snapshots: SimulationSnapshot[]): number {
     bytes += snapshot.projectiles.length * 5 * 8;
     bytes += snapshot.enemyProjectiles.length * 4 * 8;
     bytes += snapshot.laserBeams.length * 5 * 8;
-    bytes += snapshot.explosions.length * 6 * 8;
+    bytes += snapshot.explosions.length * 7 * 8;
   }
   return bytes;
 }
