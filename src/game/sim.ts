@@ -16,12 +16,14 @@ export type SimulationSnapshot = {
     damageFlash: number;
   }>;
   projectiles: Array<{
+    id: number;
     x: number;
     y: number;
     z: number;
     rotationZ: number;
   }>;
   enemyProjectiles: Array<{
+    id: number;
     x: number;
     y: number;
     z: number;
@@ -71,6 +73,7 @@ type Enemy = {
 };
 
 type Projectile = {
+  id: number;
   x: number;
   y: number;
   z: number;
@@ -82,6 +85,7 @@ type Projectile = {
 };
 
 type EnemyProjectile = {
+  id: number;
   x: number;
   y: number;
   z: number;
@@ -141,6 +145,8 @@ type SimulationState = {
   nextPlayerFireTime: number;
   spawnIndex: number;
   nextEnemyId: number;
+  nextProjectileId: number;
+  nextEnemyProjectileId: number;
   cueTimeline: ScheduledCue[];
   cueStartOffsetSeconds: number;
   cueResolvedCount: number;
@@ -180,6 +186,8 @@ export function createSimulation(): Simulation {
     nextPlayerFireTime: 0.2,
     spawnIndex: 0,
     nextEnemyId: 1,
+    nextProjectileId: 1,
+    nextEnemyProjectileId: 1,
     cueTimeline: [],
     cueStartOffsetSeconds: 0,
     cueResolvedCount: 0,
@@ -253,12 +261,14 @@ export function createSimulation(): Simulation {
           damageFlash: enemy.damageFlash
         })),
         projectiles: state.projectiles.map((projectile) => ({
+          id: projectile.id,
           x: projectile.x,
           y: projectile.y,
           z: projectile.z,
           rotationZ: Math.atan2(projectile.vy, projectile.vx)
         })),
         enemyProjectiles: state.enemyProjectiles.map((projectile) => ({
+          id: projectile.id,
           x: projectile.x,
           y: projectile.y,
           z: projectile.z
@@ -356,6 +366,8 @@ function resetRunState(state: SimulationState): void {
   state.nextPlayerFireTime = 0.2;
   state.spawnIndex = 0;
   state.nextEnemyId = 1;
+  state.nextProjectileId = 1;
+  state.nextEnemyProjectileId = 1;
   state.cueResolvedCount = 0;
   state.cueMissedCount = 0;
   state.cumulativeCueErrorMs = 0;
@@ -408,6 +420,7 @@ function fireProjectiles(state: SimulationState): void {
     }
 
     state.projectiles.push({
+      id: state.nextProjectileId++,
       x: shipX,
       y: shipY,
       z: 0,
@@ -746,6 +759,7 @@ function fireQueuedCueShots(state: SimulationState): void {
     const dy = future.y - shipY;
 
     state.projectiles.push({
+      id: state.nextProjectileId++,
       x: shipX,
       y: shipY,
       z: 0,
@@ -1000,6 +1014,7 @@ function spawnEnemyProjectile(state: SimulationState, enemy: Enemy, spreadRadian
   const dirY = baseX * sin + baseY * cos;
 
   state.enemyProjectiles.push({
+    id: state.nextEnemyProjectileId++,
     x: enemy.x - 0.5,
     y: enemy.y,
     z: 0,

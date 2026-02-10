@@ -144,25 +144,36 @@ function blendProjectiles(
   b: SimulationSnapshot["projectiles"],
   t: number
 ): SimulationSnapshot["projectiles"] {
-  const count = Math.min(a.length, b.length);
   const out: SimulationSnapshot["projectiles"] = [];
-  for (let i = 0; i < count; i += 1) {
-    const pa = a[i];
-    const pb = b[i];
-    out.push({
-      x: lerp(pa.x, pb.x, t),
-      y: lerp(pa.y, pb.y, t),
-      z: lerp(pa.z, pb.z, t),
-      rotationZ: lerpAngle(pa.rotationZ, pb.rotationZ, t)
-    });
+  const byIdB = new Map<number, SimulationSnapshot["projectiles"][number]>();
+  for (const projectile of b) {
+    byIdB.set(projectile.id, projectile);
   }
-  if (t < 0.5) {
-    for (let i = count; i < a.length; i += 1) {
-      out.push(a[i]);
+
+  const seen = new Set<number>();
+  for (const pa of a) {
+    const pb = byIdB.get(pa.id);
+    if (pb) {
+      out.push({
+        id: pa.id,
+        x: lerp(pa.x, pb.x, t),
+        y: lerp(pa.y, pb.y, t),
+        z: lerp(pa.z, pb.z, t),
+        rotationZ: lerpAngle(pa.rotationZ, pb.rotationZ, t)
+      });
+      seen.add(pa.id);
+      continue;
     }
-  } else {
-    for (let i = count; i < b.length; i += 1) {
-      out.push(b[i]);
+    if (t < 0.5) {
+      out.push(pa);
+    }
+  }
+
+  if (t >= 0.5) {
+    for (const pb of b) {
+      if (!seen.has(pb.id)) {
+        out.push(pb);
+      }
     }
   }
   return out;
@@ -173,24 +184,35 @@ function blendEnemyProjectiles(
   b: SimulationSnapshot["enemyProjectiles"],
   t: number
 ): SimulationSnapshot["enemyProjectiles"] {
-  const count = Math.min(a.length, b.length);
   const out: SimulationSnapshot["enemyProjectiles"] = [];
-  for (let i = 0; i < count; i += 1) {
-    const pa = a[i];
-    const pb = b[i];
-    out.push({
-      x: lerp(pa.x, pb.x, t),
-      y: lerp(pa.y, pb.y, t),
-      z: lerp(pa.z, pb.z, t)
-    });
+  const byIdB = new Map<number, SimulationSnapshot["enemyProjectiles"][number]>();
+  for (const projectile of b) {
+    byIdB.set(projectile.id, projectile);
   }
-  if (t < 0.5) {
-    for (let i = count; i < a.length; i += 1) {
-      out.push(a[i]);
+
+  const seen = new Set<number>();
+  for (const pa of a) {
+    const pb = byIdB.get(pa.id);
+    if (pb) {
+      out.push({
+        id: pa.id,
+        x: lerp(pa.x, pb.x, t),
+        y: lerp(pa.y, pb.y, t),
+        z: lerp(pa.z, pb.z, t)
+      });
+      seen.add(pa.id);
+      continue;
     }
-  } else {
-    for (let i = count; i < b.length; i += 1) {
-      out.push(b[i]);
+    if (t < 0.5) {
+      out.push(pa);
+    }
+  }
+
+  if (t >= 0.5) {
+    for (const pb of b) {
+      if (!seen.has(pb.id)) {
+        out.push(pb);
+      }
     }
   }
   return out;
