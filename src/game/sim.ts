@@ -151,6 +151,13 @@ const PLAYER_TARGET_MAX_DISTANCE_X = 4.8;
 const LASER_COOLDOWN_SECONDS = 0.22;
 const LASER_REQUIRED_OUT_OF_RANGE_COUNT = 3;
 const LASER_BEAM_LIFETIME_SECONDS = 0.26;
+const SHIP_BASE_X = -6;
+const SHIP_SWEEP_AMPLITUDE = 2.35;
+const SHIP_SWEEP_FREQUENCY = 0.58;
+const SHIP_SWEEP_SECONDARY_AMPLITUDE = 0.42;
+const SHIP_SWEEP_SECONDARY_FREQUENCY = 0.29;
+const SHIP_BASE_Y_AMPLITUDE = 1.8;
+const SHIP_BASE_Y_FREQUENCY = 1.4;
 
 type SimulationState = {
   simTimeSeconds: number;
@@ -236,9 +243,9 @@ export function createSimulation(): Simulation {
       state.simTimeSeconds += deltaSeconds;
       state.simTick += 1;
 
-      state.shipX = -6 + Math.sin(state.simTimeSeconds * 0.35) * 0.75;
-      const baseY = Math.sin(state.simTimeSeconds * 1.4) * 1.8;
-      state.shipY = steerShipY(state, baseY, deltaSeconds);
+      const shipPose = getShipPoseAtTime(state.simTimeSeconds);
+      state.shipX = shipPose.x;
+      state.shipY = steerShipY(state, shipPose.baseY, deltaSeconds);
 
       spawnEnemies(state);
       planCueShots(state);
@@ -414,7 +421,7 @@ export function createSimulation(): Simulation {
 function resetRunState(state: SimulationState): void {
   state.simTimeSeconds = 0;
   state.simTick = 0;
-  state.shipX = -6;
+  state.shipX = SHIP_BASE_X;
   state.shipY = 0;
   state.shipShieldAlpha = 0;
   state.enemies = [];
@@ -695,12 +702,14 @@ function planCueShots(state: SimulationState): void {
       continue;
     }
 
-    const shipX = state.shipX + 0.65;
-    const shipY = state.shipY;
-    const dx = candidate.futureX - shipX;
-    const dy = candidate.futureY - shipY;
-    const requiredLeadSeconds = Math.hypot(dx, dy) / PLAYER_PROJECTILE_SPEED;
-    const fireTimeSeconds = cue.timeSeconds - requiredLeadSeconds;
+    const fireTimeSeconds = solveCueFireTime(state, candidate.enemy, cue.timeSeconds);
+    if (fireTimeSeconds === null) {
+      const reserved = spawnReservedCueEnemy(state, cue.timeSeconds);
+      cue.planned = true;
+      cue.assignedEnemyId = reserved.id;
+      continue;
+    }
+
     if (fireTimeSeconds < state.simTimeSeconds || fireTimeSeconds > cue.timeSeconds) {
       continue;
     }
@@ -720,12 +729,14 @@ function spawnReservedCueEnemy(state: SimulationState, cueTimeSeconds: number): 
   const intensity = getIntensityAtTime(state, state.simTimeSeconds);
   const mood = moodParameters(state.moodProfile);
   const leadSeconds = Math.max(0.2, cueTimeSeconds - state.simTimeSeconds);
+  const shipAtCue = getShipPoseAtTime(cueTimeSeconds);
   const spawnX = 21.5 + state.rng() * 3.5;
-  const targetX = state.shipX + 7 + (state.rng() - 0.5) * 2.2;
+  const targetX = shipAtCue.x + 6.8 + (state.rng() - 0.5) * 2.2;
   const requiredVx = (targetX - spawnX) / leadSeconds;
   const vx = clamp(requiredVx, -6.2, -1.9) * mood.enemySpeedScale;
   const lane = ((state.spawnIndex + 2) % 5) - 2;
-  const baseY = lane * 1.55 + (state.rng() - 0.5) * 0.45;
+  const laneOffset = lane * 0.82;
+  const baseY = clamp(shipAtCue.baseY + laneOffset + (state.rng() - 0.5) * 0.45, -4.2, 4.2);
   const enemy: Enemy = {
     id: state.nextEnemyId++,
     x: spawnX,
@@ -1044,6 +1055,7 @@ function findCueCandidate(
 ): { enemy: Enemy; futureX: number; futureY: number } | null {
   let best: { enemy: Enemy; futureX: number; futureY: number } | null = null;
   let bestScore = Number.POSITIVE_INFINITY;
+  const shipAtCue = getShipPoseAtTime(cueTimeSeconds);
 
   for (const enemy of state.enemies) {
     if (enemy.scheduledCueTime !== null || enemyAlreadyAssignedToCue(state.cueTimeline, enemy.id)) {
@@ -1056,11 +1068,11 @@ function findCueCandidate(
     }
 
     const future = predictEnemyPosition(enemy, dt);
-    const dx = future.x - state.shipX;
-    const dy = future.y - state.shipY;
-    const score = Math.abs(dy) * 1.5 + dx * 0.4;
+    const dx = future.x - shipAtCue.x;
+    const dy = future.y - shipAtCue.baseY;
+    const score = Math.abs(dy) * 1.5 + Math.abs(dx - 6.2) * 0.65;
 
-    if (future.x <= state.shipX + 0.8 || future.x > state.shipX + 8 || future.x >= 18) {
+    if (future.x <= shipAtCue.x + 0.8 || future.x > shipAtCue.x + 9.2 || future.x >= 18.8) {
       continue;
     }
 
@@ -1075,6 +1087,34 @@ function findCueCandidate(
   }
 
   return best;
+}
+
+function solveCueFireTime(
+  state: SimulationState,
+  enemy: Enemy,
+  cueTimeSeconds: number
+): number | null {
+  const dtCue = cueTimeSeconds - state.simTimeSeconds;
+  if (dtCue <= 0.02) {
+    return null;
+  }
+
+  const enemyAtCue = predictEnemyPosition(enemy, dtCue);
+  let fireTimeSeconds = cueTimeSeconds - clamp(dtCue * 0.5, 0.14, 0.8);
+
+  for (let i = 0; i < 4; i += 1) {
+    const shipPose = getShipPoseAtTime(fireTimeSeconds);
+    const shotX = shipPose.x + 0.65;
+    const shotY = shipPose.baseY;
+    const leadSeconds = Math.hypot(enemyAtCue.x - shotX, enemyAtCue.y - shotY) / PLAYER_PROJECTILE_SPEED;
+    fireTimeSeconds = cueTimeSeconds - leadSeconds;
+  }
+
+  if (fireTimeSeconds < state.simTimeSeconds || fireTimeSeconds > cueTimeSeconds - 0.01) {
+    return null;
+  }
+
+  return fireTimeSeconds;
 }
 
 function enemyAlreadyAssignedToCue(cues: ScheduledCue[], enemyId: number): boolean {
@@ -1151,6 +1191,31 @@ function predictEnemyPosition(enemy: Enemy, dt: number): { x: number; y: number 
   }
 
   return { x, y };
+}
+
+function getShipPoseAtTime(timeSeconds: number): {
+  x: number;
+  baseY: number;
+  vx: number;
+  vy: number;
+} {
+  const primaryPhase = timeSeconds * SHIP_SWEEP_FREQUENCY;
+  const secondaryPhase = timeSeconds * SHIP_SWEEP_SECONDARY_FREQUENCY + 0.8;
+  const x =
+    SHIP_BASE_X +
+    Math.sin(primaryPhase) * SHIP_SWEEP_AMPLITUDE +
+    Math.sin(secondaryPhase) * SHIP_SWEEP_SECONDARY_AMPLITUDE;
+  const baseY = Math.sin(timeSeconds * SHIP_BASE_Y_FREQUENCY) * SHIP_BASE_Y_AMPLITUDE;
+  const vx =
+    Math.cos(primaryPhase) * SHIP_SWEEP_AMPLITUDE * SHIP_SWEEP_FREQUENCY +
+    Math.cos(secondaryPhase) * SHIP_SWEEP_SECONDARY_AMPLITUDE * SHIP_SWEEP_SECONDARY_FREQUENCY;
+  const vy = Math.cos(timeSeconds * SHIP_BASE_Y_FREQUENCY) * SHIP_BASE_Y_AMPLITUDE * SHIP_BASE_Y_FREQUENCY;
+  return {
+    x,
+    baseY,
+    vx,
+    vy
+  };
 }
 
 function steerShipY(state: SimulationState, baseY: number, deltaSeconds: number): number {
