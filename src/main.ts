@@ -3,6 +3,7 @@ import { analyzeAudioTrack } from "./audio/analyze-track";
 import type { AudioAnalysisResult, FeatureFrame } from "./audio/types";
 import { setupScene } from "./render/scene";
 import { createSimulation, type SimulationSnapshot } from "./game/sim";
+import { buildPrecomputedRun, type PrecomputedRun } from "./game/precomputedRun";
 import { createDebugHud } from "./ui/debugHud";
 import { createAudioPanel } from "./ui/audioPanel";
 import { createEventTimeline } from "./ui/eventTimeline";
@@ -20,6 +21,8 @@ const sim = createSimulation();
 const hud = createDebugHud(app);
 const eventTimeline = createEventTimeline(app);
 let latestSnapshot: SimulationSnapshot = sim.getSnapshot();
+let precomputedRun: PrecomputedRun | null = null;
+let precomputeStatsText = "off";
 let currentBestScore = 0;
 let currentRunKey: string | null = null;
 let cachedTimelineAnalysisRef: object | null = null;
@@ -31,10 +34,21 @@ const audioPanel = createAudioPanel(app, {
   },
   onStartRun(analysis, seed) {
     const runTimeline = buildRunTimelineEvents(analysis);
+    const intensityTimeline = buildIntensityTimeline(analysis.frames);
     sim.setRandomSeed(seed);
     sim.setMoodProfile(analysis.mood.label);
-    sim.setIntensityTimeline(buildIntensityTimeline(analysis.frames));
-    sim.startTrackRun(runTimeline.events.map((cue) => cue.timeSeconds));
+    sim.setIntensityTimeline(intensityTimeline);
+    const cueTimesSeconds = runTimeline.events.map((cue) => cue.timeSeconds);
+    sim.startTrackRun(cueTimesSeconds);
+    precomputedRun = buildPrecomputedRun({
+      seed,
+      moodProfile: analysis.mood.label,
+      intensityTimeline,
+      cueTimesSeconds,
+      durationSeconds: analysis.durationSeconds
+    });
+    precomputeStatsText = formatPrecomputeStats(precomputedRun);
+    latestSnapshot = precomputedRun.getSnapshotAtTime(0);
     cachedTimelineAnalysisRef = analysis;
     cachedTimelineCues = runTimeline.events;
     usingCueFallback = runTimeline.usingCueFallback;
@@ -92,6 +106,8 @@ function animate(frameTimeMs: number): void {
 
   const frameSeconds = Math.min(rawFrameSeconds, maxFrameSeconds);
   const analysis = audioPanel.getLatestAnalysis();
+  const activePrecomputedRun = precomputedRun;
+  const hasPrecomputedRun = activePrecomputedRun !== null;
   const audioPlaybackTimeSecondsPreStep = audioPanel.getAudioPlaybackTime();
   const isAudioPlaying = audioPanel.isAudioPlaying();
   const freezeForPausedAudio =
@@ -100,7 +116,9 @@ function animate(frameTimeMs: number): void {
     !isAudioPlaying;
   const followAudioClock =
     analysis !== null && audioPlaybackTimeSecondsPreStep > 0 && isAudioPlaying;
-  if (freezeForPausedAudio) {
+  if (hasPrecomputedRun) {
+    accumulatorSeconds = 0;
+  } else if (freezeForPausedAudio) {
     accumulatorSeconds = 0;
   } else if (followAudioClock) {
     const catchUpSeconds = audioPlaybackTimeSecondsPreStep - lastSimTimeSeconds;
@@ -113,13 +131,17 @@ function animate(frameTimeMs: number): void {
     accumulatorSeconds += frameSeconds;
   }
 
-  while (accumulatorSeconds >= fixedStepSeconds) {
+  while (!hasPrecomputedRun && accumulatorSeconds >= fixedStepSeconds) {
     sim.step(fixedStepSeconds);
     accumulatorSeconds -= fixedStepSeconds;
   }
 
   const alpha = accumulatorSeconds / fixedStepSeconds;
-  const snapshot: SimulationSnapshot = sim.getSnapshot();
+  const snapshot: SimulationSnapshot = hasPrecomputedRun
+    ? activePrecomputedRun.getSnapshotAtTime(
+        audioPlaybackTimeSecondsPreStep > 0 ? audioPlaybackTimeSecondsPreStep : 0
+      )
+    : sim.getSnapshot();
   latestSnapshot = snapshot;
   lastSimTimeSeconds = snapshot.simTimeSeconds;
   const audioPlaybackTimeSeconds = audioPanel.getAudioPlaybackTime();
@@ -132,6 +154,8 @@ function animate(frameTimeMs: number): void {
     sim.setMoodProfile(analysis.mood.label);
     sim.setIntensityTimeline(buildIntensityTimeline(analysis.frames));
     sim.setCueTimeline(runTimeline.events.map((cue) => cue.timeSeconds));
+    precomputedRun = null;
+    precomputeStatsText = "off";
     cachedTimelineAnalysisRef = analysis;
     cachedTimelineCues = runTimeline.events;
     usingCueFallback = runTimeline.usingCueFallback;
@@ -189,7 +213,8 @@ function animate(frameTimeMs: number): void {
     availableCueTargetCount: snapshot.availableCueTargetCount,
     queuedCueShotCount: snapshot.queuedCueShotCount,
     bestScore: currentBestScore,
-    moodProfile: snapshot.moodProfile
+    moodProfile: snapshot.moodProfile,
+    precomputeStats: precomputeStatsText
   });
 
   requestAnimationFrame(animate);
@@ -294,4 +319,9 @@ function saveBestScore(key: string, value: number): void {
   } catch {
     // Ignore storage failures.
   }
+}
+
+function formatPrecomputeStats(run: PrecomputedRun): string {
+  const mb = run.estimatedBytes / (1024 * 1024);
+  return `${run.snapshots.length} frames | ${run.buildMs.toFixed(0)}ms | ${mb.toFixed(1)}MB`;
 }

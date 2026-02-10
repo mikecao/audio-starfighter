@@ -20,6 +20,7 @@ type HudMetrics = {
   bestScore: number;
   queuedCueShotCount: number;
   moodProfile: "calm" | "driving" | "aggressive";
+  precomputeStats: string;
 };
 
 export type DebugHud = {
@@ -62,7 +63,8 @@ export function createDebugHud(container: HTMLElement): DebugHud {
     { key: "queuedCueShotCount", label: "Cue Shots" },
     { key: "cueHitRate", label: "Cue Hit %" },
     { key: "bestScore", label: "Best Score" },
-    { key: "moodProfile", label: "Mood" }
+    { key: "moodProfile", label: "Mood" },
+    { key: "precomputeStats", label: "Precompute" }
   ] as const;
 
   const valueNodes = new Map<string, HTMLElement>();
@@ -120,6 +122,7 @@ export function createDebugHud(container: HTMLElement): DebugHud {
       valueNodes.get("cueHitRate")!.textContent = `${hitRate.toFixed(1)}%`;
       valueNodes.get("bestScore")!.textContent = String(metrics.bestScore);
       valueNodes.get("moodProfile")!.textContent = metrics.moodProfile;
+      valueNodes.get("precomputeStats")!.textContent = metrics.precomputeStats;
     }
   };
 }
