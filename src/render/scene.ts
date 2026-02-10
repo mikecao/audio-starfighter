@@ -5,6 +5,7 @@ import {
   BoxGeometry,
   Color,
   DirectionalLight,
+  DoubleSide,
   Float32BufferAttribute,
   Group,
   MeshBasicMaterial,
@@ -59,7 +60,11 @@ export function setupScene(container: HTMLElement): RenderScene {
   const shipMaterial = new MeshStandardMaterial({
     color: "#67e8f9",
     roughness: 0.25,
-    metalness: 0.5
+    metalness: 0.5,
+    transparent: true,
+    opacity: 0.62,
+    side: DoubleSide,
+    depthWrite: false
   });
   const shipMesh = new Mesh(shipGeometry, shipMaterial);
   scene.add(shipMesh);
@@ -128,6 +133,11 @@ export function setupScene(container: HTMLElement): RenderScene {
   const laserGroup = new Group();
   scene.add(laserGroup);
   const laserMeshes: Mesh[] = [];
+
+  let previousShipY = 0;
+  let previousShipTimeSeconds = 0;
+  let hasPreviousShipY = false;
+  let shipPitch = 0;
 
   const explosionGeometry = new SphereGeometry(0.4, 10, 8);
   const explosionMaterial = new MeshBasicMaterial({
@@ -200,7 +210,19 @@ export function setupScene(container: HTMLElement): RenderScene {
     update(snapshot) {
       const starTimeSeconds = performance.now() * 0.001;
       shipMesh.position.set(snapshot.ship.x, snapshot.ship.y, snapshot.ship.z);
-      shipMesh.rotation.z = snapshot.ship.y * -0.08;
+      const deltaY = hasPreviousShipY ? snapshot.ship.y - previousShipY : 0;
+      const deltaTime = hasPreviousShipY
+        ? Math.max(1e-3, snapshot.simTimeSeconds - previousShipTimeSeconds)
+        : 1 / 60;
+      const verticalVelocity = deltaY / deltaTime;
+      hasPreviousShipY = true;
+      previousShipY = snapshot.ship.y;
+      previousShipTimeSeconds = snapshot.simTimeSeconds;
+      const targetPitch = clamp01Signed(-verticalVelocity * 0.085, 0.58);
+      shipPitch += (targetPitch - shipPitch) * 0.3;
+      shipMesh.rotation.x = shipPitch;
+      shipMesh.rotation.y = 0;
+      shipMesh.rotation.z = 0;
       shieldMesh.position.copy(shipMesh.position);
       shieldMaterial.opacity = snapshot.shieldAlpha * 0.45;
       shieldMesh.scale.setScalar(1 + snapshot.shieldAlpha * 0.5);
@@ -593,4 +615,8 @@ function hash01(seed: number): number {
 
 function clamp01(value: number): number {
   return Math.max(0, Math.min(1, value));
+}
+
+function clamp01Signed(value: number, maxAbs: number): number {
+  return Math.max(-maxAbs, Math.min(maxAbs, value));
 }

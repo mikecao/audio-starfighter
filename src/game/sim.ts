@@ -148,6 +148,7 @@ const PLAYER_PROJECTILE_SPEED = 22;
 const PLAYER_TARGET_MAX_DISTANCE_X = 4.8;
 const LASER_COOLDOWN_SECONDS = 0.22;
 const LASER_REQUIRED_OUT_OF_RANGE_COUNT = 3;
+const LASER_BEAM_LIFETIME_SECONDS = 0.26;
 
 type SimulationState = {
   simTimeSeconds: number;
@@ -553,14 +554,7 @@ function fireCleanupLaser(state: SimulationState): void {
     }
   }
 
-  state.laserBeams.push({
-    fromX: state.shipX + 0.4,
-    fromY: state.shipY,
-    toX: target.x,
-    toY: target.y,
-    ageSeconds: 0,
-    lifetimeSeconds: 0.11
-  });
+  spawnLaserBeam(state, target.x, target.y);
   spawnExplosion(state, target.x, target.y, target.z);
   state.enemies = state.enemies.filter((enemy) => enemy.id !== target.id);
   state.nextLaserFireTime = state.simTimeSeconds + LASER_COOLDOWN_SECONDS + state.rng() * 0.06;
@@ -916,8 +910,11 @@ function resolveDueCueExplosions(state: SimulationState): void {
 
     if (targetIndex >= 0) {
       const enemy = state.enemies[targetIndex];
-      spawnExplosion(state, enemy.x, enemy.y, enemy.z);
       const didCueHit = scheduledEnemyHasCueHit(state, enemy);
+      if (!didCueHit) {
+        spawnLaserBeam(state, enemy.x, enemy.y);
+      }
+      spawnExplosion(state, enemy.x, enemy.y, enemy.z);
       state.enemies.splice(targetIndex, 1);
       if (didCueHit) {
         state.cueResolvedCount += 1;
@@ -930,11 +927,23 @@ function resolveDueCueExplosions(state: SimulationState): void {
       }
     } else {
       const fallbackEnemy = pickFallbackCueEnemy(state, cue.timeSeconds);
+      spawnLaserBeam(state, fallbackEnemy.x, fallbackEnemy.y);
       spawnExplosion(state, fallbackEnemy.x, fallbackEnemy.y, fallbackEnemy.z);
       state.cueMissedCount += 1;
       state.combo = 0;
     }
   }
+}
+
+function spawnLaserBeam(state: SimulationState, toX: number, toY: number): void {
+  state.laserBeams.push({
+    fromX: state.shipX + 0.4,
+    fromY: state.shipY,
+    toX,
+    toY,
+    ageSeconds: 0,
+    lifetimeSeconds: LASER_BEAM_LIFETIME_SECONDS
+  });
 }
 
 function pickFallbackCueEnemy(

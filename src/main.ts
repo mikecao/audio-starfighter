@@ -196,7 +196,9 @@ function animate(frameTimeMs: number): void {
 
   scene.update(snapshot, alpha);
   scene.render();
-  audioPanel.setPlaybackTime(analysis ? audioPlaybackTimeSeconds : snapshot.simTimeSeconds);
+  if (!uiHidden) {
+    audioPanel.setPlaybackTime(analysis ? audioPlaybackTimeSeconds : snapshot.simTimeSeconds);
+  }
   if (analysis !== cachedTimelineAnalysisRef) {
     if (analysis) {
       const runTimeline = buildRunTimelineEvents(analysis);
@@ -209,38 +211,40 @@ function animate(frameTimeMs: number): void {
     cachedTimelineAnalysisRef = analysis;
   }
 
-  eventTimeline.update({
-    simTimeSeconds: snapshot.simTimeSeconds,
-    audioTimeSeconds: analysis && audioPlaybackTimeSeconds > 0 ? audioPlaybackTimeSeconds : null,
-    cueResolvedCount: snapshot.cueResolvedCount,
-    cueMissedCount: snapshot.cueMissedCount,
-    cues: cachedTimelineCues,
-    usingBeatFallback: usingCueFallback
-  });
-  hud.update({
-    fps: frameSeconds > 0 ? 1 / frameSeconds : 0,
-    simTimeSeconds: snapshot.simTimeSeconds,
-    simTick: snapshot.simTick,
-    enemyCount: snapshot.enemyCount,
-    projectileCount: snapshot.projectileCount,
-    bpm: analysis?.beat.bpm ?? null,
-    cueCount: cachedTimelineCues?.length ?? 0,
-    cueResolvedCount: snapshot.cueResolvedCount,
-    cueMissedCount: snapshot.cueMissedCount,
-    avgCueErrorMs: snapshot.avgCueErrorMs,
-    currentIntensity: snapshot.currentIntensity,
-    score: snapshot.score,
-    combo: snapshot.combo,
-    playbackDriftMs,
-    pendingCueCount: snapshot.pendingCueCount,
-    plannedCueCount: snapshot.plannedCueCount,
-    upcomingCueWindowCount: snapshot.upcomingCueWindowCount,
-    availableCueTargetCount: snapshot.availableCueTargetCount,
-    queuedCueShotCount: snapshot.queuedCueShotCount,
-    bestScore: currentBestScore,
-    moodProfile: snapshot.moodProfile,
-    precomputeStats: precomputeStatsText
-  });
+  if (!uiHidden) {
+    eventTimeline.update({
+      simTimeSeconds: snapshot.simTimeSeconds,
+      audioTimeSeconds: analysis && audioPlaybackTimeSeconds > 0 ? audioPlaybackTimeSeconds : null,
+      cueResolvedCount: snapshot.cueResolvedCount,
+      cueMissedCount: snapshot.cueMissedCount,
+      cues: cachedTimelineCues,
+      usingBeatFallback: usingCueFallback
+    });
+    hud.update({
+      fps: frameSeconds > 0 ? 1 / frameSeconds : 0,
+      simTimeSeconds: snapshot.simTimeSeconds,
+      simTick: snapshot.simTick,
+      enemyCount: snapshot.enemyCount,
+      projectileCount: snapshot.projectileCount,
+      bpm: analysis?.beat.bpm ?? null,
+      cueCount: cachedTimelineCues?.length ?? 0,
+      cueResolvedCount: snapshot.cueResolvedCount,
+      cueMissedCount: snapshot.cueMissedCount,
+      avgCueErrorMs: snapshot.avgCueErrorMs,
+      currentIntensity: snapshot.currentIntensity,
+      score: snapshot.score,
+      combo: snapshot.combo,
+      playbackDriftMs,
+      pendingCueCount: snapshot.pendingCueCount,
+      plannedCueCount: snapshot.plannedCueCount,
+      upcomingCueWindowCount: snapshot.upcomingCueWindowCount,
+      availableCueTargetCount: snapshot.availableCueTargetCount,
+      queuedCueShotCount: snapshot.queuedCueShotCount,
+      bestScore: currentBestScore,
+      moodProfile: snapshot.moodProfile,
+      precomputeStats: precomputeStatsText
+    });
+  }
 
   requestAnimationFrame(animate);
 }
