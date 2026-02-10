@@ -121,11 +121,11 @@ type IntensitySample = {
 type MoodProfile = "calm" | "driving" | "aggressive";
 
 const CUE_ASSIGN_MIN_LEAD_SECONDS = 0.2;
-const CUE_ASSIGN_MAX_LEAD_SECONDS = 1.1;
+const CUE_ASSIGN_MAX_LEAD_SECONDS = 0.8;
 const CUE_SUPPORT_LEAD_PADDING_SECONDS = 0.55;
 const MAX_CUE_SUPPORT_SPAWNS_PER_STEP = 8;
 const PLAYER_PROJECTILE_SPEED = 22;
-const PLAYER_TARGET_MAX_DISTANCE_X = 6.2;
+const PLAYER_TARGET_MAX_DISTANCE_X = 4.8;
 
 type SimulationState = {
   simTimeSeconds: number;
@@ -418,8 +418,8 @@ function fireProjectiles(state: SimulationState): void {
       radius: 0.16
     });
 
-    const interval = (0.24 - intensity * 0.07) * mood.playerFireIntervalScale;
-    state.nextPlayerFireTime += clamp(interval, 0.14, 0.29);
+    const interval = (0.2 - intensity * 0.07) * mood.playerFireIntervalScale;
+    state.nextPlayerFireTime += clamp(interval, 0.1, 0.24);
   }
 }
 
@@ -836,7 +836,7 @@ function findCueCandidate(
     const dy = future.y - state.shipY;
     const score = Math.abs(dy) * 1.5 + dx * 0.4;
 
-    if (future.x <= state.shipX + 0.8 || future.x >= 18) {
+    if (future.x <= state.shipX + 0.8 || future.x > state.shipX + 8 || future.x >= 18) {
       continue;
     }
 

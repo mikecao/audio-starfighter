@@ -25,7 +25,7 @@ export function buildPrecomputedRun(params: {
   stepSeconds?: number;
 }): PrecomputedRun {
   const buildStartMs = performance.now();
-  const stepSeconds = params.stepSeconds ?? 1 / 60;
+  const stepSeconds = params.stepSeconds ?? 1 / 120;
   const sim = createSimulation();
   sim.setRandomSeed(params.seed);
   sim.setMoodProfile(params.moodProfile);
@@ -56,16 +56,152 @@ export function buildPrecomputedRun(params: {
       if (!Number.isFinite(timeSeconds) || timeSeconds <= 0) {
         return snapshots[0];
       }
-      const index = Math.floor(timeSeconds / stepSeconds);
-      if (index < 0) {
+      const exactIndex = timeSeconds / stepSeconds;
+      const indexA = Math.floor(exactIndex);
+      const indexB = indexA + 1;
+      const blend = clamp01(exactIndex - indexA);
+
+      if (indexA < 0) {
         return snapshots[0];
       }
-      if (index >= snapshots.length) {
+      if (indexA >= snapshots.length) {
         return fallbackSnapshot;
       }
-      return snapshots[index];
+
+      const snapshotA = snapshots[indexA];
+      const snapshotB = snapshots[Math.min(indexB, snapshots.length - 1)] ?? snapshotA;
+      if (blend <= 0 || snapshotA === snapshotB) {
+        return snapshotA;
+      }
+      return blendSnapshots(snapshotA, snapshotB, blend);
     }
   };
+}
+
+function blendSnapshots(a: SimulationSnapshot, b: SimulationSnapshot, t: number): SimulationSnapshot {
+  return {
+    simTimeSeconds: lerp(a.simTimeSeconds, b.simTimeSeconds, t),
+    simTick: t < 0.5 ? a.simTick : b.simTick,
+    ship: {
+      x: lerp(a.ship.x, b.ship.x, t),
+      y: lerp(a.ship.y, b.ship.y, t),
+      z: lerp(a.ship.z, b.ship.z, t)
+    },
+    enemyCount: t < 0.5 ? a.enemyCount : b.enemyCount,
+    projectileCount: t < 0.5 ? a.projectileCount : b.projectileCount,
+    enemies: blendEnemies(a.enemies, b.enemies, t),
+    projectiles: blendProjectiles(a.projectiles, b.projectiles, t),
+    enemyProjectiles: blendEnemyProjectiles(a.enemyProjectiles, b.enemyProjectiles, t),
+    explosions: blendExplosions(a.explosions, b.explosions, t),
+    shieldAlpha: lerp(a.shieldAlpha, b.shieldAlpha, t),
+    cueResolvedCount: t < 0.5 ? a.cueResolvedCount : b.cueResolvedCount,
+    cueMissedCount: t < 0.5 ? a.cueMissedCount : b.cueMissedCount,
+    avgCueErrorMs: lerp(a.avgCueErrorMs, b.avgCueErrorMs, t),
+    currentIntensity: lerp(a.currentIntensity, b.currentIntensity, t),
+    score: t < 0.5 ? a.score : b.score,
+    combo: t < 0.5 ? a.combo : b.combo,
+    pendingCueCount: t < 0.5 ? a.pendingCueCount : b.pendingCueCount,
+    plannedCueCount: t < 0.5 ? a.plannedCueCount : b.plannedCueCount,
+    queuedCueShotCount: t < 0.5 ? a.queuedCueShotCount : b.queuedCueShotCount,
+    upcomingCueWindowCount: t < 0.5 ? a.upcomingCueWindowCount : b.upcomingCueWindowCount,
+    availableCueTargetCount: t < 0.5 ? a.availableCueTargetCount : b.availableCueTargetCount,
+    moodProfile: t < 0.5 ? a.moodProfile : b.moodProfile
+  };
+}
+
+function blendEnemies(
+  a: SimulationSnapshot["enemies"],
+  b: SimulationSnapshot["enemies"],
+  t: number
+): SimulationSnapshot["enemies"] {
+  const count = Math.min(a.length, b.length);
+  const out: SimulationSnapshot["enemies"] = [];
+  for (let i = 0; i < count; i += 1) {
+    const ea = a[i];
+    const eb = b[i];
+    out.push({
+      x: lerp(ea.x, eb.x, t),
+      y: lerp(ea.y, eb.y, t),
+      z: lerp(ea.z, eb.z, t),
+      rotationZ: lerpAngle(ea.rotationZ, eb.rotationZ, t),
+      damageFlash: lerp(ea.damageFlash, eb.damageFlash, t)
+    });
+  }
+  return out;
+}
+
+function blendProjectiles(
+  a: SimulationSnapshot["projectiles"],
+  b: SimulationSnapshot["projectiles"],
+  t: number
+): SimulationSnapshot["projectiles"] {
+  const count = Math.min(a.length, b.length);
+  const out: SimulationSnapshot["projectiles"] = [];
+  for (let i = 0; i < count; i += 1) {
+    const pa = a[i];
+    const pb = b[i];
+    out.push({
+      x: lerp(pa.x, pb.x, t),
+      y: lerp(pa.y, pb.y, t),
+      z: lerp(pa.z, pb.z, t),
+      rotationZ: lerpAngle(pa.rotationZ, pb.rotationZ, t)
+    });
+  }
+  return out;
+}
+
+function blendEnemyProjectiles(
+  a: SimulationSnapshot["enemyProjectiles"],
+  b: SimulationSnapshot["enemyProjectiles"],
+  t: number
+): SimulationSnapshot["enemyProjectiles"] {
+  const count = Math.min(a.length, b.length);
+  const out: SimulationSnapshot["enemyProjectiles"] = [];
+  for (let i = 0; i < count; i += 1) {
+    const pa = a[i];
+    const pb = b[i];
+    out.push({
+      x: lerp(pa.x, pb.x, t),
+      y: lerp(pa.y, pb.y, t),
+      z: lerp(pa.z, pb.z, t)
+    });
+  }
+  return out;
+}
+
+function blendExplosions(
+  a: SimulationSnapshot["explosions"],
+  b: SimulationSnapshot["explosions"],
+  t: number
+): SimulationSnapshot["explosions"] {
+  const count = Math.min(a.length, b.length);
+  const out: SimulationSnapshot["explosions"] = [];
+  for (let i = 0; i < count; i += 1) {
+    const ea = a[i];
+    const eb = b[i];
+    out.push({
+      x: lerp(ea.x, eb.x, t),
+      y: lerp(ea.y, eb.y, t),
+      z: lerp(ea.z, eb.z, t),
+      scale: lerp(ea.scale, eb.scale, t),
+      alpha: lerp(ea.alpha, eb.alpha, t),
+      variant: t < 0.5 ? ea.variant : eb.variant
+    });
+  }
+  return out;
+}
+
+function lerp(a: number, b: number, t: number): number {
+  return a + (b - a) * t;
+}
+
+function lerpAngle(a: number, b: number, t: number): number {
+  const delta = ((b - a + Math.PI) % (Math.PI * 2)) - Math.PI;
+  return a + delta * t;
+}
+
+function clamp01(value: number): number {
+  return Math.max(0, Math.min(1, value));
 }
 
 function estimateSnapshotBytes(snapshots: SimulationSnapshot[]): number {
