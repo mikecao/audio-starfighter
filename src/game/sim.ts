@@ -584,7 +584,7 @@ function spawnAmbientEnemy(state: SimulationState): void {
 
   state.enemies.push({
     id: state.nextEnemyId++,
-    x: 13 + state.rng() * 2.5,
+    x: 20.8 + state.rng() * 2.4,
     y: lane * 1.6,
     z: 0,
     vx: (-2.5 - intensity * 1.8 - state.rng() * 0.95) * mood.enemySpeedScale,
@@ -661,7 +661,7 @@ function spawnCueSupportEnemy(state: SimulationState): void {
 
   state.enemies.push({
     id: state.nextEnemyId++,
-    x: 11.4 + state.rng() * 3.2,
+    x: 20.6 + state.rng() * 2.2,
     y: baseY,
     z: 0,
     vx: (-2.15 - intensity * 1.2 - state.rng() * 0.6) * mood.enemySpeedScale,

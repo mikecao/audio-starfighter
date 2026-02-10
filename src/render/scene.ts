@@ -79,15 +79,16 @@ export function setupScene(container: HTMLElement): RenderScene {
     roughness: 0.35,
     metalness: 0.2,
     emissive: "#7f1d1d",
-    emissiveIntensity: 0.2
+    emissiveIntensity: 0.2,
+    transparent: true,
+    opacity: 1
   });
-  const enemyHitMaterial = new MeshStandardMaterial({
-    color: "#fef08a",
-    roughness: 0.25,
-    metalness: 0.25,
-    emissive: "#fde047",
-    emissiveIntensity: 0.9
-  });
+  const enemyBaseColor = new Color("#f87171");
+  const enemyHitColor = new Color("#fef08a");
+  const enemyBaseEmissive = new Color("#7f1d1d");
+  const enemyHitEmissive = new Color("#fde047");
+  const enemyTintColor = new Color();
+  const enemyTintEmissive = new Color();
   const enemyGeometry = new BoxGeometry(0.85, 0.85, 0.85);
   const enemyGroup = new Group();
   scene.add(enemyGroup);
@@ -192,15 +193,11 @@ export function setupScene(container: HTMLElement): RenderScene {
       currentBg.copy(lowEnergyBg).lerp(highEnergyBg, intensity);
       shipMaterial.emissive.set("#0e7490");
       shipMaterial.emissiveIntensity = 0.08 + intensity * 0.3;
-      enemyMaterial.emissive.set("#7f1d1d");
-      enemyMaterial.emissiveIntensity = 0.18 + intensity * 0.6;
-      enemyHitMaterial.emissive.set("#fde047");
-      enemyHitMaterial.emissiveIntensity = 0.55 + intensity * 0.65;
       updateStarLayer(farStars, snapshot.simTimeSeconds);
       updateStarLayer(nearStars, snapshot.simTimeSeconds);
 
       syncMeshPool(enemyMeshes, snapshot.enemies.length, enemyGroup, () => {
-        const mesh = new Mesh(enemyGeometry, enemyMaterial);
+        const mesh = new Mesh(enemyGeometry, enemyMaterial.clone());
         mesh.visible = false;
         return mesh;
       });
@@ -211,8 +208,19 @@ export function setupScene(container: HTMLElement): RenderScene {
           mesh.visible = false;
           continue;
         }
-        mesh.visible = true;
-        mesh.material = enemy.damageFlash > 0.02 ? enemyHitMaterial : enemyMaterial;
+        const entryAlpha = clamp01((18.4 - enemy.x) / 2.8);
+        mesh.visible = entryAlpha > 0.01;
+        if (!mesh.visible) {
+          continue;
+        }
+        const flash = clamp01(enemy.damageFlash);
+        const material = mesh.material as MeshStandardMaterial;
+        enemyTintColor.lerpColors(enemyBaseColor, enemyHitColor, flash);
+        material.color.copy(enemyTintColor);
+        enemyTintEmissive.lerpColors(enemyBaseEmissive, enemyHitEmissive, flash);
+        material.emissive.copy(enemyTintEmissive);
+        material.emissiveIntensity = (0.18 + intensity * 0.6) + flash * (0.45 + intensity * 0.35);
+        material.opacity = entryAlpha;
         mesh.position.set(enemy.x, enemy.y, enemy.z);
         mesh.rotation.z = enemy.rotationZ;
         const flashScale = 1 + enemy.damageFlash * 0.14;
