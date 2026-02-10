@@ -12,11 +12,14 @@ drives game pacing and combat scheduling from that analysis.
 - Enemy projectile fire and ship dodge behavior
 - Cue-based explosion scheduling with hit/miss tracking
 - Audio intensity-driven pacing (spawn and firing pressure)
+- Precomputed run timeline for smoother playback and instant time seeks
+- Explosion palette variants (multi-color cores and rings)
 - Sync debug HUD:
   - BPM, cue count, cue hits/misses
   - average cue error
   - simulation/audio drift
   - cue queue, planned cue count, queued cue shots, cue hit rate
+  - precompute frame/build/memory stats
   - score and combo
 - Audio analysis panel:
   - load and analyze audio file
@@ -49,3 +52,7 @@ pnpm build
 - Keyboard shortcuts:
   - `Space` toggles audio playback (when not focused in an input)
   - `R` restarts the current run (when not focused in an input)
+
+## License
+
+MIT
