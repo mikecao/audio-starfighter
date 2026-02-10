@@ -32,6 +32,7 @@ export type SimulationSnapshot = {
     z: number;
     scale: number;
     alpha: number;
+    variant: number;
   }>;
   shieldAlpha: number;
   cueResolvedCount: number;
@@ -97,6 +98,7 @@ type Explosion = {
   z: number;
   ageSeconds: number;
   lifetimeSeconds: number;
+  variant: number;
 };
 
 type ScheduledCue = {
@@ -269,7 +271,8 @@ export function createSimulation(): Simulation {
             y: explosion.y,
             z: explosion.z,
             scale: 0.5 + normalizedAge * 1.5,
-            alpha: 1 - normalizedAge
+            alpha: 1 - normalizedAge,
+            variant: explosion.variant
           };
         }),
         shieldAlpha: state.shipShieldAlpha,
@@ -1014,7 +1017,8 @@ function spawnExplosion(state: SimulationState, x: number, y: number, z: number)
     y,
     z,
     ageSeconds: 0,
-    lifetimeSeconds: 0.58
+    lifetimeSeconds: 0.58,
+    variant: Math.floor(state.rng() * 6)
   });
 }
 

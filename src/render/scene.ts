@@ -125,7 +125,7 @@ export function setupScene(container: HTMLElement): RenderScene {
     opacity: 1,
     blending: AdditiveBlending
   });
-  const explosionRingGeometry = new RingGeometry(0.56, 0.62, 40);
+  const explosionRingGeometry = new RingGeometry(0.595, 0.62, 40);
   const explosionRingMaterial = new MeshBasicMaterial({
     color: "#fb923c",
     transparent: true,
@@ -138,10 +138,8 @@ export function setupScene(container: HTMLElement): RenderScene {
   const explosionMeshes: Mesh[] = [];
   const explosionRingMeshes: Mesh[] = [];
   const explosionParticleBursts: ExplosionBurst[] = [];
-  const coreColorStart = new Color("#fef3c7");
-  const coreColorMid = new Color("#67e8f9");
-  const coreColorEnd = new Color("#f97316");
   const coreColor = new Color();
+  const ringColor = new Color();
 
   const closeStars = createStarLayer(130, 0xe0f2fe, 10.5, 0.12, 0.56);
   const nearStars = createStarLayer(220, 0x93c5fd, 6.6, 0.08, 0.34);
@@ -311,15 +309,16 @@ export function setupScene(container: HTMLElement): RenderScene {
         const normalizedAge = clamp01(1 - explosion.alpha);
         const intensityScale = 0.75 + intensity * 1.45;
         const intensityGlow = 0.7 + intensity * 0.8;
+        const palette = EXPLOSION_PALETTES[explosion.variant % EXPLOSION_PALETTES.length];
 
         mesh.visible = true;
         mesh.position.set(explosion.x, explosion.y, explosion.z);
         mesh.scale.setScalar(explosion.scale * ARCADE_CORE_SCALE_MULTIPLIER * intensityScale);
         const material = mesh.material as MeshBasicMaterial;
         if (normalizedAge < 0.4) {
-          coreColor.lerpColors(coreColorStart, coreColorMid, normalizedAge / 0.4);
+          coreColor.lerpColors(palette.coreStart, palette.coreMid, normalizedAge / 0.4);
         } else {
-          coreColor.lerpColors(coreColorMid, coreColorEnd, (normalizedAge - 0.4) / 0.6);
+          coreColor.lerpColors(palette.coreMid, palette.coreEnd, (normalizedAge - 0.4) / 0.6);
         }
         material.color.copy(coreColor);
         material.opacity = Math.max(0, Math.pow(explosion.alpha, 0.55) * intensityGlow);
@@ -328,6 +327,8 @@ export function setupScene(container: HTMLElement): RenderScene {
         ringMesh.position.set(explosion.x, explosion.y, explosion.z + 0.01);
         ringMesh.scale.setScalar(0.9 + normalizedAge * ARCADE_RING_MAX_SCALE * intensityScale);
         const ringMaterial = ringMesh.material as MeshBasicMaterial;
+        ringColor.lerpColors(palette.ringStart, palette.ringEnd, normalizedAge);
+        ringMaterial.color.copy(ringColor);
         ringMaterial.opacity = Math.max(
           0,
           Math.pow(1 - normalizedAge, 0.8) * (0.6 + intensity * 0.7)
@@ -373,9 +374,61 @@ type ExplosionBurst = {
   positionAttribute: Float32BufferAttribute;
 };
 
-const ARCADE_PARTICLE_COUNT = 96;
+type ExplosionPalette = {
+  coreStart: Color;
+  coreMid: Color;
+  coreEnd: Color;
+  ringStart: Color;
+  ringEnd: Color;
+};
+
+const ARCADE_PARTICLE_COUNT = 40;
 const ARCADE_CORE_SCALE_MULTIPLIER = 3.4;
 const ARCADE_RING_MAX_SCALE = 7.2;
+const EXPLOSION_PALETTES: ExplosionPalette[] = [
+  {
+    coreStart: new Color("#f472b6"),
+    coreMid: new Color("#60a5fa"),
+    coreEnd: new Color("#38bdf8"),
+    ringStart: new Color("#f0abfc"),
+    ringEnd: new Color("#a78bfa")
+  },
+  {
+    coreStart: new Color("#ef4444"),
+    coreMid: new Color("#f97316"),
+    coreEnd: new Color("#facc15"),
+    ringStart: new Color("#fb7185"),
+    ringEnd: new Color("#fb923c")
+  },
+  {
+    coreStart: new Color("#22d3ee"),
+    coreMid: new Color("#38bdf8"),
+    coreEnd: new Color("#a3e635"),
+    ringStart: new Color("#67e8f9"),
+    ringEnd: new Color("#84cc16")
+  },
+  {
+    coreStart: new Color("#fca5a5"),
+    coreMid: new Color("#f9a8d4"),
+    coreEnd: new Color("#c084fc"),
+    ringStart: new Color("#fda4af"),
+    ringEnd: new Color("#e879f9")
+  },
+  {
+    coreStart: new Color("#4ade80"),
+    coreMid: new Color("#22d3ee"),
+    coreEnd: new Color("#60a5fa"),
+    ringStart: new Color("#86efac"),
+    ringEnd: new Color("#06b6d4")
+  },
+  {
+    coreStart: new Color("#fde047"),
+    coreMid: new Color("#fb923c"),
+    coreEnd: new Color("#f43f5e"),
+    ringStart: new Color("#fef08a"),
+    ringEnd: new Color("#f97316")
+  }
+];
 
 function createStarLayer(
   count: number,
@@ -461,7 +514,7 @@ function createExplosionBurst(seed: number): ExplosionBurst {
   geometry.setAttribute("position", positionAttribute);
   const material = new PointsMaterial({
     color: "#fff1b3",
-    size: 10,
+    size: 4,
     sizeAttenuation: false,
     transparent: true,
     opacity: 1,
@@ -496,7 +549,7 @@ function updateExplosionBurst(
 
   const material = burst.points.material as PointsMaterial;
   material.opacity = Math.max(0, Math.pow(alpha, 0.35) * (0.65 + intensity * 0.7));
-  material.size = (12 - normalizedAge * 6) * (0.7 + intensity * 0.9);
+  material.size = (4.8 - normalizedAge * 2.6) * (0.65 + intensity * 0.75);
 }
 
 function hash01(seed: number): number {
