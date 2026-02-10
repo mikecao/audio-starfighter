@@ -105,6 +105,8 @@ export function createAudioPanel(
     }
 
     const currentRequestId = ++requestId;
+    playbackTimeSeconds = 0;
+    lastTimelineDrawPlaybackTime = -1;
     status.textContent = `Analyzing ${file.name}...`;
     stats.textContent = "Processing waveform...";
     drawPlaceholder(canvas, "Analyzing...");
@@ -116,6 +118,8 @@ export function createAudioPanel(
       }
 
       latestAnalysis = analysis;
+      playbackTimeSeconds = 0;
+      lastTimelineDrawPlaybackTime = -1;
       runButton.disabled = false;
       restartButton.disabled = false;
       if (trackUrl) {
@@ -133,8 +137,9 @@ export function createAudioPanel(
         `Confidence ${(analysis.beat.confidence * 100).toFixed(0)}%`
       ].join(" | ");
 
-      drawTimeline(canvas, analysis, playbackTimeSeconds);
-      lastTimelineDrawPlaybackTime = playbackTimeSeconds;
+      drawTimeline(canvas, analysis, 0);
+      lastTimelineDrawPlaybackTime = 0;
+      startRun("start");
     } catch (error) {
       if (currentRequestId !== requestId) {
         return;
@@ -220,6 +225,7 @@ export function createAudioPanel(
     setPlaybackTime(timeSeconds) {
       playbackTimeSeconds = Math.max(0, timeSeconds);
       if (latestAnalysis) {
+        playbackTimeSeconds = Math.min(playbackTimeSeconds, latestAnalysis.durationSeconds);
         const shouldRedraw =
           lastTimelineDrawPlaybackTime < 0 ||
           Math.abs(playbackTimeSeconds - lastTimelineDrawPlaybackTime) >= 1 / 30 ||
@@ -338,11 +344,12 @@ function drawTimeline(
   }
 
   const playheadX = (playbackTimeSeconds / analysis.durationSeconds) * width;
+  const clampedPlayheadX = Math.max(0, Math.min(width, playheadX));
   context.strokeStyle = "rgba(251, 191, 36, 0.95)";
   context.lineWidth = 2;
   context.beginPath();
-  context.moveTo(playheadX, 0);
-  context.lineTo(playheadX, height);
+  context.moveTo(clampedPlayheadX, 0);
+  context.lineTo(clampedPlayheadX, height);
   context.stroke();
 }
 

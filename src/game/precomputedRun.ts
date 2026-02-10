@@ -92,6 +92,7 @@ function blendSnapshots(a: SimulationSnapshot, b: SimulationSnapshot, t: number)
     enemies: blendEnemies(a.enemies, b.enemies, t),
     projectiles: blendProjectiles(a.projectiles, b.projectiles, t),
     enemyProjectiles: blendEnemyProjectiles(a.enemyProjectiles, b.enemyProjectiles, t),
+    laserBeams: blendLaserBeams(a.laserBeams, b.laserBeams, t),
     explosions: blendExplosions(a.explosions, b.explosions, t),
     shieldAlpha: lerp(a.shieldAlpha, b.shieldAlpha, t),
     cueResolvedCount: t < 0.5 ? a.cueResolvedCount : b.cueResolvedCount,
@@ -107,6 +108,36 @@ function blendSnapshots(a: SimulationSnapshot, b: SimulationSnapshot, t: number)
     availableCueTargetCount: t < 0.5 ? a.availableCueTargetCount : b.availableCueTargetCount,
     moodProfile: t < 0.5 ? a.moodProfile : b.moodProfile
   };
+}
+
+function blendLaserBeams(
+  a: SimulationSnapshot["laserBeams"],
+  b: SimulationSnapshot["laserBeams"],
+  t: number
+): SimulationSnapshot["laserBeams"] {
+  const count = Math.min(a.length, b.length);
+  const out: SimulationSnapshot["laserBeams"] = [];
+  for (let i = 0; i < count; i += 1) {
+    const la = a[i];
+    const lb = b[i];
+    out.push({
+      fromX: lerp(la.fromX, lb.fromX, t),
+      fromY: lerp(la.fromY, lb.fromY, t),
+      toX: lerp(la.toX, lb.toX, t),
+      toY: lerp(la.toY, lb.toY, t),
+      alpha: lerp(la.alpha, lb.alpha, t)
+    });
+  }
+  if (t < 0.5) {
+    for (let i = count; i < a.length; i += 1) {
+      out.push(a[i]);
+    }
+  } else {
+    for (let i = count; i < b.length; i += 1) {
+      out.push(b[i]);
+    }
+  }
+  return out;
 }
 
 function blendEnemies(

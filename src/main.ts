@@ -196,7 +196,7 @@ function animate(frameTimeMs: number): void {
 
   scene.update(snapshot, alpha);
   scene.render();
-  audioPanel.setPlaybackTime(snapshot.simTimeSeconds);
+  audioPanel.setPlaybackTime(analysis ? audioPlaybackTimeSeconds : snapshot.simTimeSeconds);
   if (analysis !== cachedTimelineAnalysisRef) {
     if (analysis) {
       const runTimeline = buildRunTimelineEvents(analysis);

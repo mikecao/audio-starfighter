@@ -28,6 +28,13 @@ export type SimulationSnapshot = {
     y: number;
     z: number;
   }>;
+  laserBeams: Array<{
+    fromX: number;
+    fromY: number;
+    toX: number;
+    toY: number;
+    alpha: number;
+  }>;
   explosions: Array<{
     x: number;
     y: number;
@@ -105,6 +112,15 @@ type Explosion = {
   variant: number;
 };
 
+type LaserBeam = {
+  fromX: number;
+  fromY: number;
+  toX: number;
+  toY: number;
+  ageSeconds: number;
+  lifetimeSeconds: number;
+};
+
 type ScheduledCue = {
   timeSeconds: number;
   planned: boolean;
@@ -127,9 +143,11 @@ type MoodProfile = "calm" | "driving" | "aggressive";
 const CUE_ASSIGN_MIN_LEAD_SECONDS = 0.2;
 const CUE_ASSIGN_MAX_LEAD_SECONDS = 0.8;
 const CUE_SUPPORT_LEAD_PADDING_SECONDS = 0.55;
-const MAX_CUE_SUPPORT_SPAWNS_PER_STEP = 8;
+const MAX_CUE_SUPPORT_SPAWNS_PER_STEP = 12;
 const PLAYER_PROJECTILE_SPEED = 22;
 const PLAYER_TARGET_MAX_DISTANCE_X = 4.8;
+const LASER_COOLDOWN_SECONDS = 0.22;
+const LASER_REQUIRED_OUT_OF_RANGE_COUNT = 3;
 
 type SimulationState = {
   simTimeSeconds: number;
@@ -140,6 +158,7 @@ type SimulationState = {
   enemies: Enemy[];
   projectiles: Projectile[];
   enemyProjectiles: EnemyProjectile[];
+  laserBeams: LaserBeam[];
   explosions: Explosion[];
   nextEnemySpawnTime: number;
   nextPlayerFireTime: number;
@@ -147,6 +166,7 @@ type SimulationState = {
   nextEnemyId: number;
   nextProjectileId: number;
   nextEnemyProjectileId: number;
+  nextLaserFireTime: number;
   cueTimeline: ScheduledCue[];
   cueStartOffsetSeconds: number;
   cueResolvedCount: number;
@@ -181,6 +201,7 @@ export function createSimulation(): Simulation {
     enemies: [],
     projectiles: [],
     enemyProjectiles: [],
+    laserBeams: [],
     explosions: [],
     nextEnemySpawnTime: 0.4,
     nextPlayerFireTime: 0.2,
@@ -188,6 +209,7 @@ export function createSimulation(): Simulation {
     nextEnemyId: 1,
     nextProjectileId: 1,
     nextEnemyProjectileId: 1,
+    nextLaserFireTime: 0,
     cueTimeline: [],
     cueStartOffsetSeconds: 0,
     cueResolvedCount: 0,
@@ -216,8 +238,10 @@ export function createSimulation(): Simulation {
       fireQueuedCueShots(state);
       fireProjectiles(state);
       updateEnemies(state, deltaSeconds);
+      fireCleanupLaser(state);
       updateProjectiles(state, deltaSeconds);
       updateEnemyProjectiles(state, deltaSeconds);
+      updateLaserBeams(state, deltaSeconds);
       updateExplosions(state, deltaSeconds);
       resolvePlayerProjectileCollisions(state);
       resolveEnemyProjectileShipCollisions(state);
@@ -272,6 +296,13 @@ export function createSimulation(): Simulation {
           x: projectile.x,
           y: projectile.y,
           z: projectile.z
+        })),
+        laserBeams: state.laserBeams.map((beam) => ({
+          fromX: beam.fromX,
+          fromY: beam.fromY,
+          toX: beam.toX,
+          toY: beam.toY,
+          alpha: 1 - beam.ageSeconds / Math.max(beam.lifetimeSeconds, 1e-6)
         })),
         explosions: state.explosions.map((explosion) => {
           const normalizedAge =
@@ -361,6 +392,7 @@ function resetRunState(state: SimulationState): void {
   state.enemies = [];
   state.projectiles = [];
   state.enemyProjectiles = [];
+  state.laserBeams = [];
   state.explosions = [];
   state.nextEnemySpawnTime = 0.4;
   state.nextPlayerFireTime = 0.2;
@@ -368,6 +400,7 @@ function resetRunState(state: SimulationState): void {
   state.nextEnemyId = 1;
   state.nextProjectileId = 1;
   state.nextEnemyProjectileId = 1;
+  state.nextLaserFireTime = 0;
   state.cueResolvedCount = 0;
   state.cueMissedCount = 0;
   state.cumulativeCueErrorMs = 0;
@@ -387,7 +420,7 @@ function spawnEnemies(state: SimulationState): void {
     const intensity = getIntensityAtTime(state, state.simTimeSeconds);
     const mood = moodParameters(state.moodProfile);
     const cadence = (0.9 - intensity * 0.5) * mood.spawnIntervalScale;
-    state.nextEnemySpawnTime += clamp(cadence + state.rng() * 0.35, 0.28, 1.1);
+    state.nextEnemySpawnTime += clamp(cadence + state.rng() * 0.35, 0.22, 0.95);
   }
 
   ensureCueSupportEnemies(state);
@@ -498,6 +531,48 @@ function updateEnemyProjectiles(state: SimulationState, deltaSeconds: number): v
   }
 }
 
+function fireCleanupLaser(state: SimulationState): void {
+  if (state.simTimeSeconds < state.nextLaserFireTime) {
+    return;
+  }
+
+  const outOfRange = state.enemies.filter(
+    (enemy) =>
+      enemy.scheduledCueTime === null &&
+      (enemy.x > state.shipX + PLAYER_TARGET_MAX_DISTANCE_X + 0.8 || enemy.x < state.shipX - 0.3)
+  );
+
+  if (outOfRange.length < LASER_REQUIRED_OUT_OF_RANGE_COUNT) {
+    return;
+  }
+
+  let target = outOfRange[0];
+  for (const enemy of outOfRange) {
+    if (enemy.x > target.x) {
+      target = enemy;
+    }
+  }
+
+  state.laserBeams.push({
+    fromX: state.shipX + 0.4,
+    fromY: state.shipY,
+    toX: target.x,
+    toY: target.y,
+    ageSeconds: 0,
+    lifetimeSeconds: 0.11
+  });
+  spawnExplosion(state, target.x, target.y, target.z);
+  state.enemies = state.enemies.filter((enemy) => enemy.id !== target.id);
+  state.nextLaserFireTime = state.simTimeSeconds + LASER_COOLDOWN_SECONDS + state.rng() * 0.06;
+}
+
+function updateLaserBeams(state: SimulationState, deltaSeconds: number): void {
+  for (const beam of state.laserBeams) {
+    beam.ageSeconds += deltaSeconds;
+  }
+  state.laserBeams = state.laserBeams.filter((beam) => beam.ageSeconds < beam.lifetimeSeconds);
+}
+
 function updateExplosions(state: SimulationState, deltaSeconds: number): void {
   for (const explosion of state.explosions) {
     explosion.ageSeconds += deltaSeconds;
@@ -568,7 +643,7 @@ function resolveEnemyProjectileShipCollisions(state: SimulationState): void {
 }
 
 function planCueShots(state: SimulationState): void {
-  if (state.cueTimeline.length === 0 || state.enemies.length === 0) {
+  if (state.cueTimeline.length === 0) {
     return;
   }
 
@@ -578,12 +653,24 @@ function planCueShots(state: SimulationState): void {
     }
 
     const leadSeconds = cue.timeSeconds - state.simTimeSeconds;
-    if (leadSeconds < CUE_ASSIGN_MIN_LEAD_SECONDS || leadSeconds > CUE_ASSIGN_MAX_LEAD_SECONDS) {
+    if (leadSeconds < CUE_ASSIGN_MIN_LEAD_SECONDS) {
+      continue;
+    }
+
+    if (leadSeconds > CUE_ASSIGN_MAX_LEAD_SECONDS) {
+      if (leadSeconds <= 2.2) {
+        const reserved = spawnReservedCueEnemy(state, cue.timeSeconds);
+        cue.planned = true;
+        cue.assignedEnemyId = reserved.id;
+      }
       continue;
     }
 
     const candidate = findCueCandidate(state, cue.timeSeconds);
     if (!candidate) {
+      const reserved = spawnReservedCueEnemy(state, cue.timeSeconds);
+      cue.planned = true;
+      cue.assignedEnemyId = reserved.id;
       continue;
     }
 
@@ -608,6 +695,39 @@ function planCueShots(state: SimulationState): void {
   }
 }
 
+function spawnReservedCueEnemy(state: SimulationState, cueTimeSeconds: number): Enemy {
+  const intensity = getIntensityAtTime(state, state.simTimeSeconds);
+  const mood = moodParameters(state.moodProfile);
+  const leadSeconds = Math.max(0.2, cueTimeSeconds - state.simTimeSeconds);
+  const spawnX = 21.5 + state.rng() * 3.5;
+  const targetX = state.shipX + 7 + (state.rng() - 0.5) * 2.2;
+  const requiredVx = (targetX - spawnX) / leadSeconds;
+  const vx = clamp(requiredVx, -6.2, -1.9) * mood.enemySpeedScale;
+  const lane = ((state.spawnIndex + 2) % 5) - 2;
+  const baseY = lane * 1.55 + (state.rng() - 0.5) * 0.45;
+  const enemy: Enemy = {
+    id: state.nextEnemyId++,
+    x: spawnX,
+    y: baseY,
+    z: 0,
+    vx,
+    ageSeconds: 0,
+    pattern: state.rng() < 0.5 ? "sine" : state.rng() < 0.75 ? "arc" : "weave",
+    baseY,
+    phase: state.rng() * Math.PI * 2,
+    amplitude: 0.25 + state.rng() * (0.7 + intensity * 0.6),
+    frequency: 0.8 + state.rng() * 1.15,
+    radius: 0.44,
+    fireCooldownSeconds: (0.9 + state.rng() * 0.9) * mood.enemyFireIntervalScale,
+    scheduledCueTime: cueTimeSeconds,
+    cuePrimed: false,
+    damageFlash: 0
+  };
+  state.enemies.push(enemy);
+  state.spawnIndex += 1;
+  return enemy;
+}
+
 function spawnAmbientEnemy(state: SimulationState): void {
   const intensity = getIntensityAtTime(state, state.simTimeSeconds);
   const mood = moodParameters(state.moodProfile);
@@ -626,7 +746,7 @@ function spawnAmbientEnemy(state: SimulationState): void {
 
   state.enemies.push({
     id: state.nextEnemyId++,
-    x: 20.8 + state.rng() * 2.4,
+    x: 22.2 + state.rng() * 3.1,
     y: lane * 1.6,
     z: 0,
     vx: (-2.5 - intensity * 1.8 - state.rng() * 0.95) * mood.enemySpeedScale,
@@ -703,7 +823,7 @@ function spawnCueSupportEnemy(state: SimulationState): void {
 
   state.enemies.push({
     id: state.nextEnemyId++,
-    x: 20.6 + state.rng() * 2.2,
+    x: 22 + state.rng() * 2.9,
     y: baseY,
     z: 0,
     vx: (-2.15 - intensity * 1.2 - state.rng() * 0.6) * mood.enemySpeedScale,
@@ -794,19 +914,73 @@ function resolveDueCueExplosions(state: SimulationState): void {
         ? -1
         : state.enemies.findIndex((enemy) => enemy.id === cue.assignedEnemyId);
 
-    if (targetIndex >= 0 && scheduledEnemyHasCueHit(state, state.enemies[targetIndex])) {
+    if (targetIndex >= 0) {
       const enemy = state.enemies[targetIndex];
       spawnExplosion(state, enemy.x, enemy.y, enemy.z);
+      const didCueHit = scheduledEnemyHasCueHit(state, enemy);
       state.enemies.splice(targetIndex, 1);
-      state.cueResolvedCount += 1;
-      state.cumulativeCueErrorMs += cueErrorMs;
-      state.combo += 1;
-      state.score += 100 + Math.min(900, state.combo * 10);
+      if (didCueHit) {
+        state.cueResolvedCount += 1;
+        state.cumulativeCueErrorMs += cueErrorMs;
+        state.combo += 1;
+        state.score += 100 + Math.min(900, state.combo * 10);
+      } else {
+        state.cueMissedCount += 1;
+        state.combo = 0;
+      }
     } else {
+      const fallbackEnemy = pickFallbackCueEnemy(state, cue.timeSeconds);
+      spawnExplosion(state, fallbackEnemy.x, fallbackEnemy.y, fallbackEnemy.z);
       state.cueMissedCount += 1;
       state.combo = 0;
     }
   }
+}
+
+function pickFallbackCueEnemy(
+  state: SimulationState,
+  cueTimeSeconds: number
+): Enemy {
+  let bestEnemyIndex = -1;
+  let bestScore = Number.POSITIVE_INFINITY;
+  const targetX = state.shipX + 8;
+
+  for (let i = 0; i < state.enemies.length; i += 1) {
+    const enemy = state.enemies[i];
+    if (enemy.x <= state.shipX + 1 || enemy.x >= 18.5) {
+      continue;
+    }
+    const score = Math.abs(enemy.x - targetX) + Math.abs(enemy.y - state.shipY) * 0.5;
+    if (score < bestScore) {
+      bestScore = score;
+      bestEnemyIndex = i;
+    }
+  }
+
+  if (bestEnemyIndex >= 0) {
+    const enemy = state.enemies[bestEnemyIndex];
+    state.enemies.splice(bestEnemyIndex, 1);
+    return enemy;
+  }
+
+  return {
+    id: state.nextEnemyId++,
+    x: state.shipX + 8,
+    y: Math.sin(cueTimeSeconds * 3.2) * 3.1,
+    z: 0,
+    vx: -2,
+    ageSeconds: 0,
+    pattern: "straight",
+    baseY: 0,
+    phase: 0,
+    amplitude: 0,
+    frequency: 0,
+    radius: 0.44,
+    fireCooldownSeconds: 999,
+    scheduledCueTime: cueTimeSeconds,
+    cuePrimed: false,
+    damageFlash: 0
+  };
 }
 
 function scheduledEnemyHasCueHit(state: SimulationState, enemy: Enemy): boolean {

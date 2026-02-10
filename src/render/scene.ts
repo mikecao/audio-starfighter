@@ -118,6 +118,17 @@ export function setupScene(container: HTMLElement): RenderScene {
   scene.add(enemyProjectileGroup);
   const enemyProjectileMeshes: Mesh[] = [];
 
+  const laserGeometry = new BoxGeometry(1, 0.05, 0.04);
+  const laserMaterial = new MeshBasicMaterial({
+    color: "#22c55e",
+    transparent: true,
+    opacity: 0.95,
+    blending: AdditiveBlending
+  });
+  const laserGroup = new Group();
+  scene.add(laserGroup);
+  const laserMeshes: Mesh[] = [];
+
   const explosionGeometry = new SphereGeometry(0.4, 10, 8);
   const explosionMaterial = new MeshBasicMaterial({
     color: "#fde047",
@@ -276,6 +287,29 @@ export function setupScene(container: HTMLElement): RenderScene {
         }
         mesh.visible = true;
         mesh.position.set(projectile.x, projectile.y, projectile.z);
+      }
+
+      syncMeshPool(laserMeshes, snapshot.laserBeams.length, laserGroup, () => {
+        const mesh = new Mesh(laserGeometry, laserMaterial.clone());
+        mesh.visible = false;
+        return mesh;
+      });
+      for (let i = 0; i < laserMeshes.length; i += 1) {
+        const mesh = laserMeshes[i];
+        const beam = snapshot.laserBeams[i];
+        if (!beam || beam.alpha <= 0.01) {
+          mesh.visible = false;
+          continue;
+        }
+        const dx = beam.toX - beam.fromX;
+        const dy = beam.toY - beam.fromY;
+        const length = Math.max(0.12, Math.hypot(dx, dy));
+        mesh.visible = true;
+        mesh.position.set(beam.fromX + dx * 0.5, beam.fromY + dy * 0.5, 0.04);
+        mesh.scale.set(length, 1, 1);
+        mesh.rotation.z = Math.atan2(dy, dx);
+        const material = mesh.material as MeshBasicMaterial;
+        material.opacity = beam.alpha * 0.9;
       }
 
       syncMeshPool(explosionMeshes, snapshot.explosions.length, explosionGroup, () => {
