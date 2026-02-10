@@ -48,7 +48,7 @@ export type SimulationSnapshot = {
   moodProfile: "calm" | "driving" | "aggressive";
 };
 
-type EnemyPattern = "straight" | "sine" | "arc";
+type EnemyPattern = "straight" | "sine" | "arc" | "zigzag" | "weave";
 
 type Enemy = {
   id: number;
@@ -217,14 +217,12 @@ export function createSimulation(): Simulation {
       state.enemies = state.enemies.filter((enemy) => enemy.x > -16);
       state.projectiles = state.projectiles.filter(
         (projectile) =>
-          projectile.ageSeconds < projectile.maxLifetimeSeconds &&
           projectile.x > -15 &&
           projectile.x < 20 &&
           Math.abs(projectile.y) < 11
       );
       state.enemyProjectiles = state.enemyProjectiles.filter(
         (projectile) =>
-          projectile.ageSeconds < projectile.maxLifetimeSeconds &&
           projectile.x > -18 &&
           projectile.x < 16 &&
           Math.abs(projectile.y) < 11
@@ -430,6 +428,15 @@ function updateEnemies(state: SimulationState, deltaSeconds: number): void {
       enemy.y =
         enemy.baseY +
         Math.sin(enemy.phase + enemy.ageSeconds * enemy.frequency) * enemy.amplitude;
+    } else if (enemy.pattern === "zigzag") {
+      const wave = Math.asin(Math.sin(enemy.phase + enemy.ageSeconds * enemy.frequency * 1.8));
+      enemy.y = enemy.baseY + wave * enemy.amplitude * 0.85;
+    } else if (enemy.pattern === "weave") {
+      enemy.y =
+        enemy.baseY +
+        Math.sin(enemy.phase + enemy.ageSeconds * enemy.frequency * 0.75) * (enemy.amplitude * 0.55) +
+        Math.cos(enemy.phase * 1.4 + enemy.ageSeconds * enemy.frequency * 1.9) *
+          (enemy.amplitude * 0.35);
     } else {
       enemy.y =
         enemy.baseY +
@@ -441,9 +448,14 @@ function updateEnemies(state: SimulationState, deltaSeconds: number): void {
     enemy.damageFlash = Math.max(0, enemy.damageFlash - deltaSeconds * 8);
     enemy.fireCooldownSeconds -= deltaSeconds;
     if (enemy.fireCooldownSeconds <= 0 && enemy.x > state.shipX + 2.5) {
-      spawnEnemyProjectile(state, enemy);
+      const burstCount = intensity > 0.72 ? 3 : intensity > 0.45 ? 2 : 1;
+      const spreadStep = 0.12 + state.rng() * 0.07;
+      for (let i = 0; i < burstCount; i += 1) {
+        const centeredIndex = i - (burstCount - 1) * 0.5;
+        spawnEnemyProjectile(state, enemy, centeredIndex * spreadStep);
+      }
       enemy.fireCooldownSeconds =
-        (0.5 + (1 - intensity) * 1 + state.rng() * 0.55) * mood.enemyFireIntervalScale;
+        (0.28 + (1 - intensity) * 0.52 + state.rng() * 0.32) * mood.enemyFireIntervalScale;
     }
   }
 }
@@ -578,9 +590,17 @@ function spawnAmbientEnemy(state: SimulationState): void {
   const intensity = getIntensityAtTime(state, state.simTimeSeconds);
   const mood = moodParameters(state.moodProfile);
   const lane = (state.spawnIndex % 5) - 2;
-  const patternSelector = state.spawnIndex % 3;
+  const patternSelector = state.spawnIndex % 5;
   const pattern: EnemyPattern =
-    patternSelector === 0 ? "straight" : patternSelector === 1 ? "sine" : "arc";
+    patternSelector === 0
+      ? "straight"
+      : patternSelector === 1
+        ? "sine"
+        : patternSelector === 2
+          ? "arc"
+          : patternSelector === 3
+            ? "zigzag"
+            : "weave";
 
   state.enemies.push({
     id: state.nextEnemyId++,
@@ -666,7 +686,14 @@ function spawnCueSupportEnemy(state: SimulationState): void {
     z: 0,
     vx: (-2.15 - intensity * 1.2 - state.rng() * 0.6) * mood.enemySpeedScale,
     ageSeconds: 0,
-    pattern: state.rng() < 0.75 ? "straight" : "sine",
+    pattern:
+      state.rng() < 0.5
+        ? "straight"
+        : state.rng() < 0.75
+          ? "sine"
+          : state.rng() < 0.9
+            ? "zigzag"
+            : "weave",
     baseY,
     phase: state.rng() * Math.PI * 2,
     amplitude: 0.2 + state.rng() * 0.65,
@@ -875,6 +902,14 @@ function predictEnemyPosition(enemy: Enemy, dt: number): { x: number; y: number 
 
   if (enemy.pattern === "sine") {
     y = enemy.baseY + Math.sin(enemy.phase + age * enemy.frequency) * enemy.amplitude;
+  } else if (enemy.pattern === "zigzag") {
+    const wave = Math.asin(Math.sin(enemy.phase + age * enemy.frequency * 1.8));
+    y = enemy.baseY + wave * enemy.amplitude * 0.85;
+  } else if (enemy.pattern === "weave") {
+    y =
+      enemy.baseY +
+      Math.sin(enemy.phase + age * enemy.frequency * 0.75) * (enemy.amplitude * 0.55) +
+      Math.cos(enemy.phase * 1.4 + age * enemy.frequency * 1.9) * (enemy.amplitude * 0.35);
   } else if (enemy.pattern === "arc") {
     y =
       enemy.baseY +
@@ -936,7 +971,7 @@ function findBestTarget(enemies: Enemy[], shipX: number, shipY: number): Enemy |
   return bestEnemy;
 }
 
-function spawnEnemyProjectile(state: SimulationState, enemy: Enemy): void {
+function spawnEnemyProjectile(state: SimulationState, enemy: Enemy, spreadRadians = 0): void {
   const speed = 6.8 + state.rng() * 2;
   const jitter = (state.rng() - 0.5) * 0.55;
   const targetX = state.shipX - 0.2;
@@ -945,12 +980,19 @@ function spawnEnemyProjectile(state: SimulationState, enemy: Enemy): void {
   const dy = targetY - enemy.y;
   const magnitude = Math.hypot(dx, dy) || 1;
 
+  const baseX = dx / magnitude;
+  const baseY = dy / magnitude;
+  const cos = Math.cos(spreadRadians);
+  const sin = Math.sin(spreadRadians);
+  const dirX = baseX * cos - baseY * sin;
+  const dirY = baseX * sin + baseY * cos;
+
   state.enemyProjectiles.push({
     x: enemy.x - 0.5,
     y: enemy.y,
     z: 0,
-    vx: (dx / magnitude) * speed,
-    vy: (dy / magnitude) * speed,
+    vx: dirX * speed,
+    vy: dirY * speed,
     ageSeconds: 0,
     maxLifetimeSeconds: 3,
     radius: 0.18
