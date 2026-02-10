@@ -123,6 +123,7 @@ const CUE_ASSIGN_MAX_LEAD_SECONDS = 1.1;
 const CUE_SUPPORT_LEAD_PADDING_SECONDS = 0.55;
 const MAX_CUE_SUPPORT_SPAWNS_PER_STEP = 8;
 const PLAYER_PROJECTILE_SPEED = 22;
+const PLAYER_TARGET_MAX_DISTANCE_X = 6.2;
 
 type SimulationState = {
   simTimeSeconds: number;
@@ -393,8 +394,13 @@ function fireProjectiles(state: SimulationState): void {
       const dy = target.y - shipY;
       const mag = Math.hypot(dx, dy);
       if (mag > 1e-6) {
+        const leadFalloff = clamp(1 - (mag - 6.5) / 9.5, 0.28, 1);
+        const jitter = (state.rng() - 0.5) * (1 - leadFalloff) * 0.42;
         directionX = dx / mag;
-        directionY = dy / mag;
+        directionY = dy / mag + jitter;
+        const directionMag = Math.hypot(directionX, directionY) || 1;
+        directionX /= directionMag;
+        directionY /= directionMag;
       }
     }
 
@@ -409,8 +415,8 @@ function fireProjectiles(state: SimulationState): void {
       radius: 0.16
     });
 
-    const interval = (0.2 - intensity * 0.08) * mood.playerFireIntervalScale;
-    state.nextPlayerFireTime += clamp(interval, 0.1, 0.24);
+    const interval = (0.24 - intensity * 0.07) * mood.playerFireIntervalScale;
+    state.nextPlayerFireTime += clamp(interval, 0.14, 0.29);
   }
 }
 
@@ -956,6 +962,9 @@ function findBestTarget(enemies: Enemy[], shipX: number, shipY: number): Enemy |
 
   for (const enemy of enemies) {
     if (enemy.x < shipX + 0.6) {
+      continue;
+    }
+    if (enemy.x > shipX + PLAYER_TARGET_MAX_DISTANCE_X) {
       continue;
     }
 
