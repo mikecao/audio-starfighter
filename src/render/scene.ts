@@ -142,18 +142,6 @@ export function setupScene(container: HTMLElement): RenderScene {
   const coreColorEnd = new Color("#f97316");
   const coreColor = new Color();
 
-  const laneGeometry = new BoxGeometry(26, 0.04, 0.04);
-  const laneMaterial = new MeshStandardMaterial({
-    color: "#293447",
-    roughness: 0.8,
-    metalness: 0.05
-  });
-  for (let i = -2; i <= 2; i += 1) {
-    const lane = new Mesh(laneGeometry, laneMaterial);
-    lane.position.set(0, i * 2, -1.6);
-    scene.add(lane);
-  }
-
   const nearStars = createStarLayer(180, 0x93c5fd, 3.2, 0.06);
   const farStars = createStarLayer(120, 0x334155, 1.6, 0.04);
   scene.add(farStars.points);
@@ -371,11 +359,13 @@ function createStarLayer(
   speed: number,
   size: number
 ): StarLayer {
+  const fieldWidth = 56;
+  const fieldHeight = 26;
   const basePositions = new Float32Array(count * 3);
   for (let i = 0; i < count; i += 1) {
     const offset = i * 3;
-    basePositions[offset] = -18 + Math.random() * 36;
-    basePositions[offset + 1] = -8 + Math.random() * 16;
+    basePositions[offset] = -fieldWidth * 0.5 + Math.random() * fieldWidth;
+    basePositions[offset + 1] = -fieldHeight * 0.5 + Math.random() * fieldHeight;
     basePositions[offset + 2] = -7 - Math.random() * 6;
   }
 
@@ -400,8 +390,8 @@ function createStarLayer(
 }
 
 function updateStarLayer(layer: StarLayer, simTimeSeconds: number): void {
-  const loopWidth = 36;
-  const minX = -18;
+  const loopWidth = 56;
+  const minX = -28;
 
   for (let i = 0; i < layer.basePositions.length; i += 3) {
     const baseX = layer.basePositions[i];
