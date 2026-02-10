@@ -151,19 +151,27 @@ const PLAYER_TARGET_MAX_DISTANCE_X = 4.8;
 const LASER_COOLDOWN_SECONDS = 0.22;
 const LASER_REQUIRED_OUT_OF_RANGE_COUNT = 3;
 const LASER_BEAM_LIFETIME_SECONDS = 0.26;
-const SHIP_BASE_X = -6;
-const SHIP_SWEEP_AMPLITUDE = 2.35;
-const SHIP_SWEEP_FREQUENCY = 0.58;
-const SHIP_SWEEP_SECONDARY_AMPLITUDE = 0.42;
-const SHIP_SWEEP_SECONDARY_FREQUENCY = 0.29;
-const SHIP_BASE_Y_AMPLITUDE = 1.8;
-const SHIP_BASE_Y_FREQUENCY = 1.4;
+const SHIP_MIN_X = -10.2;
+const SHIP_MAX_X = 1.2;
+const SHIP_MIN_Y = -4.4;
+const SHIP_MAX_Y = 4.4;
+const SHIP_MAX_SPEED_X = 6.4;
+const SHIP_MAX_SPEED_Y = 7.1;
+const SHIP_ACCEL_X = 14.5;
+const SHIP_ACCEL_Y = 17.5;
+const SHIP_RETARGET_MIN_SECONDS = 0.18;
+const SHIP_RETARGET_MAX_SECONDS = 0.46;
 
 type SimulationState = {
   simTimeSeconds: number;
   simTick: number;
   shipX: number;
   shipY: number;
+  shipVx: number;
+  shipVy: number;
+  shipTargetX: number;
+  shipTargetY: number;
+  nextShipRetargetTime: number;
   shipShieldAlpha: number;
   enemies: Enemy[];
   projectiles: Projectile[];
@@ -209,6 +217,11 @@ export function createSimulation(): Simulation {
     simTick: 0,
     shipX: -6,
     shipY: 0,
+    shipVx: 0,
+    shipVy: 0,
+    shipTargetX: -6,
+    shipTargetY: 0,
+    nextShipRetargetTime: 0,
     shipShieldAlpha: 0,
     enemies: [],
     projectiles: [],
@@ -243,9 +256,7 @@ export function createSimulation(): Simulation {
       state.simTimeSeconds += deltaSeconds;
       state.simTick += 1;
 
-      const shipPose = getShipPoseAtTime(state.simTimeSeconds);
-      state.shipX = shipPose.x;
-      state.shipY = steerShipY(state, shipPose.baseY, deltaSeconds);
+      updateShipMotion(state, deltaSeconds);
 
       spawnEnemies(state);
       planCueShots(state);
@@ -421,8 +432,13 @@ export function createSimulation(): Simulation {
 function resetRunState(state: SimulationState): void {
   state.simTimeSeconds = 0;
   state.simTick = 0;
-  state.shipX = SHIP_BASE_X;
+  state.shipX = -6;
   state.shipY = 0;
+  state.shipVx = 0;
+  state.shipVy = 0;
+  state.shipTargetX = -6;
+  state.shipTargetY = 0;
+  state.nextShipRetargetTime = 0;
   state.shipShieldAlpha = 0;
   state.enemies = [];
   state.projectiles = [];
@@ -729,7 +745,7 @@ function spawnReservedCueEnemy(state: SimulationState, cueTimeSeconds: number): 
   const intensity = getIntensityAtTime(state, state.simTimeSeconds);
   const mood = moodParameters(state.moodProfile);
   const leadSeconds = Math.max(0.2, cueTimeSeconds - state.simTimeSeconds);
-  const shipAtCue = getShipPoseAtTime(cueTimeSeconds);
+  const shipAtCue = predictShipPosition(state, leadSeconds);
   const spawnX = 21.5 + state.rng() * 3.5;
   const targetX = shipAtCue.x + 6.8 + (state.rng() - 0.5) * 2.2;
   const requiredVx = (targetX - spawnX) / leadSeconds;
@@ -1055,7 +1071,7 @@ function findCueCandidate(
 ): { enemy: Enemy; futureX: number; futureY: number } | null {
   let best: { enemy: Enemy; futureX: number; futureY: number } | null = null;
   let bestScore = Number.POSITIVE_INFINITY;
-  const shipAtCue = getShipPoseAtTime(cueTimeSeconds);
+  const shipAtCue = predictShipPosition(state, cueTimeSeconds - state.simTimeSeconds);
 
   for (const enemy of state.enemies) {
     if (enemy.scheduledCueTime !== null || enemyAlreadyAssignedToCue(state.cueTimeline, enemy.id)) {
@@ -1103,7 +1119,7 @@ function solveCueFireTime(
   let fireTimeSeconds = cueTimeSeconds - clamp(dtCue * 0.5, 0.14, 0.8);
 
   for (let i = 0; i < 4; i += 1) {
-    const shipPose = getShipPoseAtTime(fireTimeSeconds);
+    const shipPose = predictShipPosition(state, fireTimeSeconds - state.simTimeSeconds);
     const shotX = shipPose.x + 0.65;
     const shotY = shipPose.baseY;
     const leadSeconds = Math.hypot(enemyAtCue.x - shotX, enemyAtCue.y - shotY) / PLAYER_PROJECTILE_SPEED;
@@ -1193,59 +1209,99 @@ function predictEnemyPosition(enemy: Enemy, dt: number): { x: number; y: number 
   return { x, y };
 }
 
-function getShipPoseAtTime(timeSeconds: number): {
+function updateShipMotion(state: SimulationState, deltaSeconds: number): void {
+  if (state.simTimeSeconds >= state.nextShipRetargetTime) {
+    const target = chooseShipTarget(state);
+    state.shipTargetX = target.x;
+    state.shipTargetY = target.y;
+    state.nextShipRetargetTime =
+      state.simTimeSeconds +
+      SHIP_RETARGET_MIN_SECONDS +
+      state.rng() * (SHIP_RETARGET_MAX_SECONDS - SHIP_RETARGET_MIN_SECONDS);
+  }
+
+  let dodgeX = 0;
+  let dodgeY = 0;
+  for (const projectile of state.enemyProjectiles) {
+    const dx = state.shipX - projectile.x;
+    const dy = state.shipY - projectile.y;
+    const distSq = dx * dx + dy * dy;
+    if (distSq > 25) {
+      continue;
+    }
+    const influence = 1 / Math.max(0.45, Math.sqrt(distSq));
+    dodgeX += (dx >= 0 ? 1 : -1) * influence * 0.5;
+    dodgeY += (dy >= 0 ? 1 : -1) * influence * 1.2;
+  }
+
+  const desiredX = clamp(state.shipTargetX + dodgeX, SHIP_MIN_X, SHIP_MAX_X);
+  const desiredY = clamp(state.shipTargetY + dodgeY, SHIP_MIN_Y, SHIP_MAX_Y);
+
+  const desiredVx = clamp((desiredX - state.shipX) * 3.1, -SHIP_MAX_SPEED_X, SHIP_MAX_SPEED_X);
+  const desiredVy = clamp((desiredY - state.shipY) * 3.7, -SHIP_MAX_SPEED_Y, SHIP_MAX_SPEED_Y);
+
+  const maxDvX = SHIP_ACCEL_X * deltaSeconds;
+  const maxDvY = SHIP_ACCEL_Y * deltaSeconds;
+  state.shipVx += clamp(desiredVx - state.shipVx, -maxDvX, maxDvX);
+  state.shipVy += clamp(desiredVy - state.shipVy, -maxDvY, maxDvY);
+
+  state.shipVx *= 1 - Math.min(0.3, deltaSeconds * 0.6);
+  state.shipVy *= 1 - Math.min(0.3, deltaSeconds * 0.5);
+
+  state.shipX = clamp(state.shipX + state.shipVx * deltaSeconds, SHIP_MIN_X, SHIP_MAX_X);
+  state.shipY = clamp(state.shipY + state.shipVy * deltaSeconds, SHIP_MIN_Y, SHIP_MAX_Y);
+
+  if (state.shipX === SHIP_MIN_X || state.shipX === SHIP_MAX_X) {
+    state.shipVx *= 0.35;
+  }
+  if (state.shipY === SHIP_MIN_Y || state.shipY === SHIP_MAX_Y) {
+    state.shipVy *= 0.35;
+  }
+}
+
+function chooseShipTarget(state: SimulationState): { x: number; y: number } {
+  const focus = findBestTarget(state.enemies, state.shipX, state.shipY);
+  const roamPhase = state.simTimeSeconds * 0.72;
+
+  if (focus) {
+    return {
+      x: clamp(focus.x - 5.8 + Math.sin(roamPhase) * 0.7, SHIP_MIN_X, SHIP_MAX_X),
+      y: clamp(focus.y + Math.sin(roamPhase * 1.25) * 0.9, SHIP_MIN_Y, SHIP_MAX_Y)
+    };
+  }
+
+  return {
+    x: clamp(
+      -5.4 +
+        Math.sin(roamPhase * 0.9) * 2.4 +
+        Math.sin(roamPhase * 0.47 + 1.2) * 1.1,
+      SHIP_MIN_X,
+      SHIP_MAX_X
+    ),
+    y: clamp(
+      Math.sin(roamPhase * 1.35 + 0.4) * 2.6 +
+        Math.cos(roamPhase * 0.52 + 0.2) * 1.05,
+      SHIP_MIN_Y,
+      SHIP_MAX_Y
+    )
+  };
+}
+
+function predictShipPosition(state: SimulationState, dt: number): {
   x: number;
   baseY: number;
   vx: number;
   vy: number;
 } {
-  const primaryPhase = timeSeconds * SHIP_SWEEP_FREQUENCY;
-  const secondaryPhase = timeSeconds * SHIP_SWEEP_SECONDARY_FREQUENCY + 0.8;
-  const x =
-    SHIP_BASE_X +
-    Math.sin(primaryPhase) * SHIP_SWEEP_AMPLITUDE +
-    Math.sin(secondaryPhase) * SHIP_SWEEP_SECONDARY_AMPLITUDE;
-  const baseY = Math.sin(timeSeconds * SHIP_BASE_Y_FREQUENCY) * SHIP_BASE_Y_AMPLITUDE;
-  const vx =
-    Math.cos(primaryPhase) * SHIP_SWEEP_AMPLITUDE * SHIP_SWEEP_FREQUENCY +
-    Math.cos(secondaryPhase) * SHIP_SWEEP_SECONDARY_AMPLITUDE * SHIP_SWEEP_SECONDARY_FREQUENCY;
-  const vy = Math.cos(timeSeconds * SHIP_BASE_Y_FREQUENCY) * SHIP_BASE_Y_AMPLITUDE * SHIP_BASE_Y_FREQUENCY;
+  const t = Math.max(0, dt);
+  const projectedX = state.shipX + state.shipVx * t + (state.shipTargetX - state.shipX) * 0.35;
+  const projectedY = state.shipY + state.shipVy * t + (state.shipTargetY - state.shipY) * 0.35;
   return {
-    x,
-    baseY,
-    vx,
-    vy
+    x: clamp(projectedX, SHIP_MIN_X, SHIP_MAX_X),
+    baseY: clamp(projectedY, SHIP_MIN_Y, SHIP_MAX_Y),
+    vx: state.shipVx,
+    vy: state.shipVy
   };
-}
-
-function steerShipY(state: SimulationState, baseY: number, deltaSeconds: number): number {
-  let avoidance = 0;
-
-  for (const projectile of state.enemyProjectiles) {
-    if (projectile.vx >= -0.2) {
-      continue;
-    }
-
-    const timeToShipX = (state.shipX - projectile.x) / projectile.vx;
-    if (timeToShipX < 0 || timeToShipX > 0.9) {
-      continue;
-    }
-
-    const predictedY = projectile.y + projectile.vy * timeToShipX;
-    const deltaY = baseY - predictedY;
-    const distance = Math.abs(deltaY);
-    if (distance > 1.6) {
-      continue;
-    }
-
-    const weight = (1.6 - distance) / 1.6;
-    avoidance += (deltaY >= 0 ? 1 : -1) * weight;
-  }
-
-  const dodgeOffset = clamp(avoidance * 1.35, -2, 2);
-  const targetY = clamp(baseY + dodgeOffset, -4.2, 4.2);
-  const steer = clamp((targetY - state.shipY) * 4.8 * deltaSeconds, -0.4, 0.4);
-  return state.shipY + steer;
 }
 
 function findBestTarget(enemies: Enemy[], shipX: number, shipY: number): Enemy | null {

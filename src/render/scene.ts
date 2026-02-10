@@ -208,7 +208,7 @@ export function setupScene(container: HTMLElement): RenderScene {
 
   return {
     update(snapshot) {
-      const starTimeSeconds = performance.now() * 0.001;
+      const starTimeSeconds = snapshot.simTimeSeconds;
       shipMesh.position.set(snapshot.ship.x, snapshot.ship.y, snapshot.ship.z);
       const deltaY = hasPreviousShipY ? snapshot.ship.y - previousShipY : 0;
       const deltaTime = hasPreviousShipY
