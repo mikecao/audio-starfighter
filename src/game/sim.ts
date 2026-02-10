@@ -161,6 +161,9 @@ const SHIP_ACCEL_X = 14.5;
 const SHIP_ACCEL_Y = 17.5;
 const SHIP_RETARGET_MIN_SECONDS = 0.18;
 const SHIP_RETARGET_MAX_SECONDS = 0.46;
+const SHIP_THREAT_HORIZON_SECONDS = 1.15;
+const SHIP_SAFE_RADIUS = 1.25;
+const SHIP_PANIC_THRESHOLD = 1.2;
 
 type SimulationState = {
   simTimeSeconds: number;
@@ -1220,28 +1223,36 @@ function updateShipMotion(state: SimulationState, deltaSeconds: number): void {
       state.rng() * (SHIP_RETARGET_MAX_SECONDS - SHIP_RETARGET_MIN_SECONDS);
   }
 
-  let dodgeX = 0;
-  let dodgeY = 0;
-  for (const projectile of state.enemyProjectiles) {
-    const dx = state.shipX - projectile.x;
-    const dy = state.shipY - projectile.y;
-    const distSq = dx * dx + dy * dy;
-    if (distSq > 25) {
-      continue;
-    }
-    const influence = 1 / Math.max(0.45, Math.sqrt(distSq));
-    dodgeX += (dx >= 0 ? 1 : -1) * influence * 0.5;
-    dodgeY += (dy >= 0 ? 1 : -1) * influence * 1.2;
-  }
+  const threat = analyzeProjectileThreat(state);
+  const panicFactor = clamp(threat.score / SHIP_PANIC_THRESHOLD, 0, 1);
 
-  const desiredX = clamp(state.shipTargetX + dodgeX, SHIP_MIN_X, SHIP_MAX_X);
-  const desiredY = clamp(state.shipTargetY + dodgeY, SHIP_MIN_Y, SHIP_MAX_Y);
+  const desiredX = clamp(
+    state.shipTargetX + threat.dodgeX * (0.8 + panicFactor * 2.2),
+    SHIP_MIN_X,
+    SHIP_MAX_X
+  );
+  const desiredY = clamp(
+    state.shipTargetY + threat.dodgeY * (0.95 + panicFactor * 2.4),
+    SHIP_MIN_Y,
+    SHIP_MAX_Y
+  );
 
-  const desiredVx = clamp((desiredX - state.shipX) * 3.1, -SHIP_MAX_SPEED_X, SHIP_MAX_SPEED_X);
-  const desiredVy = clamp((desiredY - state.shipY) * 3.7, -SHIP_MAX_SPEED_Y, SHIP_MAX_SPEED_Y);
+  const speedScale = 1 + panicFactor * 0.9;
+  const accelScale = 1 + panicFactor * 1.35;
 
-  const maxDvX = SHIP_ACCEL_X * deltaSeconds;
-  const maxDvY = SHIP_ACCEL_Y * deltaSeconds;
+  const desiredVx = clamp(
+    (desiredX - state.shipX) * (3.1 + panicFactor * 2.1),
+    -SHIP_MAX_SPEED_X * speedScale,
+    SHIP_MAX_SPEED_X * speedScale
+  );
+  const desiredVy = clamp(
+    (desiredY - state.shipY) * (3.7 + panicFactor * 2.4),
+    -SHIP_MAX_SPEED_Y * speedScale,
+    SHIP_MAX_SPEED_Y * speedScale
+  );
+
+  const maxDvX = SHIP_ACCEL_X * accelScale * deltaSeconds;
+  const maxDvY = SHIP_ACCEL_Y * accelScale * deltaSeconds;
   state.shipVx += clamp(desiredVx - state.shipVx, -maxDvX, maxDvX);
   state.shipVy += clamp(desiredVy - state.shipVy, -maxDvY, maxDvY);
 
@@ -1257,6 +1268,52 @@ function updateShipMotion(state: SimulationState, deltaSeconds: number): void {
   if (state.shipY === SHIP_MIN_Y || state.shipY === SHIP_MAX_Y) {
     state.shipVy *= 0.35;
   }
+}
+
+function analyzeProjectileThreat(state: SimulationState): {
+  dodgeX: number;
+  dodgeY: number;
+  score: number;
+} {
+  let dodgeX = 0;
+  let dodgeY = 0;
+  let score = 0;
+
+  for (const projectile of state.enemyProjectiles) {
+    const relPx = projectile.x - state.shipX;
+    const relPy = projectile.y - state.shipY;
+    const relVx = projectile.vx - state.shipVx;
+    const relVy = projectile.vy - state.shipVy;
+    const relSpeedSq = Math.max(1e-6, relVx * relVx + relVy * relVy);
+    const tClosest = clamp(
+      -(relPx * relVx + relPy * relVy) / relSpeedSq,
+      0,
+      SHIP_THREAT_HORIZON_SECONDS
+    );
+
+    const closestDx = relPx + relVx * tClosest;
+    const closestDy = relPy + relVy * tClosest;
+    const closestDist = Math.hypot(closestDx, closestDy);
+    if (closestDist > SHIP_SAFE_RADIUS * 2.2) {
+      continue;
+    }
+
+    const closeness = clamp(1 - closestDist / (SHIP_SAFE_RADIUS * 2.2), 0, 1);
+    const imminence = clamp(1 - tClosest / SHIP_THREAT_HORIZON_SECONDS, 0, 1);
+    const weight = closeness * (0.8 + imminence * 1.4);
+
+    const awayX = closestDist > 1e-4 ? -closestDx / closestDist : state.rng() < 0.5 ? -1 : 1;
+    const awayY = closestDist > 1e-4 ? -closestDy / closestDist : state.rng() < 0.5 ? -1 : 1;
+    dodgeX += awayX * weight * 2.1;
+    dodgeY += awayY * weight * 2.9;
+    score += weight;
+  }
+
+  return {
+    dodgeX,
+    dodgeY,
+    score
+  };
 }
 
 function chooseShipTarget(state: SimulationState): { x: number; y: number } {
