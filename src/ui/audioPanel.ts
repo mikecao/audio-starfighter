@@ -45,8 +45,8 @@ export function createAudioPanel(
 
   const canvas = document.createElement("canvas");
   canvas.className = "audio-panel__timeline";
-  canvas.width = 360;
-  canvas.height = 130;
+  canvas.width = 960;
+  canvas.height = 108;
   panel.appendChild(canvas);
 
   const runButton = document.createElement("button");
@@ -97,6 +97,16 @@ export function createAudioPanel(
   let trackUrl: string | null = null;
   let playbackTimeSeconds = 0;
   let lastTimelineDrawPlaybackTime = -1;
+  let placeholderText = "Load a track to view timeline.";
+
+  const resizeObserver = new ResizeObserver(() => {
+    if (latestAnalysis) {
+      drawTimeline(canvas, latestAnalysis, playbackTimeSeconds);
+    } else {
+      drawPlaceholder(canvas, placeholderText);
+    }
+  });
+  resizeObserver.observe(canvas);
 
   fileInput.addEventListener("change", async () => {
     const file = fileInput.files?.[0];
@@ -107,9 +117,10 @@ export function createAudioPanel(
     const currentRequestId = ++requestId;
     playbackTimeSeconds = 0;
     lastTimelineDrawPlaybackTime = -1;
+    placeholderText = "Analyzing...";
     status.textContent = `Analyzing ${file.name}...`;
     stats.textContent = "Processing waveform...";
-    drawPlaceholder(canvas, "Analyzing...");
+    drawPlaceholder(canvas, placeholderText);
 
     try {
       const analysis = await handlers.onAnalyze(file);
@@ -147,7 +158,8 @@ export function createAudioPanel(
       const message = error instanceof Error ? error.message : String(error);
       status.textContent = "Analysis failed";
       stats.textContent = message;
-      drawPlaceholder(canvas, "Analysis failed");
+      placeholderText = "Analysis failed. Try another track.";
+      drawPlaceholder(canvas, placeholderText);
       runButton.disabled = true;
       restartButton.disabled = true;
     }
@@ -216,7 +228,7 @@ export function createAudioPanel(
     }
   });
 
-  drawPlaceholder(canvas, "No data");
+  drawPlaceholder(canvas, placeholderText);
 
   return {
     getLatestAnalysis() {
@@ -299,8 +311,7 @@ function drawTimeline(
     return;
   }
 
-  const width = canvas.width;
-  const height = canvas.height;
+  const { width, height } = prepareCanvasForHiDpi(canvas, context);
   context.clearRect(0, 0, width, height);
 
   context.fillStyle = "#050d1d";
@@ -359,10 +370,30 @@ function drawPlaceholder(canvas: HTMLCanvasElement, text: string): void {
     return;
   }
 
-  context.clearRect(0, 0, canvas.width, canvas.height);
+  const { width, height } = prepareCanvasForHiDpi(canvas, context);
+  context.clearRect(0, 0, width, height);
   context.fillStyle = "#050d1d";
-  context.fillRect(0, 0, canvas.width, canvas.height);
+  context.fillRect(0, 0, width, height);
   context.fillStyle = "#9eb4d3";
   context.font = "12px Consolas, 'Courier New', monospace";
-  context.fillText(text, 12, canvas.height / 2);
+  context.fillText(text, 12, height / 2);
+}
+
+function prepareCanvasForHiDpi(
+  canvas: HTMLCanvasElement,
+  context: CanvasRenderingContext2D
+): { width: number; height: number } {
+  const dpr = window.devicePixelRatio || 1;
+  const cssWidth = Math.max(1, Math.floor(canvas.clientWidth || canvas.width));
+  const cssHeight = Math.max(1, Math.floor(canvas.clientHeight || canvas.height));
+  const deviceWidth = Math.max(1, Math.floor(cssWidth * dpr));
+  const deviceHeight = Math.max(1, Math.floor(cssHeight * dpr));
+
+  if (canvas.width !== deviceWidth || canvas.height !== deviceHeight) {
+    canvas.width = deviceWidth;
+    canvas.height = deviceHeight;
+  }
+
+  context.setTransform(dpr, 0, 0, dpr, 0, 0);
+  return { width: cssWidth, height: cssHeight };
 }

@@ -16,16 +16,24 @@ if (!app) {
   throw new Error("Missing #app container");
 }
 
-const scene = setupScene(app);
+const sceneHost = document.createElement("div");
+sceneHost.className = "scene-host";
+app.appendChild(sceneHost);
+
+const uiHost = document.createElement("div");
+uiHost.className = "ui-host";
+app.appendChild(uiHost);
+
+const scene = setupScene(sceneHost);
 const sim = createSimulation();
-const hud = createDebugHud(app);
-const eventTimeline = createEventTimeline(app);
+const hud = createDebugHud(uiHost);
+const eventTimeline = createEventTimeline(uiHost);
 const canvasOnlyButton = document.createElement("button");
 canvasOnlyButton.type = "button";
 canvasOnlyButton.className = "ui-toggle-button";
 canvasOnlyButton.textContent = "Hide UI";
 canvasOnlyButton.title = "Toggle interface visibility";
-app.appendChild(canvasOnlyButton);
+uiHost.appendChild(canvasOnlyButton);
 
 let uiHidden = false;
 const uiOverlaySelectors = [".audio-panel", ".debug-hud", ".event-timeline"];
@@ -53,7 +61,7 @@ let currentRunKey: string | null = null;
 let cachedTimelineAnalysisRef: object | null = null;
 let cachedTimelineCues: Array<{ timeSeconds: number; source: "beat" | "peak" }> | null = null;
 let usingCueFallback = false;
-const audioPanel = createAudioPanel(app, {
+const audioPanel = createAudioPanel(uiHost, {
   onAnalyze(file) {
     return analyzeAudioTrack(file);
   },
