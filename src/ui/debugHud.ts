@@ -15,6 +15,8 @@ type HudMetrics = {
   playbackDriftMs: number | null;
   pendingCueCount: number;
   plannedCueCount: number;
+  upcomingCueWindowCount: number;
+  availableCueTargetCount: number;
   bestScore: number;
   queuedCueShotCount: number;
   moodProfile: "calm" | "driving" | "aggressive";
@@ -54,6 +56,9 @@ export function createDebugHud(container: HTMLElement): DebugHud {
     { key: "playbackDriftMs", label: "Drift" },
     { key: "pendingCueCount", label: "Cue Queue" },
     { key: "plannedCueCount", label: "Cue Planned" },
+    { key: "upcomingCueWindowCount", label: "Cue Upcoming" },
+    { key: "availableCueTargetCount", label: "Cue Targets" },
+    { key: "cueCoverage", label: "Cue Coverage" },
     { key: "queuedCueShotCount", label: "Cue Shots" },
     { key: "cueHitRate", label: "Cue Hit %" },
     { key: "bestScore", label: "Best Score" },
@@ -99,7 +104,17 @@ export function createDebugHud(container: HTMLElement): DebugHud {
         metrics.playbackDriftMs === null ? "-" : `${metrics.playbackDriftMs.toFixed(1)}ms`;
       valueNodes.get("pendingCueCount")!.textContent = String(metrics.pendingCueCount);
       valueNodes.get("plannedCueCount")!.textContent = String(metrics.plannedCueCount);
+      valueNodes.get("upcomingCueWindowCount")!.textContent = String(metrics.upcomingCueWindowCount);
+      valueNodes.get("availableCueTargetCount")!.textContent = String(metrics.availableCueTargetCount);
       valueNodes.get("queuedCueShotCount")!.textContent = String(metrics.queuedCueShotCount);
+      const cueCoverage =
+        metrics.upcomingCueWindowCount > 0
+          ? (metrics.availableCueTargetCount / metrics.upcomingCueWindowCount) * 100
+          : 100;
+      const cueCoverageNode = valueNodes.get("cueCoverage")!;
+      cueCoverageNode.textContent = `${cueCoverage.toFixed(0)}%`;
+      cueCoverageNode.style.color =
+        cueCoverage >= 100 ? "#67e8f9" : cueCoverage >= 75 ? "#fbbf24" : "#f87171";
       const totalResolved = metrics.cueResolvedCount + metrics.cueMissedCount;
       const hitRate = totalResolved > 0 ? (metrics.cueResolvedCount / totalResolved) * 100 : 0;
       valueNodes.get("cueHitRate")!.textContent = `${hitRate.toFixed(1)}%`;

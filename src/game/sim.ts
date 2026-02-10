@@ -41,6 +41,8 @@ export type SimulationSnapshot = {
   pendingCueCount: number;
   plannedCueCount: number;
   queuedCueShotCount: number;
+  upcomingCueWindowCount: number;
+  availableCueTargetCount: number;
   moodProfile: "calm" | "driving" | "aggressive";
 };
 
@@ -112,6 +114,11 @@ type IntensitySample = {
 };
 
 type MoodProfile = "calm" | "driving" | "aggressive";
+
+const CUE_ASSIGN_MIN_LEAD_SECONDS = 0.2;
+const CUE_ASSIGN_MAX_LEAD_SECONDS = 1.1;
+const CUE_SUPPORT_LEAD_PADDING_SECONDS = 0.55;
+const MAX_CUE_SUPPORT_SPAWNS_PER_STEP = 8;
 
 type SimulationState = {
   simTimeSeconds: number;
@@ -273,6 +280,8 @@ export function createSimulation(): Simulation {
         pendingCueCount: state.cueTimeline.length,
         plannedCueCount: countPlannedCues(state.cueTimeline),
         queuedCueShotCount: state.plannedCueShots.length,
+        upcomingCueWindowCount: countUpcomingCueWindow(state),
+        availableCueTargetCount: countAvailableCueTargets(state),
         moodProfile: state.moodProfile
       };
     },
@@ -351,37 +360,16 @@ function resetRunState(state: SimulationState): void {
 
 function spawnEnemies(state: SimulationState): void {
   while (state.simTimeSeconds >= state.nextEnemySpawnTime) {
-    const intensity = getIntensityAtTime(state, state.simTimeSeconds);
-    const mood = moodParameters(state.moodProfile);
-    const lane = (state.spawnIndex % 5) - 2;
-    const patternSelector = state.spawnIndex % 3;
-    const pattern: EnemyPattern =
-      patternSelector === 0 ? "straight" : patternSelector === 1 ? "sine" : "arc";
-
-    state.enemies.push({
-      id: state.nextEnemyId++,
-      x: 13 + state.rng() * 2.5,
-      y: lane * 1.6,
-      z: 0,
-      vx: (-2.5 - intensity * 1.8 - state.rng() * 0.95) * mood.enemySpeedScale,
-      ageSeconds: 0,
-      pattern,
-      baseY: lane * 1.6,
-      phase: state.rng() * Math.PI * 2,
-      amplitude: 0.35 + state.rng() * 1.25,
-      frequency: 1 + state.rng() * 1.4,
-      radius: 0.44,
-      fireCooldownSeconds:
-        (0.5 + (1 - intensity) * 0.8 + state.rng() * 0.5) *
-        mood.enemyFireIntervalScale,
-      scheduledCueTime: null,
-      cuePrimed: false
-    });
+    spawnAmbientEnemy(state);
 
     state.spawnIndex += 1;
+    const intensity = getIntensityAtTime(state, state.simTimeSeconds);
+    const mood = moodParameters(state.moodProfile);
     const cadence = (0.9 - intensity * 0.5) * mood.spawnIntervalScale;
     state.nextEnemySpawnTime += clamp(cadence + state.rng() * 0.35, 0.28, 1.1);
   }
+
+  ensureCueSupportEnemies(state);
 }
 
 function fireProjectiles(state: SimulationState): void {
@@ -548,7 +536,7 @@ function planCueShots(state: SimulationState): void {
     }
 
     const leadSeconds = cue.timeSeconds - state.simTimeSeconds;
-    if (leadSeconds < 0.2 || leadSeconds > 0.9) {
+    if (leadSeconds < CUE_ASSIGN_MIN_LEAD_SECONDS || leadSeconds > CUE_ASSIGN_MAX_LEAD_SECONDS) {
       continue;
     }
 
@@ -577,6 +565,111 @@ function planCueShots(state: SimulationState): void {
       fireTimeSeconds
     });
   }
+}
+
+function spawnAmbientEnemy(state: SimulationState): void {
+  const intensity = getIntensityAtTime(state, state.simTimeSeconds);
+  const mood = moodParameters(state.moodProfile);
+  const lane = (state.spawnIndex % 5) - 2;
+  const patternSelector = state.spawnIndex % 3;
+  const pattern: EnemyPattern =
+    patternSelector === 0 ? "straight" : patternSelector === 1 ? "sine" : "arc";
+
+  state.enemies.push({
+    id: state.nextEnemyId++,
+    x: 13 + state.rng() * 2.5,
+    y: lane * 1.6,
+    z: 0,
+    vx: (-2.5 - intensity * 1.8 - state.rng() * 0.95) * mood.enemySpeedScale,
+    ageSeconds: 0,
+    pattern,
+    baseY: lane * 1.6,
+    phase: state.rng() * Math.PI * 2,
+    amplitude: 0.35 + state.rng() * 1.25,
+    frequency: 1 + state.rng() * 1.4,
+    radius: 0.44,
+    fireCooldownSeconds:
+      (0.5 + (1 - intensity) * 0.8 + state.rng() * 0.5) * mood.enemyFireIntervalScale,
+    scheduledCueTime: null,
+    cuePrimed: false
+  });
+}
+
+function ensureCueSupportEnemies(state: SimulationState): void {
+  if (state.cueTimeline.length === 0) {
+    return;
+  }
+
+  let pendingCueCount = 0;
+  for (const cue of state.cueTimeline) {
+    if (cue.planned) {
+      continue;
+    }
+    const leadSeconds = cue.timeSeconds - state.simTimeSeconds;
+    if (
+      leadSeconds >= CUE_ASSIGN_MIN_LEAD_SECONDS &&
+      leadSeconds <= CUE_ASSIGN_MAX_LEAD_SECONDS + CUE_SUPPORT_LEAD_PADDING_SECONDS
+    ) {
+      pendingCueCount += 1;
+    }
+  }
+
+  if (pendingCueCount === 0) {
+    return;
+  }
+
+  let availableEnemyCount = 0;
+  for (const enemy of state.enemies) {
+    if (enemy.scheduledCueTime !== null) {
+      continue;
+    }
+    if (enemy.x <= state.shipX + 1.2) {
+      continue;
+    }
+    if (enemyAlreadyAssignedToCue(state.cueTimeline, enemy.id)) {
+      continue;
+    }
+    availableEnemyCount += 1;
+  }
+
+  const needed = Math.min(
+    MAX_CUE_SUPPORT_SPAWNS_PER_STEP,
+    Math.max(0, pendingCueCount - availableEnemyCount)
+  );
+  if (needed === 0) {
+    return;
+  }
+
+  for (let i = 0; i < needed; i += 1) {
+    spawnCueSupportEnemy(state);
+  }
+}
+
+function spawnCueSupportEnemy(state: SimulationState): void {
+  const intensity = getIntensityAtTime(state, state.simTimeSeconds);
+  const mood = moodParameters(state.moodProfile);
+  const lane = ((state.spawnIndex + 1) % 5) - 2;
+  const baseY = lane * 1.6 + (state.rng() - 0.5) * 0.35;
+
+  state.enemies.push({
+    id: state.nextEnemyId++,
+    x: 11.4 + state.rng() * 3.2,
+    y: baseY,
+    z: 0,
+    vx: (-2.15 - intensity * 1.2 - state.rng() * 0.6) * mood.enemySpeedScale,
+    ageSeconds: 0,
+    pattern: state.rng() < 0.75 ? "straight" : "sine",
+    baseY,
+    phase: state.rng() * Math.PI * 2,
+    amplitude: 0.2 + state.rng() * 0.65,
+    frequency: 0.8 + state.rng() * 0.8,
+    radius: 0.44,
+    fireCooldownSeconds: (0.9 + state.rng() * 0.7) * mood.enemyFireIntervalScale,
+    scheduledCueTime: null,
+    cuePrimed: false
+  });
+
+  state.spawnIndex += 1;
 }
 
 function fireQueuedCueShots(state: SimulationState): void {
@@ -651,10 +744,17 @@ function resolveDueCueExplosions(state: SimulationState): void {
       state.combo += 1;
       state.score += 100 + Math.min(900, state.combo * 10);
     } else {
+      spawnFallbackCueExplosion(state, cue.timeSeconds);
       state.cueMissedCount += 1;
       state.combo = 0;
     }
   }
+}
+
+function spawnFallbackCueExplosion(state: SimulationState, cueTimeSeconds: number): void {
+  const x = state.shipX + 5.8;
+  const y = Math.sin(cueTimeSeconds * 6.5) * 2.8;
+  spawnExplosion(state, x, y, 0);
 }
 
 function scheduledEnemyHasCueHit(state: SimulationState, enemy: Enemy): boolean {
@@ -730,6 +830,38 @@ function countPlannedCues(cues: ScheduledCue[]): number {
     if (cue.planned) {
       count += 1;
     }
+  }
+  return count;
+}
+
+function countUpcomingCueWindow(state: SimulationState): number {
+  let count = 0;
+  const maxLead = CUE_ASSIGN_MAX_LEAD_SECONDS + CUE_SUPPORT_LEAD_PADDING_SECONDS;
+  for (const cue of state.cueTimeline) {
+    if (cue.planned) {
+      continue;
+    }
+    const leadSeconds = cue.timeSeconds - state.simTimeSeconds;
+    if (leadSeconds >= CUE_ASSIGN_MIN_LEAD_SECONDS && leadSeconds <= maxLead) {
+      count += 1;
+    }
+  }
+  return count;
+}
+
+function countAvailableCueTargets(state: SimulationState): number {
+  let count = 0;
+  for (const enemy of state.enemies) {
+    if (enemy.scheduledCueTime !== null) {
+      continue;
+    }
+    if (enemy.x <= state.shipX + 1.2) {
+      continue;
+    }
+    if (enemyAlreadyAssignedToCue(state.cueTimeline, enemy.id)) {
+      continue;
+    }
+    count += 1;
   }
   return count;
 }

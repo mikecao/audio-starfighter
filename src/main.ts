@@ -1,6 +1,6 @@
 import "./styles.css";
 import { analyzeAudioTrack } from "./audio/analyze-track";
-import type { FeatureFrame } from "./audio/types";
+import type { AudioAnalysisResult, FeatureFrame } from "./audio/types";
 import { setupScene } from "./render/scene";
 import { createSimulation, type SimulationSnapshot } from "./game/sim";
 import { createDebugHud } from "./ui/debugHud";
@@ -24,16 +24,20 @@ let currentBestScore = 0;
 let currentRunKey: string | null = null;
 let cachedTimelineAnalysisRef: object | null = null;
 let cachedTimelineCues: Array<{ timeSeconds: number; source: "beat" | "peak" }> | null = null;
-let usingBeatFallback = false;
+let usingCueFallback = false;
 const audioPanel = createAudioPanel(app, {
   onAnalyze(file) {
     return analyzeAudioTrack(file);
   },
   onStartRun(analysis, seed) {
+    const runTimeline = buildRunTimelineEvents(analysis);
     sim.setRandomSeed(seed);
     sim.setMoodProfile(analysis.mood.label);
     sim.setIntensityTimeline(buildIntensityTimeline(analysis.frames));
-    sim.startTrackRun(analysis.cues.map((cue) => cue.timeSeconds));
+    sim.startTrackRun(runTimeline.events.map((cue) => cue.timeSeconds));
+    cachedTimelineAnalysisRef = analysis;
+    cachedTimelineCues = runTimeline.events;
+    usingCueFallback = runTimeline.usingCueFallback;
     appliedAnalysisRef = analysis;
     currentRunKey = buildBestScoreKey(analysis.fileName, seed);
     currentBestScore = loadBestScore(currentRunKey);
@@ -51,7 +55,7 @@ const audioPanel = createAudioPanel(app, {
       bpm: analysis.beat.bpm,
       mood: analysis.mood.label,
       moodConfidence: analysis.mood.confidence,
-      cueCount: analysis.cues.length,
+      cueCount: buildRunTimelineEvents(analysis).events.length,
       simTimeSeconds: latestSnapshot.simTimeSeconds,
       cueResolvedCount: latestSnapshot.cueResolvedCount,
       cueMissedCount: latestSnapshot.cueMissedCount,
@@ -89,19 +93,24 @@ function animate(frameTimeMs: number): void {
   const frameSeconds = Math.min(rawFrameSeconds, maxFrameSeconds);
   const analysis = audioPanel.getLatestAnalysis();
   const audioPlaybackTimeSecondsPreStep = audioPanel.getAudioPlaybackTime();
+  const isAudioPlaying = audioPanel.isAudioPlaying();
   const freezeForPausedAudio =
     analysis !== null &&
     audioPlaybackTimeSecondsPreStep > 0 &&
-    !audioPanel.isAudioPlaying();
-  const driftSecondsPreStep =
-    audioPlaybackTimeSecondsPreStep > 0
-      ? lastSimTimeSeconds - audioPlaybackTimeSecondsPreStep
-      : 0;
-  const simRateCorrection = clamp(1 - driftSecondsPreStep * 0.25, 0.9, 1.1);
+    !isAudioPlaying;
+  const followAudioClock =
+    analysis !== null && audioPlaybackTimeSecondsPreStep > 0 && isAudioPlaying;
   if (freezeForPausedAudio) {
     accumulatorSeconds = 0;
+  } else if (followAudioClock) {
+    const catchUpSeconds = audioPlaybackTimeSecondsPreStep - lastSimTimeSeconds;
+    if (catchUpSeconds > 0) {
+      accumulatorSeconds += Math.min(catchUpSeconds, maxFrameSeconds);
+    } else if (catchUpSeconds < -fixedStepSeconds) {
+      accumulatorSeconds = 0;
+    }
   } else {
-    accumulatorSeconds += frameSeconds * simRateCorrection;
+    accumulatorSeconds += frameSeconds;
   }
 
   while (accumulatorSeconds >= fixedStepSeconds) {
@@ -119,9 +128,13 @@ function animate(frameTimeMs: number): void {
       ? (snapshot.simTimeSeconds - audioPlaybackTimeSeconds) * 1000
       : null;
   if (analysis && analysis !== appliedAnalysisRef) {
+    const runTimeline = buildRunTimelineEvents(analysis);
     sim.setMoodProfile(analysis.mood.label);
     sim.setIntensityTimeline(buildIntensityTimeline(analysis.frames));
-    sim.setCueTimeline(analysis.cues.map((cue) => cue.timeSeconds));
+    sim.setCueTimeline(runTimeline.events.map((cue) => cue.timeSeconds));
+    cachedTimelineAnalysisRef = analysis;
+    cachedTimelineCues = runTimeline.events;
+    usingCueFallback = runTimeline.usingCueFallback;
     appliedAnalysisRef = analysis;
     currentRunKey = buildBestScoreKey(analysis.fileName, 7);
     currentBestScore = loadBestScore(currentRunKey);
@@ -137,22 +150,12 @@ function animate(frameTimeMs: number): void {
   audioPanel.setPlaybackTime(snapshot.simTimeSeconds);
   if (analysis !== cachedTimelineAnalysisRef) {
     if (analysis) {
-      if (analysis.cues.length > 0) {
-        cachedTimelineCues = analysis.cues.map((cue) => ({
-          timeSeconds: cue.timeSeconds,
-          source: cue.source
-        }));
-        usingBeatFallback = false;
-      } else {
-        cachedTimelineCues = analysis.beat.beatTimesSeconds.map((timeSeconds) => ({
-          timeSeconds,
-          source: "beat" as const
-        }));
-        usingBeatFallback = true;
-      }
+      const runTimeline = buildRunTimelineEvents(analysis);
+      cachedTimelineCues = runTimeline.events;
+      usingCueFallback = runTimeline.usingCueFallback;
     } else {
       cachedTimelineCues = null;
-      usingBeatFallback = false;
+      usingCueFallback = false;
     }
     cachedTimelineAnalysisRef = analysis;
   }
@@ -163,7 +166,7 @@ function animate(frameTimeMs: number): void {
     cueResolvedCount: snapshot.cueResolvedCount,
     cueMissedCount: snapshot.cueMissedCount,
     cues: cachedTimelineCues,
-    usingBeatFallback
+    usingBeatFallback: usingCueFallback
   });
   hud.update({
     fps: frameSeconds > 0 ? 1 / frameSeconds : 0,
@@ -172,7 +175,7 @@ function animate(frameTimeMs: number): void {
     enemyCount: snapshot.enemyCount,
     projectileCount: snapshot.projectileCount,
     bpm: analysis?.beat.bpm ?? null,
-    cueCount: analysis?.cues.length ?? 0,
+    cueCount: cachedTimelineCues?.length ?? 0,
     cueResolvedCount: snapshot.cueResolvedCount,
     cueMissedCount: snapshot.cueMissedCount,
     avgCueErrorMs: snapshot.avgCueErrorMs,
@@ -182,6 +185,8 @@ function animate(frameTimeMs: number): void {
     playbackDriftMs,
     pendingCueCount: snapshot.pendingCueCount,
     plannedCueCount: snapshot.plannedCueCount,
+    upcomingCueWindowCount: snapshot.upcomingCueWindowCount,
+    availableCueTargetCount: snapshot.availableCueTargetCount,
     queuedCueShotCount: snapshot.queuedCueShotCount,
     bestScore: currentBestScore,
     moodProfile: snapshot.moodProfile
@@ -243,6 +248,31 @@ function buildIntensityTimeline(frames: FeatureFrame[]): Array<{
 
 function buildBestScoreKey(fileName: string, seed: number): string {
   return `${BEST_SCORE_STORAGE_PREFIX}:${fileName}:${seed}`;
+}
+
+function buildRunTimelineEvents(analysis: AudioAnalysisResult): {
+  events: Array<{ timeSeconds: number; source: "beat" | "peak" }>;
+  usingCueFallback: boolean;
+} {
+  const beatEvents = analysis.beat.beatTimesSeconds
+    .filter((timeSeconds) => Number.isFinite(timeSeconds) && timeSeconds >= 0)
+    .map((timeSeconds) => ({ timeSeconds, source: "beat" as const }));
+
+  if (beatEvents.length > 0) {
+    return {
+      events: beatEvents,
+      usingCueFallback: false
+    };
+  }
+
+  const cueEvents = analysis.cues
+    .filter((cue) => Number.isFinite(cue.timeSeconds) && cue.timeSeconds >= 0)
+    .map((cue) => ({ timeSeconds: cue.timeSeconds, source: cue.source }));
+
+  return {
+    events: cueEvents,
+    usingCueFallback: true
+  };
 }
 
 function loadBestScore(key: string): number {

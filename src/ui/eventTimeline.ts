@@ -19,6 +19,7 @@ export type EventTimeline = {
 const WINDOW_PAST_SECONDS = 0.35;
 const WINDOW_FUTURE_SECONDS = 2.6;
 const AUDIO_DRIFT_SHOW_THRESHOLD_SECONDS = 0.04;
+const TIMELINE_DRAW_INTERVAL_SECONDS = 1 / 30;
 
 export function createEventTimeline(container: HTMLElement): EventTimeline {
   const rail = document.createElement("section");
@@ -53,6 +54,7 @@ export function createEventTimeline(container: HTMLElement): EventTimeline {
   let previousSimTimeSeconds: number | null = null;
   let flashStrength = 0;
   let lastFlashUpdateMs = performance.now();
+  let lastDrawSimTimeSeconds = Number.NEGATIVE_INFINITY;
 
   const draw = (): void => {
     if (!lastMetrics) {
@@ -98,7 +100,15 @@ export function createEventTimeline(container: HTMLElement): EventTimeline {
 
       lastMetrics = metrics;
       previousSimTimeSeconds = metrics.simTimeSeconds;
-      draw();
+
+      const shouldDraw =
+        Math.abs(metrics.simTimeSeconds - lastDrawSimTimeSeconds) >=
+          TIMELINE_DRAW_INTERVAL_SECONDS ||
+        flashStrength > 0.01;
+      if (shouldDraw) {
+        draw();
+        lastDrawSimTimeSeconds = metrics.simTimeSeconds;
+      }
     }
   };
 }
@@ -230,7 +240,7 @@ function drawTimeline(
 
   const cueCount = metrics.cues?.length ?? 0;
   const resolved = metrics.cueResolvedCount + metrics.cueMissedCount;
-  const sourceLabel = metrics.usingBeatFallback ? "Beat fallback" : "Cue events";
+  const sourceLabel = metrics.usingBeatFallback ? "Cue fallback" : "Beat events";
   statsNode.textContent =
     `SIM ${metrics.simTimeSeconds.toFixed(2)}s | Visible ${visibleCueCount} | ` +
     `${sourceLabel} ${resolved}/${cueCount}`;
