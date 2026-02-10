@@ -30,6 +30,26 @@ body,
   position: absolute;
 }
 
+.ui-toggle-button {
+  position: absolute;
+  top: 1rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 20;
+  border: 1px solid rgb(103 232 249 / 45%);
+  border-radius: 0.4rem;
+  background: rgb(8 19 39 / 95%);
+  color: #baf2ff;
+  padding: 0.34rem 0.62rem;
+  font-family: "Consolas", "Courier New", monospace;
+  font-size: 0.71rem;
+  cursor: pointer;
+}
+
+.ui-toggle-button:hover {
+  border-color: rgb(103 232 249 / 70%);
+}
+
 .debug-hud {
   position: absolute;
   top: 1rem;

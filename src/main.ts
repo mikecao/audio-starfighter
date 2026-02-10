@@ -20,6 +20,31 @@ const scene = setupScene(app);
 const sim = createSimulation();
 const hud = createDebugHud(app);
 const eventTimeline = createEventTimeline(app);
+const canvasOnlyButton = document.createElement("button");
+canvasOnlyButton.type = "button";
+canvasOnlyButton.className = "ui-toggle-button";
+canvasOnlyButton.textContent = "Hide UI";
+canvasOnlyButton.title = "Toggle interface visibility";
+app.appendChild(canvasOnlyButton);
+
+let uiHidden = false;
+const uiOverlaySelectors = [".audio-panel", ".debug-hud", ".event-timeline"];
+
+function setUiHidden(hidden: boolean): void {
+  uiHidden = hidden;
+  canvasOnlyButton.textContent = hidden ? "Show UI" : "Hide UI";
+  for (const selector of uiOverlaySelectors) {
+    const nodes = app!.querySelectorAll<HTMLElement>(selector);
+    nodes.forEach((node) => {
+      node.style.display = hidden ? "none" : "";
+    });
+  }
+}
+
+canvasOnlyButton.addEventListener("click", () => {
+  setUiHidden(!uiHidden);
+});
+
 let latestSnapshot: SimulationSnapshot = sim.getSnapshot();
 let precomputedRun: PrecomputedRun | null = null;
 let precomputeStatsText = "off";
