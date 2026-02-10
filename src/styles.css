@@ -25,10 +25,9 @@ body,
     linear-gradient(180deg, #040a16 0%, #030711 100%);
 }
 
-canvas {
+#app > canvas.main-scene-canvas {
   display: block;
-  width: 100%;
-  height: 100%;
+  position: absolute;
 }
 
 .debug-hud {

@@ -28,6 +28,9 @@ export type RenderScene = {
 };
 
 export function setupScene(container: HTMLElement): RenderScene {
+  const FIXED_RENDER_WIDTH = 1920;
+  const FIXED_RENDER_HEIGHT = 1080;
+
   const scene = new Scene();
   const lowEnergyBg = new Color("#070b14");
   const highEnergyBg = new Color("#1a1426");
@@ -39,7 +42,9 @@ export function setupScene(container: HTMLElement): RenderScene {
   camera.lookAt(new Vector3(0, 0, 0));
 
   const renderer = new WebGLRenderer({ antialias: true });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setPixelRatio(1);
+  renderer.setSize(FIXED_RENDER_WIDTH, FIXED_RENDER_HEIGHT, false);
+  renderer.domElement.classList.add("main-scene-canvas");
   container.appendChild(renderer.domElement);
 
   const ambientLight = new AmbientLight("#9bb9ff", 0.45);
@@ -118,7 +123,7 @@ export function setupScene(container: HTMLElement): RenderScene {
     opacity: 1,
     blending: AdditiveBlending
   });
-  const explosionRingGeometry = new RingGeometry(0.45, 0.62, 32);
+  const explosionRingGeometry = new RingGeometry(0.56, 0.62, 40);
   const explosionRingMaterial = new MeshBasicMaterial({
     color: "#fb923c",
     transparent: true,
@@ -131,6 +136,10 @@ export function setupScene(container: HTMLElement): RenderScene {
   const explosionMeshes: Mesh[] = [];
   const explosionRingMeshes: Mesh[] = [];
   const explosionParticleBursts: ExplosionBurst[] = [];
+  const coreColorStart = new Color("#fef3c7");
+  const coreColorMid = new Color("#67e8f9");
+  const coreColorEnd = new Color("#f97316");
+  const coreColor = new Color();
 
   const laneGeometry = new BoxGeometry(26, 0.04, 0.04);
   const laneMaterial = new MeshStandardMaterial({
@@ -156,8 +165,16 @@ export function setupScene(container: HTMLElement): RenderScene {
       return;
     }
 
-    renderer.setSize(width, height, false);
-    camera.aspect = width / height;
+    const displayScale = Math.min(1, width / FIXED_RENDER_WIDTH, height / FIXED_RENDER_HEIGHT);
+    const displayWidth = Math.max(1, Math.floor(FIXED_RENDER_WIDTH * displayScale));
+    const displayHeight = Math.max(1, Math.floor(FIXED_RENDER_HEIGHT * displayScale));
+
+    renderer.domElement.style.width = `${displayWidth}px`;
+    renderer.domElement.style.height = `${displayHeight}px`;
+    renderer.domElement.style.left = `${Math.floor((width - displayWidth) * 0.5)}px`;
+    renderer.domElement.style.top = `${Math.floor((height - displayHeight) * 0.5)}px`;
+
+    camera.aspect = FIXED_RENDER_WIDTH / FIXED_RENDER_HEIGHT;
     camera.updateProjectionMatrix();
   }
 
@@ -281,6 +298,12 @@ export function setupScene(container: HTMLElement): RenderScene {
         mesh.position.set(explosion.x, explosion.y, explosion.z);
         mesh.scale.setScalar(explosion.scale * ARCADE_CORE_SCALE_MULTIPLIER * intensityScale);
         const material = mesh.material as MeshBasicMaterial;
+        if (normalizedAge < 0.4) {
+          coreColor.lerpColors(coreColorStart, coreColorMid, normalizedAge / 0.4);
+        } else {
+          coreColor.lerpColors(coreColorMid, coreColorEnd, (normalizedAge - 0.4) / 0.6);
+        }
+        material.color.copy(coreColor);
         material.opacity = Math.max(0, Math.pow(explosion.alpha, 0.55) * intensityGlow);
 
         ringMesh.visible = true;
