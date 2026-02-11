@@ -172,7 +172,6 @@ const PLAYER_TARGET_LOCK_MIN_SECONDS = 0.24;
 const PLAYER_TARGET_LOCK_MAX_SECONDS = 0.5;
 const PLAYER_AIM_LOCKED_JITTER = 0.06;
 const PLAYER_AIM_UNLOCKED_JITTER = 0.14;
-const PLAYER_AUTONOMOUS_CUE_AIM_BLEND = 0.76;
 const LASER_COOLDOWN_SECONDS = 0.22;
 const LASER_REQUIRED_OUT_OF_RANGE_COUNT = 4;
 const LASER_BEAM_LIFETIME_SECONDS = 0.26;
@@ -633,14 +632,6 @@ function isCleanupLaserEnabled(state: SimulationState): boolean {
   return state.combatConfig.shipWeapons.cleanupLaser;
 }
 
-function isCueShotSoloMode(state: SimulationState): boolean {
-  return isCueShotWeaponEnabled(state) && !isPrimaryWeaponEnabled(state) && !isCleanupLaserEnabled(state);
-}
-
-function isCleanupLaserSoloMode(state: SimulationState): boolean {
-  return isCleanupLaserEnabled(state) && !isPrimaryWeaponEnabled(state) && !isCueShotWeaponEnabled(state);
-}
-
 function getCombatPressureTuning(state: SimulationState): CombatPressureTuning {
   let spawnScale = state.combatConfig.enemyRoster.spawnScale;
   let enemyFireScale = state.combatConfig.enemyRoster.fireScale;
@@ -655,15 +646,6 @@ function getCombatPressureTuning(state: SimulationState): CombatPressureTuning {
   }
   if (!isCueShotWeaponEnabled(state)) {
     spawnScale *= 0.9;
-  }
-
-  if (isCueShotSoloMode(state)) {
-    spawnScale *= 0.76;
-    enemyFireScale *= 0.78;
-  }
-  if (isCleanupLaserSoloMode(state)) {
-    spawnScale *= 0.72;
-    enemyFireScale *= 0.72;
   }
 
   return {
@@ -728,9 +710,6 @@ function fireProjectiles(state: SimulationState): void {
     const interval = (0.2 - intensity * 0.07) * mood.playerFireIntervalScale;
 
     if (!isPrimaryWeaponEnabled(state)) {
-      if (isCueShotWeaponEnabled(state)) {
-        fireAutonomousCueWeaponShot(state);
-      }
       state.lockedTargetEnemyId = null;
       state.nextPlayerFireTime += clamp(interval, 0.1, 0.24);
       continue;
@@ -790,80 +769,6 @@ function fireProjectiles(state: SimulationState): void {
 
     state.nextPlayerFireTime += clamp(interval, 0.1, 0.24);
   }
-}
-
-function fireAutonomousCueWeaponShot(state: SimulationState): void {
-  const shipX = state.shipX + 0.65;
-  const shipY = state.shipY;
-
-  const target = selectAutonomousCueWeaponTarget(state, shipX, shipY);
-  if (!target) {
-    return;
-  }
-
-  const intercept = solveProjectileIntercept(shipX, shipY, target, PLAYER_PROJECTILE_SPEED);
-  const desired = normalizeDirection(intercept.x - shipX, intercept.y - shipY);
-  const blended = normalizeDirection(
-    state.lastPlayerAimX * (1 - PLAYER_AUTONOMOUS_CUE_AIM_BLEND) +
-      desired.x * PLAYER_AUTONOMOUS_CUE_AIM_BLEND,
-    state.lastPlayerAimY * (1 - PLAYER_AUTONOMOUS_CUE_AIM_BLEND) +
-      desired.y * PLAYER_AUTONOMOUS_CUE_AIM_BLEND
-  );
-
-  state.lastPlayerAimX = blended.x;
-  state.lastPlayerAimY = blended.y;
-  state.projectiles.push({
-    id: state.nextProjectileId++,
-    x: shipX,
-    y: shipY,
-    z: 0,
-    vx: blended.x * PLAYER_PROJECTILE_SPEED,
-    vy: blended.y * PLAYER_PROJECTILE_SPEED,
-    ageSeconds: 0,
-    maxLifetimeSeconds: 1.45,
-    radius: 0.16,
-    isCueShot: true
-  });
-}
-
-function selectAutonomousCueWeaponTarget(
-  state: SimulationState,
-  shipX: number,
-  shipY: number
-): Enemy | null {
-  let best: Enemy | null = null;
-  let bestScore = Number.POSITIVE_INFINITY;
-
-  for (const enemy of state.enemies) {
-    if (!isPlayerTargetViable(enemy, shipX, shipY)) {
-      continue;
-    }
-
-    const intercept = solveProjectileIntercept(shipX, shipY, enemy, PLAYER_PROJECTILE_SPEED);
-    const dx = intercept.x - shipX;
-    const dy = intercept.y - shipY;
-    const distance = Math.hypot(dx, dy);
-    let score = distance * 0.11 + Math.abs(dy) * 1.45 + Math.abs(dx - 5.2) * 0.18;
-
-    if (enemy.scheduledCueTime !== null) {
-      const timeUntilCue = enemy.scheduledCueTime - state.simTimeSeconds;
-      if (timeUntilCue > 0.04 && timeUntilCue < 1.4) {
-        score -= 1.7 + (1.4 - timeUntilCue) * 0.6;
-      } else {
-        score -= 0.42;
-      }
-    }
-    if (enemy.cuePrimed) {
-      score -= 0.38;
-    }
-
-    if (score < bestScore) {
-      bestScore = score;
-      best = enemy;
-    }
-  }
-
-  return best;
 }
 
 function selectPlayerFireTarget(state: SimulationState, shipX: number, shipY: number): Enemy | null {
@@ -1102,23 +1007,12 @@ function updateEnemyProjectiles(state: SimulationState, deltaSeconds: number): v
 }
 
 function fireCleanupLaser(state: SimulationState): void {
-  if (state.simTimeSeconds < state.nextLaserFireTime) {
+  if (!isCleanupLaserEnabled(state)) {
     return;
   }
 
-  const cleanupLaserEnabled = isCleanupLaserEnabled(state);
-  const cleanupSoloMode = isCleanupLaserSoloMode(state);
-
-  if (cleanupSoloMode) {
-    const directTarget = pickDirectCleanupLaserTarget(state);
-    if (directTarget) {
-      spawnLaserBeam(state, directTarget.x, directTarget.y);
-      spawnExplosion(state, directTarget.x, directTarget.y, directTarget.z);
-      state.enemies = state.enemies.filter((enemy) => enemy.id !== directTarget.id);
-      state.nextLaserFireTime =
-        state.simTimeSeconds + LASER_COOLDOWN_SECONDS * 0.92 + state.rng() * 0.05;
-      return;
-    }
+  if (state.simTimeSeconds < state.nextLaserFireTime) {
+    return;
   }
 
   const behindShip = state.enemies.filter(
@@ -1137,13 +1031,10 @@ function fireCleanupLaser(state: SimulationState): void {
       }
     }
 
-    if (cleanupLaserEnabled) {
-      spawnLaserBeam(state, target.x, target.y);
-    }
+    spawnLaserBeam(state, target.x, target.y);
     spawnExplosion(state, target.x, target.y, target.z);
     state.enemies = state.enemies.filter((enemy) => enemy.id !== target.id);
-    state.nextLaserFireTime =
-      state.simTimeSeconds + LASER_COOLDOWN_SECONDS * (cleanupLaserEnabled ? 1.15 : 1.35);
+    state.nextLaserFireTime = state.simTimeSeconds + LASER_COOLDOWN_SECONDS * 1.15;
     return;
   }
 
@@ -1156,10 +1047,7 @@ function fireCleanupLaser(state: SimulationState): void {
       enemy.x > state.shipX + PLAYER_TARGET_MAX_DISTANCE_X + CLEANUP_OUT_OF_RANGE_EXTRA_DISTANCE
   );
 
-  const requiredOutOfRangeCount = cleanupLaserEnabled
-    ? LASER_REQUIRED_OUT_OF_RANGE_COUNT
-    : LASER_REQUIRED_OUT_OF_RANGE_COUNT + 1;
-  if (outOfRange.length < requiredOutOfRangeCount) {
+  if (outOfRange.length < LASER_REQUIRED_OUT_OF_RANGE_COUNT) {
     return;
   }
 
@@ -1170,41 +1058,17 @@ function fireCleanupLaser(state: SimulationState): void {
     }
   }
 
-  if (cleanupLaserEnabled) {
-    spawnLaserBeam(state, target.x, target.y);
-  }
+  spawnLaserBeam(state, target.x, target.y);
   spawnExplosion(state, target.x, target.y, target.z);
   state.enemies = state.enemies.filter((enemy) => enemy.id !== target.id);
-  state.nextLaserFireTime =
-    state.simTimeSeconds +
-    LASER_COOLDOWN_SECONDS * (cleanupLaserEnabled ? 1.25 : 1.45) +
-    state.rng() * 0.08;
-}
-
-function pickDirectCleanupLaserTarget(state: SimulationState): Enemy | null {
-  let best: Enemy | null = null;
-  let bestScore = Number.POSITIVE_INFINITY;
-  for (const enemy of state.enemies) {
-    if (!enemy.hasEnteredView || enemy.scheduledCueTime !== null) {
-      continue;
-    }
-    if (enemy.x <= state.shipX - 2.8 || enemy.x >= LASER_MAX_TARGET_X + 1.6) {
-      continue;
-    }
-
-    const score =
-      Math.abs(enemy.y - state.shipY) * 1.6 +
-      Math.abs(enemy.x - (state.shipX + 5.6)) * 0.34 +
-      enemy.ageSeconds * 0.18;
-    if (score < bestScore) {
-      bestScore = score;
-      best = enemy;
-    }
-  }
-  return best;
+  state.nextLaserFireTime = state.simTimeSeconds + LASER_COOLDOWN_SECONDS * 1.25 + state.rng() * 0.08;
 }
 
 function forceCleanupBehindEnemies(state: SimulationState): void {
+  if (!isCleanupLaserEnabled(state)) {
+    return;
+  }
+
   const removedEnemyIds = new Set<number>();
 
   for (const enemy of state.enemies) {
@@ -1215,9 +1079,7 @@ function forceCleanupBehindEnemies(state: SimulationState): void {
       continue;
     }
 
-    if (state.combatConfig.shipWeapons.cleanupLaser) {
-      spawnLaserBeam(state, enemy.x, enemy.y);
-    }
+    spawnLaserBeam(state, enemy.x, enemy.y);
     spawnExplosion(state, enemy.x, enemy.y, enemy.z);
     removedEnemyIds.add(enemy.id);
   }
@@ -1259,10 +1121,7 @@ function resolvePlayerProjectileCollisions(state: SimulationState): void {
       const dy = enemy.y - projectile.y;
       const radius = enemy.radius + projectile.radius;
       if (dx * dx + dy * dy <= radius * radius) {
-        const timeUntilCue =
-          enemy.scheduledCueTime === null ? Number.POSITIVE_INFINITY : enemy.scheduledCueTime - state.simTimeSeconds;
-
-        if (enemy.scheduledCueTime !== null && timeUntilCue > 0.04) {
+        if (enemy.scheduledCueTime !== null) {
           enemy.cuePrimed = true;
           enemy.damageFlash = 1;
           destroyedProjectiles.add(p);
@@ -1347,7 +1206,7 @@ function planCueShots(state: SimulationState): void {
 }
 
 function queueCueShotForEnemy(state: SimulationState, enemy: Enemy, cueTimeSeconds: number): void {
-  if (!state.combatConfig.shipWeapons.queuedCueShots) {
+  if (!isCueShotWeaponEnabled(state) && !isPrimaryWeaponEnabled(state)) {
     return;
   }
 
@@ -1357,7 +1216,10 @@ function queueCueShotForEnemy(state: SimulationState, enemy: Enemy, cueTimeSecon
     fireTimeSeconds = cueTimeSeconds - clamp(leadSeconds * 0.35, 0.16, 0.46);
   }
 
-  if (fireTimeSeconds <= state.simTimeSeconds + 0.01 || fireTimeSeconds >= cueTimeSeconds - 0.02) {
+  fireTimeSeconds = Math.max(fireTimeSeconds, state.simTimeSeconds + 0.015);
+  fireTimeSeconds = Math.min(fireTimeSeconds, cueTimeSeconds - 0.02);
+  if (fireTimeSeconds <= state.simTimeSeconds + 0.01 || fireTimeSeconds >= cueTimeSeconds - 0.01) {
+    fireImmediateCueProjectile(state, enemy);
     return;
   }
 
@@ -1366,6 +1228,32 @@ function queueCueShotForEnemy(state: SimulationState, enemy: Enemy, cueTimeSecon
     enemyId: enemy.id,
     fireTimeSeconds
   });
+}
+
+function fireImmediateCueProjectile(state: SimulationState, enemy: Enemy): void {
+  if (!isCueShotWeaponEnabled(state) && !isPrimaryWeaponEnabled(state)) {
+    return;
+  }
+
+  const shipX = state.shipX + 0.65;
+  const shipY = state.shipY;
+  const future = predictEnemyPosition(enemy, 0.12);
+  const dir = normalizeDirection(future.x - shipX, future.y - shipY);
+
+  state.projectiles.push({
+    id: state.nextProjectileId++,
+    x: shipX,
+    y: shipY,
+    z: 0,
+    vx: dir.x * PLAYER_PROJECTILE_SPEED,
+    vy: dir.y * PLAYER_PROJECTILE_SPEED,
+    ageSeconds: 0,
+    maxLifetimeSeconds: 0.34,
+    radius: 0.16,
+    isCueShot: isCueShotWeaponEnabled(state)
+  });
+  enemy.cuePrimed = true;
+  enemy.damageFlash = Math.max(enemy.damageFlash, 0.35);
 }
 
 function spawnReservedCueEnemy(state: SimulationState, cueTimeSeconds: number): Enemy {
@@ -1569,7 +1457,7 @@ function fireQueuedCueShots(state: SimulationState): void {
     return;
   }
 
-  if (!state.combatConfig.shipWeapons.queuedCueShots) {
+  if (!isCueShotWeaponEnabled(state) && !isPrimaryWeaponEnabled(state)) {
     state.plannedCueShots = state.plannedCueShots.filter(
       (shot) => shot.fireTimeSeconds > state.simTimeSeconds
     );
@@ -1590,6 +1478,8 @@ function fireQueuedCueShots(state: SimulationState): void {
 
     const leadSeconds = shot.cueTimeSeconds - state.simTimeSeconds;
     if (leadSeconds <= 0.02) {
+      enemy.cuePrimed = true;
+      enemy.damageFlash = Math.max(enemy.damageFlash, 0.35);
       continue;
     }
 
@@ -1609,8 +1499,11 @@ function fireQueuedCueShots(state: SimulationState): void {
       ageSeconds: 0,
       maxLifetimeSeconds: leadSeconds + 0.12,
       radius: 0.16,
-      isCueShot: true
+      isCueShot: isCueShotWeaponEnabled(state)
     });
+
+    enemy.cuePrimed = true;
+    enemy.damageFlash = Math.max(enemy.damageFlash, 0.35);
   }
 
   state.plannedCueShots = remainingShots;
@@ -1622,8 +1515,6 @@ function resolveDueCueExplosions(state: SimulationState): void {
   }
 
   const cleanupLaserEnabled = isCleanupLaserEnabled(state);
-  const cleanupSoloMode = isCleanupLaserSoloMode(state);
-  const cueShotSoloMode = isCueShotSoloMode(state);
 
   while (
     state.cueTimeline.length > 0 &&
@@ -1643,38 +1534,46 @@ function resolveDueCueExplosions(state: SimulationState): void {
     if (targetIndex >= 0) {
       const enemy = state.enemies[targetIndex];
       const didCueHit = scheduledEnemyHasCueHit(state, enemy);
-      const resolvedByWeapon = didCueHit || cleanupSoloMode || cueShotSoloMode;
-      if (!didCueHit && cleanupLaserEnabled) {
-        spawnLaserBeam(state, enemy.x, enemy.y);
-      }
-      spawnExplosion(state, enemy.x, enemy.y, enemy.z);
-      state.enemies.splice(targetIndex, 1);
-      if (resolvedByWeapon) {
+      if (didCueHit) {
+        spawnExplosion(state, enemy.x, enemy.y, enemy.z);
+        state.enemies.splice(targetIndex, 1);
         state.cueResolvedCount += 1;
         state.cumulativeCueErrorMs += cueErrorMs;
         state.combo += 1;
         state.score += 100 + Math.min(900, state.combo * 10);
-      } else {
-        state.cueMissedCount += 1;
-        state.combo = 0;
+        continue;
       }
+
+      if (cleanupLaserEnabled) {
+        spawnLaserBeam(state, enemy.x, enemy.y);
+        spawnExplosion(state, enemy.x, enemy.y, enemy.z);
+        state.enemies.splice(targetIndex, 1);
+        state.cueResolvedCount += 1;
+        state.cumulativeCueErrorMs += cueErrorMs;
+        state.combo += 1;
+        state.score += 100 + Math.min(900, state.combo * 10);
+        continue;
+      }
+
+      enemy.scheduledCueTime = null;
+      enemy.cuePrimed = false;
+      state.cueMissedCount += 1;
+      state.combo = 0;
     } else {
       const fallbackEnemy = pickFallbackCueEnemy(state);
-      if (fallbackEnemy) {
-        if (cleanupLaserEnabled) {
-          spawnLaserBeam(state, fallbackEnemy.x, fallbackEnemy.y);
-        }
+      if (fallbackEnemy && cleanupLaserEnabled) {
+        spawnLaserBeam(state, fallbackEnemy.x, fallbackEnemy.y);
         spawnExplosion(state, fallbackEnemy.x, fallbackEnemy.y, fallbackEnemy.z);
-      }
-      if ((cleanupSoloMode || cueShotSoloMode) && fallbackEnemy) {
+        state.enemies = state.enemies.filter((enemy) => enemy.id !== fallbackEnemy.id);
         state.cueResolvedCount += 1;
         state.cumulativeCueErrorMs += cueErrorMs;
         state.combo += 1;
         state.score += 100 + Math.min(900, state.combo * 10);
-      } else {
-        state.cueMissedCount += 1;
-        state.combo = 0;
+        continue;
       }
+
+      state.cueMissedCount += 1;
+      state.combo = 0;
     }
   }
 }
@@ -1719,9 +1618,7 @@ function pickFallbackCueEnemy(state: SimulationState): Enemy | null {
   }
 
   if (bestEnemyIndex >= 0) {
-    const enemy = state.enemies[bestEnemyIndex];
-    state.enemies.splice(bestEnemyIndex, 1);
-    return enemy;
+    return state.enemies[bestEnemyIndex];
   }
 
   return null;

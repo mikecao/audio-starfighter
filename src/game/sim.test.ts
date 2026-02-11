@@ -204,6 +204,26 @@ describe("simulation cue scheduling", () => {
     expect(maxPlayerProjectilesWithoutPrimary).toBe(0);
   });
 
+  it("supports blue laser as a standalone weapon mode", () => {
+    const sim = createSimulation();
+    sim.setShipWeapons({ primaryProjectiles: true, queuedCueShots: false, cleanupLaser: false });
+    sim.startTrackRun([0.8, 1.2, 1.6, 2.0, 2.4, 2.8, 3.2]);
+
+    let sawLaserBeam = false;
+    for (let i = 0; i < 60 * 7; i += 1) {
+      sim.step(1 / 60);
+      const snapshot = sim.getSnapshot();
+      if (snapshot.laserBeams.length > 0) {
+        sawLaserBeam = true;
+      }
+    }
+
+    const finalSnapshot = sim.getSnapshot();
+    expect(sawLaserBeam).toBe(false);
+    expect(finalSnapshot.cueResolvedCount).toBeGreaterThan(0);
+    expect(finalSnapshot.cueResolvedCount).toBeGreaterThanOrEqual(finalSnapshot.cueMissedCount);
+  });
+
   it("supports queued cue shots as a standalone weapon mode", () => {
     const sim = createSimulation();
     sim.setShipWeapons({ primaryProjectiles: false, queuedCueShots: true, cleanupLaser: false });
