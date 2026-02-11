@@ -782,35 +782,66 @@ function smoothPurplePulseLaunchSegment(
   const launchDirY = launchRawLength > 1e-4 ? launchRawY / launchRawLength : -targetDirY;
 
   const launchDistance = Math.max(0.8, Math.hypot(endX - startX, endY - startY));
+  const straightDistanceCap = Math.max(1.2, launchDistance - PURPLE_PULSE_LAUNCH_CURVE_MIN_SPAN);
+  const desiredStraightDistance = Math.max(
+    PURPLE_PULSE_LAUNCH_STRAIGHT_MIN_DISTANCE,
+    effectiveDistance * PURPLE_PULSE_LAUNCH_STRAIGHT_DISTANCE_SCALE
+  );
+  const straightDistance = Math.min(straightDistanceCap, desiredStraightDistance);
+  let straightEndIndex = clamp(
+    Math.floor(launchEndIndex * PURPLE_PULSE_LAUNCH_STRAIGHT_PHASE_END),
+    1,
+    launchEndIndex - 2
+  );
+  while (straightEndIndex < launchEndIndex - 2) {
+    const offset = straightEndIndex * 3;
+    const span = Math.hypot(points[offset] - startX, points[offset + 1] - startY);
+    if (span >= straightDistance) {
+      break;
+    }
+    straightEndIndex += 1;
+  }
+
+  const straightEndX = startX + launchDirX * straightDistance;
+  const straightEndY = startY + launchDirY * straightDistance;
+  for (let i = 0; i <= straightEndIndex; i += 1) {
+    const u = straightEndIndex > 0 ? i / straightEndIndex : 1;
+    const offset = i * 3;
+    points[offset] = startX + (straightEndX - startX) * u;
+    points[offset + 1] = startY + (straightEndY - startY) * u;
+  }
+
+  const curvedDistance = Math.max(0.8, Math.hypot(endX - straightEndX, endY - straightEndY));
   const outHandleLength = clamp(
     effectiveDistance * PURPLE_PULSE_LAUNCH_OUT_HANDLE_SCALE,
     1.24,
-    Math.max(1.8, launchDistance * 0.95)
+    Math.max(1.8, curvedDistance * 0.95)
   );
   const inHandleLength = clamp(
-    launchDistance * PURPLE_PULSE_LAUNCH_IN_HANDLE_SCALE,
+    curvedDistance * PURPLE_PULSE_LAUNCH_IN_HANDLE_SCALE,
     0.92,
-    Math.max(1.2, launchDistance * 0.86)
+    Math.max(1.2, curvedDistance * 0.86)
   );
 
-  const controlOneX = startX + launchDirX * outHandleLength;
-  const controlOneY = startY + launchDirY * outHandleLength;
+  const controlOneX = straightEndX + launchDirX * outHandleLength;
+  const controlOneY = straightEndY + launchDirY * outHandleLength;
   const controlTwoX = endX - exitDirX * inHandleLength;
   const controlTwoY = endY - exitDirY * inHandleLength;
 
-  for (let i = 0; i <= launchEndIndex; i += 1) {
-    const u = launchEndIndex > 0 ? i / launchEndIndex : 1;
+  const curvedSampleCount = launchEndIndex - straightEndIndex;
+  for (let i = 0; i <= curvedSampleCount; i += 1) {
+    const u = curvedSampleCount > 0 ? i / curvedSampleCount : 1;
     const invU = 1 - u;
     const b0 = invU * invU * invU;
     const b1 = 3 * invU * invU * u;
     const b2 = 3 * invU * u * u;
     const b3 = u * u * u;
-    const offset = i * 3;
+    const offset = (straightEndIndex + i) * 3;
 
     points[offset] =
-      b0 * startX + b1 * controlOneX + b2 * controlTwoX + b3 * endX;
+      b0 * straightEndX + b1 * controlOneX + b2 * controlTwoX + b3 * endX;
     points[offset + 1] =
-      b0 * startY + b1 * controlOneY + b2 * controlTwoY + b3 * endY;
+      b0 * straightEndY + b1 * controlOneY + b2 * controlTwoY + b3 * endY;
   }
 }
 
@@ -982,8 +1013,12 @@ const PURPLE_PULSE_BACK_DRIFT_MAX = 3.25;
 const PURPLE_PULSE_BACK_DRIFT_DISTANCE_REFERENCE = 9.2;
 const PURPLE_PULSE_BACK_DRIFT_BOOST = 1.42;
 const PURPLE_PULSE_ENVELOPE_POWER_BASE = 0.72;
-const PURPLE_PULSE_LAUNCH_PHASE_END = 0.5;
-const PURPLE_PULSE_LAUNCH_MIN_SPAN = 7.2;
+const PURPLE_PULSE_LAUNCH_PHASE_END = 0.62;
+const PURPLE_PULSE_LAUNCH_MIN_SPAN = 12.2;
+const PURPLE_PULSE_LAUNCH_STRAIGHT_PHASE_END = 0.68;
+const PURPLE_PULSE_LAUNCH_STRAIGHT_MIN_DISTANCE = 8.8;
+const PURPLE_PULSE_LAUNCH_STRAIGHT_DISTANCE_SCALE = 0.58;
+const PURPLE_PULSE_LAUNCH_CURVE_MIN_SPAN = 2.8;
 const PURPLE_PULSE_LAUNCH_BACK_DIRECTION_WEIGHT = 1.08;
 const PURPLE_PULSE_LAUNCH_SIDE_DIRECTION_WEIGHT = 1.26;
 const PURPLE_PULSE_LAUNCH_OUT_HANDLE_SCALE = 0.44;
