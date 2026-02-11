@@ -27,6 +27,15 @@ type UiCombatState = {
   fireScale: number;
 };
 
+const DEFAULT_COMBAT_STATE: UiCombatState = {
+  primaryProjectiles: true,
+  queuedCueShots: true,
+  cleanupLaser: true,
+  redCubeEnabled: true,
+  spawnScale: 1,
+  fireScale: 1
+};
+
 export function createAudioPanel(
   container: HTMLElement,
   handlers: AudioPanelHandlers
@@ -131,9 +140,9 @@ export function createAudioPanel(
   shipLegend.textContent = "Ship";
   shipGroup.appendChild(shipLegend);
 
-  const shipPrimaryToggle = createModalToggle("Primary Projectiles", true);
-  const shipCueToggle = createModalToggle("Queued Cue Shots", true);
-  const shipCleanupToggle = createModalToggle("Cleanup Laser", true);
+  const shipPrimaryToggle = createModalToggle("Blue Laser", true);
+  const shipCueToggle = createModalToggle("Yellow Laser", true);
+  const shipCleanupToggle = createModalToggle("Green Laser", true);
   shipGroup.append(shipPrimaryToggle.root, shipCueToggle.root, shipCleanupToggle.root);
 
   const enemyGroup = document.createElement("fieldset");
@@ -156,11 +165,15 @@ export function createAudioPanel(
   settingsCancelButton.type = "button";
   settingsCancelButton.className = "audio-controls__button audio-controls__button--secondary";
   settingsCancelButton.textContent = "Cancel";
+  const settingsResetButton = document.createElement("button");
+  settingsResetButton.type = "button";
+  settingsResetButton.className = "audio-controls__button audio-controls__button--secondary";
+  settingsResetButton.textContent = "Reset";
   const settingsSaveButton = document.createElement("button");
   settingsSaveButton.type = "button";
   settingsSaveButton.className = "audio-controls__button";
   settingsSaveButton.textContent = "Save";
-  settingsFooter.append(settingsCancelButton, settingsSaveButton);
+  settingsFooter.append(settingsResetButton, settingsCancelButton, settingsSaveButton);
 
   settingsModal.append(settingsHeader, settingsForm, settingsFooter);
   settingsBackdrop.appendChild(settingsModal);
@@ -192,14 +205,7 @@ export function createAudioPanel(
   let lastTimelineDrawPlaybackTime = -1;
   let placeholderText = "Load a track to view timeline.";
   let runStarting = false;
-  let combatState: UiCombatState = {
-    primaryProjectiles: true,
-    queuedCueShots: true,
-    cleanupLaser: true,
-    redCubeEnabled: true,
-    spawnScale: 1,
-    fireScale: 1
-  };
+  let combatState: UiCombatState = { ...DEFAULT_COMBAT_STATE };
 
   const setAnalysisSummary = (analysis: AudioAnalysisResult): void => {
     summary.textContent = [
@@ -344,6 +350,10 @@ export function createAudioPanel(
 
   settingsCancelButton.addEventListener("click", () => {
     closeSettingsModal();
+  });
+
+  settingsResetButton.addEventListener("click", () => {
+    applyCombatStateToForm(DEFAULT_COMBAT_STATE);
   });
 
   settingsBackdrop.addEventListener("pointerdown", (event) => {
