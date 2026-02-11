@@ -188,6 +188,7 @@ const SHIP_EDGE_BREAKOUT_TRIGGER_SECONDS = 0.35;
 const SHIP_EDGE_BREAKOUT_HOLD_SECONDS = 0.55;
 const ENEMY_SPAWN_INTERVAL_MULTIPLIER = 0.9;
 const ENEMY_FIRE_INTERVAL_MULTIPLIER = 1.15;
+const ENEMY_FIRE_COOLDOWN_MULTIPLIER = 1.25;
 
 type SimulationState = {
   simTimeSeconds: number;
@@ -605,7 +606,9 @@ function updateEnemies(state: SimulationState, deltaSeconds: number): void {
         spawnEnemyProjectile(state, enemy, centeredIndex * spreadStep);
       }
       enemy.fireCooldownSeconds =
-        (0.28 + (1 - intensity) * 0.52 + state.rng() * 0.32) * mood.enemyFireIntervalScale;
+        (0.28 + (1 - intensity) * 0.52 + state.rng() * 0.32) *
+        mood.enemyFireIntervalScale *
+        ENEMY_FIRE_COOLDOWN_MULTIPLIER;
     }
   }
 }
@@ -837,7 +840,8 @@ function spawnReservedCueEnemy(state: SimulationState, cueTimeSeconds: number): 
     amplitude: 0.25 + state.rng() * (0.7 + intensity * 0.6),
     frequency: 0.8 + state.rng() * 1.15,
     radius: 0.44,
-    fireCooldownSeconds: (0.9 + state.rng() * 0.9) * mood.enemyFireIntervalScale,
+    fireCooldownSeconds:
+      (0.9 + state.rng() * 0.9) * mood.enemyFireIntervalScale * ENEMY_FIRE_COOLDOWN_MULTIPLIER,
     scheduledCueTime: cueTimeSeconds,
     cuePrimed: false,
     damageFlash: 0,
@@ -878,7 +882,9 @@ function spawnAmbientEnemy(state: SimulationState): void {
     frequency: 1 + state.rng() * 1.4,
     radius: 0.44,
     fireCooldownSeconds:
-      (0.5 + (1 - intensity) * 0.8 + state.rng() * 0.5) * mood.enemyFireIntervalScale,
+      (0.5 + (1 - intensity) * 0.8 + state.rng() * 0.5) *
+      mood.enemyFireIntervalScale *
+      ENEMY_FIRE_COOLDOWN_MULTIPLIER,
     scheduledCueTime: null,
     cuePrimed: false,
     damageFlash: 0,
@@ -962,7 +968,8 @@ function spawnCueSupportEnemy(state: SimulationState): void {
     amplitude: 0.2 + state.rng() * 0.65,
     frequency: 0.8 + state.rng() * 0.8,
     radius: 0.44,
-    fireCooldownSeconds: (0.9 + state.rng() * 0.7) * mood.enemyFireIntervalScale,
+    fireCooldownSeconds:
+      (0.9 + state.rng() * 0.7) * mood.enemyFireIntervalScale * ENEMY_FIRE_COOLDOWN_MULTIPLIER,
     scheduledCueTime: null,
     cuePrimed: false,
     damageFlash: 0,
