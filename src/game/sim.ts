@@ -149,11 +149,18 @@ const CUE_SUPPORT_LEAD_PADDING_SECONDS = 0.55;
 const MAX_CUE_SUPPORT_SPAWNS_PER_STEP = 12;
 const PLAYER_PROJECTILE_SPEED = 22;
 const PLAYER_TARGET_MAX_DISTANCE_X = 4.8;
+const PLAYER_SECONDARY_TARGET_DISTANCE_X = 8.4;
 const LASER_COOLDOWN_SECONDS = 0.22;
-const LASER_REQUIRED_OUT_OF_RANGE_COUNT = 3;
+const LASER_REQUIRED_OUT_OF_RANGE_COUNT = 4;
 const LASER_BEAM_LIFETIME_SECONDS = 0.26;
-const MIN_ENEMY_SURVIVAL_SECONDS = 1.05;
+const MIN_ENEMY_SURVIVAL_SECONDS = 1.25;
 const LASER_MAX_TARGET_X = 17.2;
+const CLEANUP_BEHIND_SHIP_DISTANCE = 1.1;
+const CLEANUP_BEHIND_REQUIRED_COUNT = 2;
+const CLEANUP_OUT_OF_RANGE_EXTRA_DISTANCE = 1.6;
+const CUE_FALLBACK_MIN_AHEAD_DISTANCE = 1.8;
+const CUE_FALLBACK_MAX_AHEAD_DISTANCE = 10.2;
+const CUE_FALLBACK_MAX_Y_DELTA = 1.35;
 const SHIP_MIN_X = -12.4;
 const SHIP_MAX_X = 3.2;
 const SHIP_MIN_Y = -6.4;
@@ -496,17 +503,25 @@ function fireProjectiles(state: SimulationState): void {
     const shipX = state.shipX + 0.65;
     const shipY = state.shipY;
 
-    const target = findBestTarget(state.enemies, shipX, shipY);
+    let target = findBestTarget(state.enemies, shipX, shipY);
+    if (!target) {
+      target = findBestTarget(state.enemies, shipX, shipY, PLAYER_SECONDARY_TARGET_DISTANCE_X);
+    }
     let directionX = 1;
-    let directionY = Math.sin(state.simTimeSeconds * 1.7) * 0.18;
+    let directionY = clamp(state.shipVy * 0.035, -0.12, 0.12);
 
     if (target) {
-      const dx = target.x - shipX;
-      const dy = target.y - shipY;
+      const directDx = target.x - shipX;
+      const directDy = target.y - shipY;
+      const directDistance = Math.hypot(directDx, directDy);
+      const travelSeconds = clamp(directDistance / PLAYER_PROJECTILE_SPEED, 0.04, 0.5);
+      const futureTarget = predictEnemyPosition(target, travelSeconds);
+      const dx = futureTarget.x - shipX;
+      const dy = futureTarget.y - shipY;
       const mag = Math.hypot(dx, dy);
       if (mag > 1e-6) {
         const leadFalloff = clamp(1 - (mag - 6.5) / 9.5, 0.28, 1);
-        const jitter = (state.rng() - 0.5) * (1 - leadFalloff) * 0.42;
+        const jitter = (state.rng() - 0.5) * (1 - leadFalloff) * 0.2;
         directionX = dx / mag;
         directionY = dy / mag + jitter;
         const directionMag = Math.hypot(directionX, directionY) || 1;
@@ -607,10 +622,10 @@ function fireCleanupLaser(state: SimulationState): void {
       enemy.ageSeconds >= MIN_ENEMY_SURVIVAL_SECONDS &&
       enemy.hasEnteredView &&
       enemy.scheduledCueTime === null &&
-      enemy.x < state.shipX - 0.45
+      enemy.x < state.shipX - CLEANUP_BEHIND_SHIP_DISTANCE
   );
 
-  if (behindShip.length > 0) {
+  if (behindShip.length >= CLEANUP_BEHIND_REQUIRED_COUNT) {
     let target = behindShip[0];
     for (const enemy of behindShip) {
       if (enemy.x < target.x) {
@@ -621,7 +636,7 @@ function fireCleanupLaser(state: SimulationState): void {
     spawnLaserBeam(state, target.x, target.y);
     spawnExplosion(state, target.x, target.y, target.z);
     state.enemies = state.enemies.filter((enemy) => enemy.id !== target.id);
-    state.nextLaserFireTime = state.simTimeSeconds + LASER_COOLDOWN_SECONDS * 0.65;
+    state.nextLaserFireTime = state.simTimeSeconds + LASER_COOLDOWN_SECONDS * 1.15;
     return;
   }
 
@@ -631,7 +646,7 @@ function fireCleanupLaser(state: SimulationState): void {
       enemy.hasEnteredView &&
       enemy.scheduledCueTime === null &&
       enemy.x <= LASER_MAX_TARGET_X &&
-      enemy.x > state.shipX + PLAYER_TARGET_MAX_DISTANCE_X + 0.8
+      enemy.x > state.shipX + PLAYER_TARGET_MAX_DISTANCE_X + CLEANUP_OUT_OF_RANGE_EXTRA_DISTANCE
   );
 
   if (outOfRange.length < LASER_REQUIRED_OUT_OF_RANGE_COUNT) {
@@ -648,7 +663,8 @@ function fireCleanupLaser(state: SimulationState): void {
   spawnLaserBeam(state, target.x, target.y);
   spawnExplosion(state, target.x, target.y, target.z);
   state.enemies = state.enemies.filter((enemy) => enemy.id !== target.id);
-  state.nextLaserFireTime = state.simTimeSeconds + LASER_COOLDOWN_SECONDS + state.rng() * 0.06;
+  state.nextLaserFireTime =
+    state.simTimeSeconds + LASER_COOLDOWN_SECONDS * 1.25 + state.rng() * 0.08;
 }
 
 function updateLaserBeams(state: SimulationState, deltaSeconds: number): void {
@@ -1049,14 +1065,25 @@ function spawnLaserBeam(state: SimulationState, toX: number, toY: number): void 
 function pickFallbackCueEnemy(state: SimulationState): Enemy | null {
   let bestEnemyIndex = -1;
   let bestScore = Number.POSITIVE_INFINITY;
-  const targetX = state.shipX + 8;
+  const preferredAheadDistance = 6.4;
 
   for (let i = 0; i < state.enemies.length; i += 1) {
     const enemy = state.enemies[i];
-    if (enemy.x <= state.shipX + 1 || enemy.x >= 18.5) {
+    if (enemy.scheduledCueTime !== null || !enemy.hasEnteredView) {
       continue;
     }
-    const score = Math.abs(enemy.x - targetX) + Math.abs(enemy.y - state.shipY) * 0.5;
+    const aheadDistance = enemy.x - state.shipX;
+    if (
+      aheadDistance <= CUE_FALLBACK_MIN_AHEAD_DISTANCE ||
+      aheadDistance >= CUE_FALLBACK_MAX_AHEAD_DISTANCE
+    ) {
+      continue;
+    }
+    const laneOffset = Math.abs(enemy.y - state.shipY);
+    if (laneOffset > CUE_FALLBACK_MAX_Y_DELTA) {
+      continue;
+    }
+    const score = Math.abs(aheadDistance - preferredAheadDistance) + laneOffset * 1.7;
     if (score < bestScore) {
       bestScore = score;
       bestEnemyIndex = i;
@@ -1467,7 +1494,12 @@ function predictShipPosition(state: SimulationState, dt: number): {
   };
 }
 
-function findBestTarget(enemies: Enemy[], shipX: number, shipY: number): Enemy | null {
+function findBestTarget(
+  enemies: Enemy[],
+  shipX: number,
+  shipY: number,
+  maxDistanceX = PLAYER_TARGET_MAX_DISTANCE_X
+): Enemy | null {
   let bestEnemy: Enemy | null = null;
   let bestScore = Number.POSITIVE_INFINITY;
 
@@ -1475,7 +1507,7 @@ function findBestTarget(enemies: Enemy[], shipX: number, shipY: number): Enemy |
     if (enemy.x < shipX + 0.6) {
       continue;
     }
-    if (enemy.x > shipX + PLAYER_TARGET_MAX_DISTANCE_X) {
+    if (enemy.x > shipX + maxDistanceX) {
       continue;
     }
 
