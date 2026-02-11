@@ -32,6 +32,7 @@ export function setupScene(container: HTMLElement): RenderScene {
   const FIXED_RENDER_WIDTH = 1920;
   const FIXED_RENDER_HEIGHT = 1080;
   const ORTHO_HALF_HEIGHT = 11.5;
+  const ENEMY_BASE_OPACITY = 0.62;
 
   const scene = new Scene();
   const lowEnergyBg = new Color("#070707");
@@ -87,7 +88,9 @@ export function setupScene(container: HTMLElement): RenderScene {
     emissive: "#7f1d1d",
     emissiveIntensity: 0.2,
     transparent: true,
-    opacity: 1
+    opacity: 1,
+    side: DoubleSide,
+    depthWrite: false
   });
   const enemyBaseColor = new Color("#f87171");
   const enemyHitColor = new Color("#fef08a");
@@ -259,7 +262,7 @@ export function setupScene(container: HTMLElement): RenderScene {
         enemyTintEmissive.lerpColors(enemyBaseEmissive, enemyHitEmissive, flash);
         material.emissive.copy(enemyTintEmissive);
         material.emissiveIntensity = (0.18 + intensity * 0.6) + flash * (0.45 + intensity * 0.35);
-        material.opacity = entryAlpha;
+        material.opacity = entryAlpha * ENEMY_BASE_OPACITY;
         mesh.position.set(enemy.x, enemy.y, enemy.z);
         mesh.rotation.x = 0.48;
         mesh.rotation.y = 0.58;
