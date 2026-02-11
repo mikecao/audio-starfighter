@@ -182,7 +182,7 @@ describe("simulation cue scheduling", () => {
     const withoutPrimary = createSimulation();
     withPrimary.setEnemyBulletRatio(0);
     withoutPrimary.setEnemyBulletRatio(0);
-    withoutPrimary.setShipWeapons({ primaryProjectiles: false });
+    withoutPrimary.setShipWeapons({ primaryProjectiles: false, queuedCueShots: false });
 
     let maxPlayerProjectilesWithPrimary = 0;
     let maxPlayerProjectilesWithoutPrimary = 0;
@@ -202,6 +202,48 @@ describe("simulation cue scheduling", () => {
 
     expect(maxPlayerProjectilesWithPrimary).toBeGreaterThan(0);
     expect(maxPlayerProjectilesWithoutPrimary).toBe(0);
+  });
+
+  it("supports queued cue shots as a standalone weapon mode", () => {
+    const sim = createSimulation();
+    sim.setShipWeapons({ primaryProjectiles: false, queuedCueShots: true, cleanupLaser: false });
+    sim.startTrackRun([0.8, 1.2, 1.6, 2.0, 2.4, 2.8, 3.2, 3.6]);
+
+    let cueProjectileSeen = false;
+    let maxEnemyCount = 0;
+    for (let i = 0; i < 60 * 7; i += 1) {
+      sim.step(1 / 60);
+      const snapshot = sim.getSnapshot();
+      if (snapshot.projectiles.some((projectile) => projectile.isCueShot)) {
+        cueProjectileSeen = true;
+      }
+      maxEnemyCount = Math.max(maxEnemyCount, snapshot.enemyCount);
+    }
+
+    const finalSnapshot = sim.getSnapshot();
+    expect(cueProjectileSeen).toBe(true);
+    expect(finalSnapshot.cueResolvedCount).toBeGreaterThan(0);
+    expect(maxEnemyCount).toBeLessThan(130);
+  });
+
+  it("supports cleanup laser as a standalone weapon mode", () => {
+    const sim = createSimulation();
+    sim.setShipWeapons({ primaryProjectiles: false, queuedCueShots: false, cleanupLaser: true });
+    sim.startTrackRun([0.75, 1.1, 1.45, 1.8, 2.15, 2.5, 2.85, 3.2]);
+
+    let sawLaserBeam = false;
+    for (let i = 0; i < 60 * 7; i += 1) {
+      sim.step(1 / 60);
+      const snapshot = sim.getSnapshot();
+      if (snapshot.laserBeams.length > 0) {
+        sawLaserBeam = true;
+      }
+    }
+
+    const finalSnapshot = sim.getSnapshot();
+    expect(sawLaserBeam).toBe(true);
+    expect(finalSnapshot.cueResolvedCount).toBeGreaterThan(0);
+    expect(finalSnapshot.cueMissedCount).toBeLessThanOrEqual(2);
   });
 
   it("keeps simulation stable when cleanup laser weapon is disabled", () => {

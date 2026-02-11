@@ -172,6 +172,7 @@ const PLAYER_TARGET_LOCK_MIN_SECONDS = 0.24;
 const PLAYER_TARGET_LOCK_MAX_SECONDS = 0.5;
 const PLAYER_AIM_LOCKED_JITTER = 0.06;
 const PLAYER_AIM_UNLOCKED_JITTER = 0.14;
+const PLAYER_AUTONOMOUS_CUE_AIM_BLEND = 0.76;
 const LASER_COOLDOWN_SECONDS = 0.22;
 const LASER_REQUIRED_OUT_OF_RANGE_COUNT = 4;
 const LASER_BEAM_LIFETIME_SECONDS = 0.26;
@@ -221,6 +222,11 @@ const SHIP_EDGE_APPROACH_PENALTY_X = 0.62;
 const SHIP_EDGE_RETURN_COOLDOWN_SECONDS = 2.3;
 const SHIP_EDGE_RETURN_BAND_Y = 7.4;
 const SHIP_EDGE_RETURN_PENALTY = 1.7;
+const SHIP_ENEMY_THREAT_HORIZON_SECONDS = 1.05;
+const SHIP_ENEMY_SAFE_RADIUS = 1.45;
+const SHIP_ENEMY_ESCAPE_NEAR_MISS_RADIUS = 2.65;
+const SHIP_ENEMY_COLLISION_COST = 6200;
+const SHIP_ENEMY_NEAR_MISS_COST = 1.55;
 const ENEMY_EDGE_AIM_RELAX_DISTANCE_Y = 3.2;
 const ENEMY_EDGE_AIM_RELAX_MAX_LAG_SECONDS = 0.12;
 const ENEMY_EDGE_AIM_RELAX_MAX_JITTER = 0.45;
@@ -615,20 +621,49 @@ function applyCombatConfigPatch(state: SimulationState, patch: CombatConfigPatch
   );
 }
 
+function isPrimaryWeaponEnabled(state: SimulationState): boolean {
+  return state.combatConfig.shipWeapons.primaryProjectiles;
+}
+
+function isCueShotWeaponEnabled(state: SimulationState): boolean {
+  return state.combatConfig.shipWeapons.queuedCueShots;
+}
+
+function isCleanupLaserEnabled(state: SimulationState): boolean {
+  return state.combatConfig.shipWeapons.cleanupLaser;
+}
+
+function isCueShotSoloMode(state: SimulationState): boolean {
+  return isCueShotWeaponEnabled(state) && !isPrimaryWeaponEnabled(state) && !isCleanupLaserEnabled(state);
+}
+
+function isCleanupLaserSoloMode(state: SimulationState): boolean {
+  return isCleanupLaserEnabled(state) && !isPrimaryWeaponEnabled(state) && !isCueShotWeaponEnabled(state);
+}
+
 function getCombatPressureTuning(state: SimulationState): CombatPressureTuning {
   let spawnScale = state.combatConfig.enemyRoster.spawnScale;
   let enemyFireScale = state.combatConfig.enemyRoster.fireScale;
 
-  if (!state.combatConfig.shipWeapons.cleanupLaser) {
+  if (!isCleanupLaserEnabled(state)) {
     spawnScale *= 0.9;
     enemyFireScale *= 0.92;
   }
-  if (!state.combatConfig.shipWeapons.primaryProjectiles) {
+  if (!isPrimaryWeaponEnabled(state)) {
     spawnScale *= 0.82;
     enemyFireScale *= 0.88;
   }
-  if (!state.combatConfig.shipWeapons.queuedCueShots) {
+  if (!isCueShotWeaponEnabled(state)) {
     spawnScale *= 0.9;
+  }
+
+  if (isCueShotSoloMode(state)) {
+    spawnScale *= 0.76;
+    enemyFireScale *= 0.78;
+  }
+  if (isCleanupLaserSoloMode(state)) {
+    spawnScale *= 0.72;
+    enemyFireScale *= 0.72;
   }
 
   return {
@@ -692,7 +727,10 @@ function fireProjectiles(state: SimulationState): void {
     const mood = moodParameters(state.moodProfile);
     const interval = (0.2 - intensity * 0.07) * mood.playerFireIntervalScale;
 
-    if (!state.combatConfig.shipWeapons.primaryProjectiles) {
+    if (!isPrimaryWeaponEnabled(state)) {
+      if (isCueShotWeaponEnabled(state)) {
+        fireAutonomousCueWeaponShot(state);
+      }
       state.lockedTargetEnemyId = null;
       state.nextPlayerFireTime += clamp(interval, 0.1, 0.24);
       continue;
@@ -752,6 +790,80 @@ function fireProjectiles(state: SimulationState): void {
 
     state.nextPlayerFireTime += clamp(interval, 0.1, 0.24);
   }
+}
+
+function fireAutonomousCueWeaponShot(state: SimulationState): void {
+  const shipX = state.shipX + 0.65;
+  const shipY = state.shipY;
+
+  const target = selectAutonomousCueWeaponTarget(state, shipX, shipY);
+  if (!target) {
+    return;
+  }
+
+  const intercept = solveProjectileIntercept(shipX, shipY, target, PLAYER_PROJECTILE_SPEED);
+  const desired = normalizeDirection(intercept.x - shipX, intercept.y - shipY);
+  const blended = normalizeDirection(
+    state.lastPlayerAimX * (1 - PLAYER_AUTONOMOUS_CUE_AIM_BLEND) +
+      desired.x * PLAYER_AUTONOMOUS_CUE_AIM_BLEND,
+    state.lastPlayerAimY * (1 - PLAYER_AUTONOMOUS_CUE_AIM_BLEND) +
+      desired.y * PLAYER_AUTONOMOUS_CUE_AIM_BLEND
+  );
+
+  state.lastPlayerAimX = blended.x;
+  state.lastPlayerAimY = blended.y;
+  state.projectiles.push({
+    id: state.nextProjectileId++,
+    x: shipX,
+    y: shipY,
+    z: 0,
+    vx: blended.x * PLAYER_PROJECTILE_SPEED,
+    vy: blended.y * PLAYER_PROJECTILE_SPEED,
+    ageSeconds: 0,
+    maxLifetimeSeconds: 1.45,
+    radius: 0.16,
+    isCueShot: true
+  });
+}
+
+function selectAutonomousCueWeaponTarget(
+  state: SimulationState,
+  shipX: number,
+  shipY: number
+): Enemy | null {
+  let best: Enemy | null = null;
+  let bestScore = Number.POSITIVE_INFINITY;
+
+  for (const enemy of state.enemies) {
+    if (!isPlayerTargetViable(enemy, shipX, shipY)) {
+      continue;
+    }
+
+    const intercept = solveProjectileIntercept(shipX, shipY, enemy, PLAYER_PROJECTILE_SPEED);
+    const dx = intercept.x - shipX;
+    const dy = intercept.y - shipY;
+    const distance = Math.hypot(dx, dy);
+    let score = distance * 0.11 + Math.abs(dy) * 1.45 + Math.abs(dx - 5.2) * 0.18;
+
+    if (enemy.scheduledCueTime !== null) {
+      const timeUntilCue = enemy.scheduledCueTime - state.simTimeSeconds;
+      if (timeUntilCue > 0.04 && timeUntilCue < 1.4) {
+        score -= 1.7 + (1.4 - timeUntilCue) * 0.6;
+      } else {
+        score -= 0.42;
+      }
+    }
+    if (enemy.cuePrimed) {
+      score -= 0.38;
+    }
+
+    if (score < bestScore) {
+      bestScore = score;
+      best = enemy;
+    }
+  }
+
+  return best;
 }
 
 function selectPlayerFireTarget(state: SimulationState, shipX: number, shipY: number): Enemy | null {
@@ -994,7 +1106,20 @@ function fireCleanupLaser(state: SimulationState): void {
     return;
   }
 
-  const cleanupLaserEnabled = state.combatConfig.shipWeapons.cleanupLaser;
+  const cleanupLaserEnabled = isCleanupLaserEnabled(state);
+  const cleanupSoloMode = isCleanupLaserSoloMode(state);
+
+  if (cleanupSoloMode) {
+    const directTarget = pickDirectCleanupLaserTarget(state);
+    if (directTarget) {
+      spawnLaserBeam(state, directTarget.x, directTarget.y);
+      spawnExplosion(state, directTarget.x, directTarget.y, directTarget.z);
+      state.enemies = state.enemies.filter((enemy) => enemy.id !== directTarget.id);
+      state.nextLaserFireTime =
+        state.simTimeSeconds + LASER_COOLDOWN_SECONDS * 0.92 + state.rng() * 0.05;
+      return;
+    }
+  }
 
   const behindShip = state.enemies.filter(
     (enemy) =>
@@ -1054,6 +1179,29 @@ function fireCleanupLaser(state: SimulationState): void {
     state.simTimeSeconds +
     LASER_COOLDOWN_SECONDS * (cleanupLaserEnabled ? 1.25 : 1.45) +
     state.rng() * 0.08;
+}
+
+function pickDirectCleanupLaserTarget(state: SimulationState): Enemy | null {
+  let best: Enemy | null = null;
+  let bestScore = Number.POSITIVE_INFINITY;
+  for (const enemy of state.enemies) {
+    if (!enemy.hasEnteredView || enemy.scheduledCueTime !== null) {
+      continue;
+    }
+    if (enemy.x <= state.shipX - 2.8 || enemy.x >= LASER_MAX_TARGET_X + 1.6) {
+      continue;
+    }
+
+    const score =
+      Math.abs(enemy.y - state.shipY) * 1.6 +
+      Math.abs(enemy.x - (state.shipX + 5.6)) * 0.34 +
+      enemy.ageSeconds * 0.18;
+    if (score < bestScore) {
+      bestScore = score;
+      best = enemy;
+    }
+  }
+  return best;
 }
 
 function forceCleanupBehindEnemies(state: SimulationState): void {
@@ -1473,6 +1621,10 @@ function resolveDueCueExplosions(state: SimulationState): void {
     return;
   }
 
+  const cleanupLaserEnabled = isCleanupLaserEnabled(state);
+  const cleanupSoloMode = isCleanupLaserSoloMode(state);
+  const cueShotSoloMode = isCueShotSoloMode(state);
+
   while (
     state.cueTimeline.length > 0 &&
     state.cueTimeline[0].timeSeconds <= state.simTimeSeconds
@@ -1491,12 +1643,13 @@ function resolveDueCueExplosions(state: SimulationState): void {
     if (targetIndex >= 0) {
       const enemy = state.enemies[targetIndex];
       const didCueHit = scheduledEnemyHasCueHit(state, enemy);
-      if (!didCueHit && state.combatConfig.shipWeapons.cleanupLaser) {
+      const resolvedByWeapon = didCueHit || cleanupSoloMode || cueShotSoloMode;
+      if (!didCueHit && cleanupLaserEnabled) {
         spawnLaserBeam(state, enemy.x, enemy.y);
       }
       spawnExplosion(state, enemy.x, enemy.y, enemy.z);
       state.enemies.splice(targetIndex, 1);
-      if (didCueHit) {
+      if (resolvedByWeapon) {
         state.cueResolvedCount += 1;
         state.cumulativeCueErrorMs += cueErrorMs;
         state.combo += 1;
@@ -1508,13 +1661,20 @@ function resolveDueCueExplosions(state: SimulationState): void {
     } else {
       const fallbackEnemy = pickFallbackCueEnemy(state);
       if (fallbackEnemy) {
-        if (state.combatConfig.shipWeapons.cleanupLaser) {
+        if (cleanupLaserEnabled) {
           spawnLaserBeam(state, fallbackEnemy.x, fallbackEnemy.y);
         }
         spawnExplosion(state, fallbackEnemy.x, fallbackEnemy.y, fallbackEnemy.z);
       }
-      state.cueMissedCount += 1;
-      state.combo = 0;
+      if ((cleanupSoloMode || cueShotSoloMode) && fallbackEnemy) {
+        state.cueResolvedCount += 1;
+        state.cumulativeCueErrorMs += cueErrorMs;
+        state.combo += 1;
+        state.score += 100 + Math.min(900, state.combo * 10);
+      } else {
+        state.cueMissedCount += 1;
+        state.combo = 0;
+      }
     }
   }
 }
@@ -1888,6 +2048,49 @@ function analyzeProjectileThreat(state: SimulationState): {
     score += weight;
   }
 
+  for (const enemy of state.enemies) {
+    if (enemy.x < state.shipX - 2.2 || enemy.x > state.shipX + 11.6) {
+      continue;
+    }
+
+    let closestDist = Number.POSITIVE_INFINITY;
+    let closestDx = 0;
+    let closestDy = 0;
+    let tClosest = 0;
+    const steps = 6;
+    for (let i = 0; i <= steps; i += 1) {
+      const t = (i / steps) * SHIP_ENEMY_THREAT_HORIZON_SECONDS;
+      const enemyFuture = predictEnemyPosition(enemy, t);
+      const shipFutureX = state.shipX + state.shipVx * t;
+      const shipFutureY = state.shipY + state.shipVy * t;
+      const dx = enemyFuture.x - shipFutureX;
+      const dy = enemyFuture.y - shipFutureY;
+      const dist = Math.hypot(dx, dy);
+      if (dist < closestDist) {
+        closestDist = dist;
+        closestDx = dx;
+        closestDy = dy;
+        tClosest = t;
+      }
+    }
+
+    const safeRadius = SHIP_ENEMY_SAFE_RADIUS + enemy.radius;
+    if (closestDist > safeRadius * 2.1) {
+      continue;
+    }
+
+    const closeness = clamp(1 - closestDist / (safeRadius * 2.1), 0, 1);
+    const imminence = clamp(1 - tClosest / SHIP_ENEMY_THREAT_HORIZON_SECONDS, 0, 1);
+    const weight = closeness * (1.1 + imminence * 1.8);
+    const awayX =
+      closestDist > 1e-4 ? -closestDx / closestDist : state.rng() < 0.5 ? -1 : 1;
+    const awayY =
+      closestDist > 1e-4 ? -closestDy / closestDist : state.rng() < 0.5 ? -1 : 1;
+    dodgeX += awayX * weight * 2.6;
+    dodgeY += awayY * weight * 3.2;
+    score += weight * 1.15;
+  }
+
   return {
     dodgeX,
     dodgeY,
@@ -1941,7 +2144,10 @@ function selectEscapeTarget(
   preBreakoutActive: boolean,
   centerBiasStrength: number
 ): { x: number; y: number } {
-  if (state.enemyProjectiles.length === 0) {
+  const hasNearbyEnemyThreat = state.enemies.some(
+    (enemy) => enemy.x > state.shipX - 1.4 && enemy.x < state.shipX + 10.8
+  );
+  if (state.enemyProjectiles.length === 0 && !hasNearbyEnemyThreat) {
     return {
       x: baseDesiredX,
       y: baseDesiredY
@@ -2046,6 +2252,31 @@ function evaluateEscapeCandidate(
       if (dist <= SHIP_ESCAPE_NEAR_MISS_RADIUS) {
         const nearMiss = SHIP_ESCAPE_NEAR_MISS_RADIUS - dist;
         totalCost += nearMiss * nearMiss * (1.2 + imminence * 1.8);
+      }
+    }
+
+    for (const enemy of state.enemies) {
+      if (enemy.x < simX - 3.2 || enemy.x > simX + 12.4) {
+        continue;
+      }
+
+      const enemyFuture = predictEnemyPosition(enemy, t);
+      const dx = enemyFuture.x - simX;
+      const dy = enemyFuture.y - simY;
+      const dist = Math.hypot(dx, dy);
+      const imminence = 1 - t / horizon;
+      const collisionRadius = SHIP_COLLISION_RADIUS + enemy.radius;
+
+      if (dist <= collisionRadius) {
+        totalCost += SHIP_ENEMY_COLLISION_COST * (1 + imminence * 2.1);
+        continue;
+      }
+
+      const nearMissRadius = SHIP_ENEMY_ESCAPE_NEAR_MISS_RADIUS + enemy.radius;
+      if (dist <= nearMissRadius) {
+        const nearMiss = nearMissRadius - dist;
+        totalCost +=
+          nearMiss * nearMiss * SHIP_ENEMY_NEAR_MISS_COST * (1.05 + imminence * 1.55);
       }
     }
 
