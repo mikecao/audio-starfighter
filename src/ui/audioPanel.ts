@@ -13,6 +13,7 @@ export type AudioPanel = {
   setPlaybackTime: (timeSeconds: number) => void;
   getAudioPlaybackTime: () => number;
   isAudioPlaying: () => boolean;
+  loadFile: (file: File) => Promise<void>;
 };
 
 export function createAudioPanel(
@@ -109,12 +110,15 @@ export function createAudioPanel(
   });
   resizeObserver.observe(canvas);
 
-  fileInput.addEventListener("change", async () => {
+  fileInput.addEventListener("change", () => {
     const file = fileInput.files?.[0];
     if (!file) {
       return;
     }
+    void analyzeAndLoadFile(file);
+  });
 
+  async function analyzeAndLoadFile(file: File): Promise<void> {
     const currentRequestId = ++requestId;
     playbackTimeSeconds = 0;
     lastTimelineDrawPlaybackTime = -1;
@@ -164,7 +168,7 @@ export function createAudioPanel(
       runButton.disabled = true;
       restartButton.disabled = true;
     }
-  });
+  }
 
   runButton.addEventListener("click", () => {
     void startRun("start");
@@ -256,6 +260,9 @@ export function createAudioPanel(
     },
     isAudioPlaying() {
       return !audio.paused && !audio.ended;
+    },
+    async loadFile(file) {
+      await analyzeAndLoadFile(file);
     }
   };
 

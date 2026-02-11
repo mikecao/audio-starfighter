@@ -161,8 +161,9 @@ const LASER_BEAM_LIFETIME_SECONDS = 0.26;
 const MIN_ENEMY_SURVIVAL_SECONDS = 1.25;
 const LASER_MAX_TARGET_X = 17.2;
 const CLEANUP_BEHIND_SHIP_DISTANCE = 1.1;
-const CLEANUP_BEHIND_REQUIRED_COUNT = 2;
+const CLEANUP_BEHIND_REQUIRED_COUNT = 1;
 const CLEANUP_OUT_OF_RANGE_EXTRA_DISTANCE = 1.6;
+const FORCE_CLEANUP_OFFSCREEN_X = -15.9;
 const CUE_FALLBACK_MIN_AHEAD_DISTANCE = 1.8;
 const CUE_FALLBACK_MAX_AHEAD_DISTANCE = 10.2;
 const CUE_FALLBACK_MAX_Y_DELTA = 1.35;
@@ -350,10 +351,13 @@ export function createSimulation(): Simulation {
       resolvePlayerProjectileCollisions(state);
       resolveEnemyProjectileShipCollisions(state);
       resolveDueCueExplosions(state);
+      forceCleanupBehindEnemies(state);
 
       state.shipShieldAlpha = Math.max(0, state.shipShieldAlpha - deltaSeconds * 2.8);
 
-      state.enemies = state.enemies.filter((enemy) => enemy.x > -16);
+      state.enemies = state.enemies.filter(
+        (enemy) => enemy.x > -16 || enemy.scheduledCueTime !== null
+      );
       state.projectiles = state.projectiles.filter(
         (projectile) =>
           projectile.x > -15 &&
@@ -911,6 +915,29 @@ function fireCleanupLaser(state: SimulationState): void {
   state.enemies = state.enemies.filter((enemy) => enemy.id !== target.id);
   state.nextLaserFireTime =
     state.simTimeSeconds + LASER_COOLDOWN_SECONDS * 1.25 + state.rng() * 0.08;
+}
+
+function forceCleanupBehindEnemies(state: SimulationState): void {
+  const removedEnemyIds = new Set<number>();
+
+  for (const enemy of state.enemies) {
+    if (enemy.scheduledCueTime !== null || !enemy.hasEnteredView) {
+      continue;
+    }
+    if (enemy.x > FORCE_CLEANUP_OFFSCREEN_X) {
+      continue;
+    }
+
+    spawnLaserBeam(state, enemy.x, enemy.y);
+    spawnExplosion(state, enemy.x, enemy.y, enemy.z);
+    removedEnemyIds.add(enemy.id);
+  }
+
+  if (removedEnemyIds.size === 0) {
+    return;
+  }
+
+  state.enemies = state.enemies.filter((enemy) => !removedEnemyIds.has(enemy.id));
 }
 
 function updateLaserBeams(state: SimulationState, deltaSeconds: number): void {

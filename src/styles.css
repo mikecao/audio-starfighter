@@ -17,9 +17,41 @@ body,
 }
 
 #app {
+  position: relative;
   padding: 0;
   overflow-x: hidden;
   background: #030711;
+}
+
+#app::before,
+#app::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 120ms ease-out;
+  z-index: 48;
+}
+
+#app::before {
+  background: rgb(4 14 30 / 68%);
+}
+
+#app::after {
+  content: "Drop audio file to analyze";
+  display: grid;
+  place-items: center;
+  color: #d6f1ff;
+  font-family: "Consolas", "Courier New", monospace;
+  font-size: clamp(0.95rem, 2.3vw, 1.2rem);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+#app.app--drag-active::before,
+#app.app--drag-active::after {
+  opacity: 1;
 }
 
 .loading-overlay {
@@ -54,59 +86,81 @@ body,
   color: #b8e3ff;
 }
 
-.loading-overlay__phase {
-  display: inline-flex;
-  align-items: center;
+.loading-overlay__phase-current {
   margin: 0.42rem 0 0;
-  padding: 0.16rem 0.42rem;
-  border-radius: 999px;
-  border: 1px solid rgb(130 156 205 / 55%);
   font-family: "Consolas", "Courier New", monospace;
-  font-size: 0.63rem;
-  letter-spacing: 0.05em;
+  font-size: 0.65rem;
+  letter-spacing: 0.03em;
   text-transform: uppercase;
-  color: #d5e8ff;
-  background: rgb(10 19 37 / 85%);
+  color: #d6e9ff;
 }
 
-.loading-overlay__phase--decode {
-  border-color: rgb(125 211 252 / 60%);
+.loading-overlay__phase-list {
+  list-style: none;
+  margin: 0.32rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.loading-overlay__phase-chip {
+  border: 1px solid rgb(130 156 205 / 30%);
+  border-radius: 999px;
+  padding: 0.12rem 0.4rem;
+  font-family: "Consolas", "Courier New", monospace;
+  font-size: 0.61rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgb(180 200 228 / 70%);
+  background: rgb(10 19 37 / 32%);
+  opacity: 0.72;
+  transition: opacity 140ms ease-out, box-shadow 140ms ease-out, border-color 140ms ease-out;
+}
+
+.loading-overlay__phase-chip--active {
+  opacity: 1;
+  box-shadow: 0 0 10px rgb(125 211 252 / 22%);
+}
+
+.loading-overlay__phase-chip--decode.loading-overlay__phase-chip--active {
+  border-color: rgb(125 211 252 / 72%);
   color: #c8efff;
   background: rgb(10 31 54 / 78%);
 }
 
-.loading-overlay__phase--features {
-  border-color: rgb(110 231 183 / 62%);
+.loading-overlay__phase-chip--features.loading-overlay__phase-chip--active {
+  border-color: rgb(110 231 183 / 72%);
   color: #cffde4;
   background: rgb(8 44 37 / 75%);
 }
 
-.loading-overlay__phase--beats {
-  border-color: rgb(253 230 138 / 66%);
+.loading-overlay__phase-chip--beats.loading-overlay__phase-chip--active {
+  border-color: rgb(253 230 138 / 76%);
   color: #fff0c2;
   background: rgb(55 40 7 / 74%);
 }
 
-.loading-overlay__phase--mood {
-  border-color: rgb(196 181 253 / 65%);
+.loading-overlay__phase-chip--mood.loading-overlay__phase-chip--active {
+  border-color: rgb(196 181 253 / 74%);
   color: #ede4ff;
   background: rgb(37 22 63 / 72%);
 }
 
-.loading-overlay__phase--cues {
-  border-color: rgb(251 146 60 / 66%);
+.loading-overlay__phase-chip--cues.loading-overlay__phase-chip--active {
+  border-color: rgb(251 146 60 / 76%);
   color: #ffe2c7;
   background: rgb(59 24 5 / 74%);
 }
 
-.loading-overlay__phase--precompute {
-  border-color: rgb(244 114 182 / 64%);
+.loading-overlay__phase-chip--precompute.loading-overlay__phase-chip--active {
+  border-color: rgb(244 114 182 / 74%);
   color: #ffd8ed;
   background: rgb(56 14 40 / 74%);
 }
 
-.loading-overlay__phase--finalize {
-  border-color: rgb(148 163 184 / 64%);
+.loading-overlay__phase-chip--finalize.loading-overlay__phase-chip--active {
+  border-color: rgb(148 163 184 / 74%);
   color: #dde6f3;
   background: rgb(26 34 49 / 75%);
 }

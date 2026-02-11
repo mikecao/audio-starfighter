@@ -14,6 +14,10 @@ import { createLoadingOverlay, type LoadingPhaseTone } from "./ui/loadingOverlay
 
 const BEST_SCORE_STORAGE_PREFIX = "audio-starfighter.best-score";
 const ENEMY_BULLET_RATIO = 0.94;
+const ANALYSIS_PROGRESS_START = 0.02;
+const ANALYSIS_PROGRESS_END = 0.2;
+const PRECOMPUTE_PROGRESS_START = 0.24;
+const PRECOMPUTE_PROGRESS_SPAN = 0.76;
 
 const app = document.querySelector<HTMLDivElement>("#app");
 
@@ -71,11 +75,22 @@ let cachedTimelineCues: Array<{ timeSeconds: number; source: "beat" | "peak" }> 
 let usingCueFallback = false;
 const audioPanel = createAudioPanel(uiHost, {
   onAnalyze(file) {
-    loadingOverlay.show("Analyzing Audio", `Decoding ${file.name}...`, 0.02, "Decode", "decode");
+    loadingOverlay.show(
+      "Analyzing Audio",
+      `Decoding ${file.name}...`,
+      ANALYSIS_PROGRESS_START,
+      "Decode",
+      "decode"
+    );
     return analyzeAudioTrack(file, {
       onProgress(progress, message, stage) {
         const phase = mapAnalyzeStageToPhase(stage);
-        loadingOverlay.setProgress(progress * 0.74, message, phase.label, phase.tone);
+        loadingOverlay.setProgress(
+          ANALYSIS_PROGRESS_START + progress * (ANALYSIS_PROGRESS_END - ANALYSIS_PROGRESS_START),
+          message,
+          phase.label,
+          phase.tone
+        );
       }
     }).catch((error) => {
       loadingOverlay.hide();
@@ -86,7 +101,7 @@ const audioPanel = createAudioPanel(uiHost, {
     loadingOverlay.show(
       "Preparing Synced Run",
       "Configuring simulation...",
-      0.76,
+      PRECOMPUTE_PROGRESS_START,
       "Precompute",
       "precompute"
     );
@@ -111,7 +126,7 @@ const audioPanel = createAudioPanel(uiHost, {
           onProgress(progress) {
             const done = progress >= 1;
             loadingOverlay.setProgress(
-              0.76 + progress * 0.24,
+              PRECOMPUTE_PROGRESS_START + progress * PRECOMPUTE_PROGRESS_SPAN,
               done
                 ? "Finalizing replay cache..."
                 : `Precomputing replay ${(progress * 100).toFixed(0)}%`,
@@ -168,6 +183,53 @@ const audioPanel = createAudioPanel(uiHost, {
           : null
     };
   }
+});
+
+let dragFileDepth = 0;
+
+window.addEventListener("dragenter", (event) => {
+  if (!isFileDragEvent(event)) {
+    return;
+  }
+  event.preventDefault();
+  dragFileDepth += 1;
+  app.classList.add("app--drag-active");
+});
+
+window.addEventListener("dragover", (event) => {
+  if (!isFileDragEvent(event)) {
+    return;
+  }
+  event.preventDefault();
+  if (event.dataTransfer) {
+    event.dataTransfer.dropEffect = "copy";
+  }
+  app.classList.add("app--drag-active");
+});
+
+window.addEventListener("dragleave", (event) => {
+  if (!isFileDragEvent(event)) {
+    return;
+  }
+  event.preventDefault();
+  dragFileDepth = Math.max(0, dragFileDepth - 1);
+  if (dragFileDepth === 0) {
+    app.classList.remove("app--drag-active");
+  }
+});
+
+window.addEventListener("drop", (event) => {
+  if (!isFileDragEvent(event)) {
+    return;
+  }
+  event.preventDefault();
+  dragFileDepth = 0;
+  app.classList.remove("app--drag-active");
+  const file = pickAudioFileFromTransfer(event.dataTransfer);
+  if (!file) {
+    return;
+  }
+  void audioPanel.loadFile(file);
 });
 let appliedAnalysisRef: object | null = null;
 
@@ -313,6 +375,39 @@ document.addEventListener("visibilitychange", () => {
     previousFrameTime = performance.now();
   }
 });
+
+function isFileDragEvent(event: DragEvent): boolean {
+  const types = event.dataTransfer?.types;
+  if (!types) {
+    return false;
+  }
+  return Array.from(types).includes("Files");
+}
+
+function pickAudioFileFromTransfer(dataTransfer: DataTransfer | null): File | null {
+  if (!dataTransfer || dataTransfer.files.length === 0) {
+    return null;
+  }
+
+  const files = Array.from(dataTransfer.files);
+  for (const file of files) {
+    if (isSupportedAudioFile(file)) {
+      return file;
+    }
+  }
+
+  return null;
+}
+
+function isSupportedAudioFile(file: File): boolean {
+  if (file.type.toLowerCase().startsWith("audio/")) {
+    return true;
+  }
+  const name = file.name.toLowerCase();
+  return [".mp3", ".wav", ".flac", ".ogg", ".m4a", ".aac", ".opus"].some((ext) =>
+    name.endsWith(ext)
+  );
+}
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));

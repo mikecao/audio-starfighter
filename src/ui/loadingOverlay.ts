@@ -24,6 +24,21 @@ export type LoadingPhaseTone =
   | "precompute"
   | "finalize";
 
+type LoadingPhase = {
+  tone: LoadingPhaseTone;
+  label: string;
+};
+
+const LOADING_PHASES: LoadingPhase[] = [
+  { tone: "decode", label: "Decode" },
+  { tone: "features", label: "Features" },
+  { tone: "beats", label: "Beat Detect" },
+  { tone: "mood", label: "Mood" },
+  { tone: "cues", label: "Cue Build" },
+  { tone: "precompute", label: "Precompute" },
+  { tone: "finalize", label: "Finalize" }
+];
+
 export function createLoadingOverlay(container: HTMLElement): LoadingOverlay {
   const overlay = document.createElement("section");
   overlay.className = "loading-overlay loading-overlay--hidden";
@@ -35,9 +50,21 @@ export function createLoadingOverlay(container: HTMLElement): LoadingOverlay {
   titleEl.className = "loading-overlay__title";
   titleEl.textContent = "Preparing";
 
-  const phaseEl = document.createElement("p");
-  phaseEl.className = "loading-overlay__phase loading-overlay__phase--decode";
-  phaseEl.textContent = "Decode";
+  const phaseCurrentEl = document.createElement("p");
+  phaseCurrentEl.className = "loading-overlay__phase-current";
+  phaseCurrentEl.textContent = "Current: Decode";
+
+  const phaseList = document.createElement("ul");
+  phaseList.className = "loading-overlay__phase-list";
+  const phaseNodeByTone = new Map<LoadingPhaseTone, HTMLLIElement>();
+  for (const phase of LOADING_PHASES) {
+    const item = document.createElement("li");
+    item.className = `loading-overlay__phase-chip loading-overlay__phase-chip--${phase.tone}`;
+    item.textContent = phase.label;
+    item.setAttribute("data-phase", phase.tone);
+    phaseList.appendChild(item);
+    phaseNodeByTone.set(phase.tone, item);
+  }
 
   const messageEl = document.createElement("p");
   messageEl.className = "loading-overlay__message";
@@ -54,30 +81,28 @@ export function createLoadingOverlay(container: HTMLElement): LoadingOverlay {
   percentEl.className = "loading-overlay__percent";
   percentEl.textContent = "0%";
 
-  card.append(titleEl, phaseEl, messageEl, track, percentEl);
+  card.append(titleEl, phaseCurrentEl, phaseList, messageEl, track, percentEl);
   overlay.appendChild(card);
   container.appendChild(overlay);
 
   let currentProgress = 0;
-  const phaseToneClasses: LoadingPhaseTone[] = [
-    "decode",
-    "features",
-    "beats",
-    "mood",
-    "cues",
-    "precompute",
-    "finalize"
-  ];
 
   const setPhase = (phaseLabel?: string, phaseTone?: LoadingPhaseTone): void => {
-    if (phaseLabel) {
-      phaseEl.textContent = phaseLabel;
+    let resolvedLabel = phaseLabel ?? "";
+    if (!resolvedLabel && phaseTone) {
+      const phase = LOADING_PHASES.find((entry) => entry.tone === phaseTone);
+      resolvedLabel = phase?.label ?? "";
     }
-    for (const tone of phaseToneClasses) {
-      phaseEl.classList.remove(`loading-overlay__phase--${tone}`);
+
+    if (resolvedLabel) {
+      phaseCurrentEl.textContent = `Current: ${resolvedLabel}`;
+    }
+
+    for (const phase of LOADING_PHASES) {
+      phaseNodeByTone.get(phase.tone)?.classList.remove("loading-overlay__phase-chip--active");
     }
     if (phaseTone) {
-      phaseEl.classList.add(`loading-overlay__phase--${phaseTone}`);
+      phaseNodeByTone.get(phaseTone)?.classList.add("loading-overlay__phase-chip--active");
     }
   };
 
@@ -91,6 +116,7 @@ export function createLoadingOverlay(container: HTMLElement): LoadingOverlay {
   overlay.setAttribute("role", "progressbar");
   overlay.setAttribute("aria-valuemin", "0");
   overlay.setAttribute("aria-valuemax", "100");
+  setPhase("Decode", "decode");
   setBar(0);
 
   return {
