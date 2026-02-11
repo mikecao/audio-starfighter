@@ -162,11 +162,11 @@ const CUE_FALLBACK_MIN_AHEAD_DISTANCE = 1.8;
 const CUE_FALLBACK_MAX_AHEAD_DISTANCE = 10.2;
 const CUE_FALLBACK_MAX_Y_DELTA = 1.35;
 const SHIP_MIN_X = -12.4;
-const SHIP_MAX_X = 3.2;
-const SHIP_MIN_Y = -6.4;
-const SHIP_MAX_Y = 6.4;
+const SHIP_MAX_X = 4.2;
+const SHIP_MIN_Y = -8.6;
+const SHIP_MAX_Y = 8.6;
 const SHIP_MAX_SPEED_X = 6.4;
-const SHIP_MAX_SPEED_Y = 7.1;
+const SHIP_MAX_SPEED_Y = 8.3;
 const SHIP_ACCEL_X = 14.5;
 const SHIP_ACCEL_Y = 17.5;
 const SHIP_RETARGET_MIN_SECONDS = 0.18;
@@ -178,6 +178,14 @@ const SHIP_COLLISION_RADIUS = 0.7;
 const SHIP_ESCAPE_HORIZON_SECONDS = 1.05;
 const SHIP_ESCAPE_STEP_SECONDS = 1 / 15;
 const SHIP_ESCAPE_NEAR_MISS_RADIUS = 2.4;
+const SHIP_EDGE_AVOIDANCE_BUFFER = 0.2;
+const SHIP_EDGE_AVOIDANCE_PENALTY = 1.1;
+const SHIP_EDGE_AVOIDANCE_BUFFER_X = 0.28;
+const SHIP_EDGE_AVOIDANCE_PENALTY_X = 0.85;
+const SHIP_EDGE_BREAKOUT_BAND = 0.85;
+const SHIP_EDGE_BREAKOUT_THREAT_MIN = 0.45;
+const SHIP_EDGE_BREAKOUT_TRIGGER_SECONDS = 0.35;
+const SHIP_EDGE_BREAKOUT_HOLD_SECONDS = 0.55;
 const ENEMY_SPAWN_INTERVAL_MULTIPLIER = 0.9;
 const ENEMY_FIRE_INTERVAL_MULTIPLIER = 1.15;
 
@@ -191,6 +199,8 @@ type SimulationState = {
   shipTargetX: number;
   shipTargetY: number;
   nextShipRetargetTime: number;
+  edgeDwellSeconds: number;
+  edgeBreakoutSeconds: number;
   shipShieldAlpha: number;
   enemies: Enemy[];
   projectiles: Projectile[];
@@ -241,6 +251,8 @@ export function createSimulation(): Simulation {
     shipTargetX: -6,
     shipTargetY: 0,
     nextShipRetargetTime: 0,
+    edgeDwellSeconds: 0,
+    edgeBreakoutSeconds: 0,
     shipShieldAlpha: 0,
     enemies: [],
     projectiles: [],
@@ -458,6 +470,8 @@ function resetRunState(state: SimulationState): void {
   state.shipTargetX = -6;
   state.shipTargetY = 0;
   state.nextShipRetargetTime = 0;
+  state.edgeDwellSeconds = 0;
+  state.edgeBreakoutSeconds = 0;
   state.shipShieldAlpha = 0;
   state.enemies = [];
   state.projectiles = [];
@@ -1275,18 +1289,45 @@ function updateShipMotion(state: SimulationState, deltaSeconds: number): void {
 
   const threat = analyzeProjectileThreat(state);
   const panicFactor = clamp(threat.score / SHIP_PANIC_THRESHOLD, 0, 1);
+  const breakoutActive = updateEdgeBreakoutState(state, threat.score, deltaSeconds);
 
-  const desiredX = clamp(
-    state.shipTargetX + threat.dodgeX * (0.8 + panicFactor * 2.2) - panicFactor * 1.6,
+  let baseDesiredX = clamp(
+    state.shipTargetX + threat.dodgeX * (0.8 + panicFactor * 2.2) - panicFactor * (breakoutActive ? 0.45 : 1.6),
     SHIP_MIN_X,
     SHIP_MAX_X
   );
-  const baseDesiredY = clamp(
+  let baseDesiredY = clamp(
     state.shipTargetY + threat.dodgeY * (0.95 + panicFactor * 2.4),
     SHIP_MIN_Y,
     SHIP_MAX_Y
   );
-  const desiredY = selectEscapeYTarget(state, baseDesiredY, panicFactor);
+
+  if (breakoutActive) {
+    const inwardYDirection = state.shipY >= 0 ? -1 : 1;
+    baseDesiredY = clamp(
+      baseDesiredY + inwardYDirection * (1.4 + panicFactor * 1.8),
+      SHIP_MIN_Y,
+      SHIP_MAX_Y
+    );
+
+    const centerX = SHIP_MIN_X * 0.4 + SHIP_MAX_X * 0.6;
+    const spreadDirection = state.shipX < centerX ? 1 : -1;
+    baseDesiredX = clamp(
+      baseDesiredX + spreadDirection * (1.2 + panicFactor * 1.1),
+      SHIP_MIN_X,
+      SHIP_MAX_X
+    );
+  }
+
+  const escapeTarget = selectEscapeTarget(
+    state,
+    baseDesiredX,
+    baseDesiredY,
+    panicFactor,
+    breakoutActive
+  );
+  const desiredX = escapeTarget.x;
+  const desiredY = escapeTarget.y;
 
   const speedScale = 1 + panicFactor * 0.9;
   const accelScale = 1 + panicFactor * 1.35;
@@ -1314,10 +1355,10 @@ function updateShipMotion(state: SimulationState, deltaSeconds: number): void {
   state.shipY = clamp(state.shipY + state.shipVy * deltaSeconds, SHIP_MIN_Y, SHIP_MAX_Y);
 
   if (state.shipX === SHIP_MIN_X || state.shipX === SHIP_MAX_X) {
-    state.shipVx *= 0.35;
+    state.shipVx *= breakoutActive ? 0.72 : 0.35;
   }
   if (state.shipY === SHIP_MIN_Y || state.shipY === SHIP_MAX_Y) {
-    state.shipVy *= 0.35;
+    state.shipVy *= breakoutActive ? 0.78 : 0.35;
   }
 }
 
@@ -1367,63 +1408,123 @@ function analyzeProjectileThreat(state: SimulationState): {
   };
 }
 
-function selectEscapeYTarget(
+function updateEdgeBreakoutState(
   state: SimulationState,
-  baseDesiredY: number,
-  panicFactor: number
-): number {
-  if (state.enemyProjectiles.length === 0) {
-    return baseDesiredY;
+  threatScore: number,
+  deltaSeconds: number
+): boolean {
+  const verticalEdgeDistance = Math.min(state.shipY - SHIP_MIN_Y, SHIP_MAX_Y - state.shipY);
+  const isEdgePinned = verticalEdgeDistance < SHIP_EDGE_BREAKOUT_BAND;
+  if (isEdgePinned && threatScore >= SHIP_EDGE_BREAKOUT_THREAT_MIN) {
+    state.edgeDwellSeconds += deltaSeconds;
+  } else {
+    state.edgeDwellSeconds = Math.max(0, state.edgeDwellSeconds - deltaSeconds * 1.8);
   }
 
-  const candidateTargets = [
-    clamp(baseDesiredY - 2.9, SHIP_MIN_Y, SHIP_MAX_Y),
-    clamp(baseDesiredY - 1.9, SHIP_MIN_Y, SHIP_MAX_Y),
-    clamp(baseDesiredY - 1.0, SHIP_MIN_Y, SHIP_MAX_Y),
-    clamp(baseDesiredY, SHIP_MIN_Y, SHIP_MAX_Y),
-    clamp(baseDesiredY + 1.0, SHIP_MIN_Y, SHIP_MAX_Y),
-    clamp(baseDesiredY + 1.9, SHIP_MIN_Y, SHIP_MAX_Y),
-    clamp(baseDesiredY + 2.9, SHIP_MIN_Y, SHIP_MAX_Y)
-  ];
+  if (state.edgeDwellSeconds >= SHIP_EDGE_BREAKOUT_TRIGGER_SECONDS) {
+    state.edgeBreakoutSeconds = Math.max(state.edgeBreakoutSeconds, SHIP_EDGE_BREAKOUT_HOLD_SECONDS);
+    state.edgeDwellSeconds = 0;
+  }
 
+  if (state.edgeBreakoutSeconds > 0) {
+    state.edgeBreakoutSeconds = Math.max(0, state.edgeBreakoutSeconds - deltaSeconds);
+  }
+
+  return state.edgeBreakoutSeconds > 0;
+}
+
+function selectEscapeTarget(
+  state: SimulationState,
+  baseDesiredX: number,
+  baseDesiredY: number,
+  panicFactor: number,
+  breakoutActive: boolean
+): { x: number; y: number } {
+  if (state.enemyProjectiles.length === 0) {
+    return {
+      x: baseDesiredX,
+      y: baseDesiredY
+    };
+  }
+
+  const xOffsets = breakoutActive
+    ? [-3.6, -2.2, -1.1, 0, 1.1, 2.2, 3.6]
+    : [-2.2, -1.3, -0.6, 0, 0.6, 1.3, 2.2];
+  const yOffsets = breakoutActive
+    ? [-4.2, -2.8, -1.5, 0, 1.5, 2.8, 4.2]
+    : [-2.9, -1.9, -1.0, 0, 1.0, 1.9, 2.9];
+
+  let bestX = baseDesiredX;
   let bestY = baseDesiredY;
   let bestCost = Number.POSITIVE_INFINITY;
 
-  for (const candidateY of candidateTargets) {
-    const cost = evaluateEscapeCandidate(state, candidateY, panicFactor);
-    if (cost < bestCost) {
-      bestCost = cost;
-      bestY = candidateY;
+  for (const xOffset of xOffsets) {
+    const candidateX = clamp(baseDesiredX + xOffset, SHIP_MIN_X, SHIP_MAX_X);
+    for (const yOffset of yOffsets) {
+      const candidateY = clamp(baseDesiredY + yOffset, SHIP_MIN_Y, SHIP_MAX_Y);
+      const cost = evaluateEscapeCandidate(
+        state,
+        candidateX,
+        candidateY,
+        panicFactor,
+        breakoutActive
+      );
+      if (cost < bestCost) {
+        bestCost = cost;
+        bestX = candidateX;
+        bestY = candidateY;
+      }
     }
   }
 
-  return bestY;
+  return {
+    x: bestX,
+    y: bestY
+  };
 }
 
 function evaluateEscapeCandidate(
   state: SimulationState,
+  targetX: number,
   targetY: number,
-  panicFactor: number
+  panicFactor: number,
+  breakoutActive: boolean
 ): number {
+  let simX = state.shipX;
   let simY = state.shipY;
+  let simVx = state.shipVx;
   let simVy = state.shipVy;
   let totalCost = 0;
   const horizon = SHIP_ESCAPE_HORIZON_SECONDS;
   const steps = Math.max(1, Math.floor(horizon / SHIP_ESCAPE_STEP_SECONDS));
-  const speedLimit = SHIP_MAX_SPEED_Y * (1 + panicFactor * 0.9);
-  const accelLimit = SHIP_ACCEL_Y * (1 + panicFactor * 1.35);
+  const speedLimitX = SHIP_MAX_SPEED_X * (1 + panicFactor * 0.9);
+  const speedLimitY = SHIP_MAX_SPEED_Y * (1 + panicFactor * 0.9);
+  const accelLimitX = SHIP_ACCEL_X * (1 + panicFactor * 1.35);
+  const accelLimitY = SHIP_ACCEL_Y * (1 + panicFactor * 1.35);
 
   for (let i = 1; i <= steps; i += 1) {
     const t = i * SHIP_ESCAPE_STEP_SECONDS;
-    const desiredVy = clamp((targetY - simY) * (3.8 + panicFactor * 2.6), -speedLimit, speedLimit);
-    simVy += clamp(desiredVy - simVy, -accelLimit * SHIP_ESCAPE_STEP_SECONDS, accelLimit * SHIP_ESCAPE_STEP_SECONDS);
+    const desiredVx = clamp((targetX - simX) * (3.1 + panicFactor * 2.1), -speedLimitX, speedLimitX);
+    const desiredVy = clamp((targetY - simY) * (3.8 + panicFactor * 2.6), -speedLimitY, speedLimitY);
+    simVx += clamp(
+      desiredVx - simVx,
+      -accelLimitX * SHIP_ESCAPE_STEP_SECONDS,
+      accelLimitX * SHIP_ESCAPE_STEP_SECONDS
+    );
+    simVy += clamp(
+      desiredVy - simVy,
+      -accelLimitY * SHIP_ESCAPE_STEP_SECONDS,
+      accelLimitY * SHIP_ESCAPE_STEP_SECONDS
+    );
+    simVx *= 1 - Math.min(0.22, SHIP_ESCAPE_STEP_SECONDS * 0.6);
+    simVy *= 1 - Math.min(0.22, SHIP_ESCAPE_STEP_SECONDS * 0.5);
+    simX = clamp(simX + simVx * SHIP_ESCAPE_STEP_SECONDS, SHIP_MIN_X, SHIP_MAX_X);
     simY = clamp(simY + simVy * SHIP_ESCAPE_STEP_SECONDS, SHIP_MIN_Y, SHIP_MAX_Y);
 
-    const projectedShipX = clamp(state.shipX + state.shipVx * t, SHIP_MIN_X, SHIP_MAX_X);
     for (const projectile of state.enemyProjectiles) {
       const px = projectile.x + projectile.vx * t;
       const py = projectile.y + projectile.vy * t;
-      const dx = px - projectedShipX;
+      const dx = px - simX;
       const dy = py - simY;
       const dist = Math.hypot(dx, dy);
       const imminence = 1 - t / horizon;
@@ -1439,13 +1540,40 @@ function evaluateEscapeCandidate(
       }
     }
 
-    const edgeDistance = Math.min(simY - SHIP_MIN_Y, SHIP_MAX_Y - simY);
-    if (edgeDistance < 0.5) {
-      totalCost += (0.5 - edgeDistance) * (2.6 + panicFactor * 1.8);
+    const edgeDistanceY = Math.min(simY - SHIP_MIN_Y, SHIP_MAX_Y - simY);
+    if (edgeDistanceY < SHIP_EDGE_AVOIDANCE_BUFFER) {
+      totalCost +=
+        (SHIP_EDGE_AVOIDANCE_BUFFER - edgeDistanceY) *
+        (SHIP_EDGE_AVOIDANCE_PENALTY + panicFactor * 0.8);
+    }
+
+    const edgeDistanceX = Math.min(simX - SHIP_MIN_X, SHIP_MAX_X - simX);
+    if (edgeDistanceX < SHIP_EDGE_AVOIDANCE_BUFFER_X) {
+      totalCost +=
+        (SHIP_EDGE_AVOIDANCE_BUFFER_X - edgeDistanceX) *
+        (SHIP_EDGE_AVOIDANCE_PENALTY_X + panicFactor * 0.6);
+    }
+
+    if (breakoutActive) {
+      const trappedEdgeDistance = state.shipY >= 0 ? SHIP_MAX_Y - simY : simY - SHIP_MIN_Y;
+      if (trappedEdgeDistance < SHIP_EDGE_BREAKOUT_BAND) {
+        totalCost +=
+          (SHIP_EDGE_BREAKOUT_BAND - trappedEdgeDistance) *
+          (4.4 + panicFactor * 2.8);
+      }
     }
   }
 
-  totalCost += Math.abs(targetY - state.shipY) * 0.14;
+  totalCost += Math.abs(targetY - state.shipY) * 0.12;
+  totalCost += Math.abs(targetX - state.shipX) * (breakoutActive ? 0.03 : 0.09);
+
+  if (breakoutActive) {
+    const xShift = Math.abs(targetX - state.shipX);
+    if (xShift < 1.2) {
+      totalCost += (1.2 - xShift) * 0.9;
+    }
+  }
+
   return totalCost;
 }
 
