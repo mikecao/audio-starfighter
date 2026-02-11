@@ -167,6 +167,7 @@ const CUE_ASSIGN_MIN_LEAD_SECONDS = 0.2;
 const CUE_ASSIGN_MAX_LEAD_SECONDS = 0.8;
 const CUE_SUPPORT_LEAD_PADDING_SECONDS = 0.55;
 const MAX_CUE_SUPPORT_SPAWNS_PER_STEP = 12;
+const MAX_CATCHUP_CUES_PER_STEP = 4;
 const PLAYER_PROJECTILE_SPEED = 22;
 const PLAYER_TARGET_MAX_DISTANCE_X = 4.8;
 const PLAYER_TARGET_HARD_DISTANCE_X = 12.6;
@@ -379,6 +380,7 @@ export function createSimulation(): Simulation {
 
       spawnEnemies(state);
       planCueShots(state);
+      planCatchupCueKills(state);
       fireQueuedCueShots(state);
       fireProjectiles(state);
       updateEnemies(state, deltaSeconds);
@@ -688,10 +690,28 @@ function getCombatPressureTuning(state: SimulationState): CombatPressureTuning {
     spawnScale *= 0.9;
   }
 
+  const loadoutKillScale = getLoadoutKillScale(state);
+  spawnScale *= loadoutKillScale;
+  enemyFireScale *= 0.82 + loadoutKillScale * 0.28;
+
   return {
     spawnScale: clamp(spawnScale, 0.45, 2.4),
     enemyFireScale: clamp(enemyFireScale, 0.45, 2.4)
   };
+}
+
+function getLoadoutKillScale(state: SimulationState): number {
+  let capacity = 0;
+  if (isPrimaryWeaponEnabled(state)) {
+    capacity += 1.5;
+  }
+  if (isCueShotWeaponEnabled(state)) {
+    capacity += 1;
+  }
+  if (isCleanupLaserEnabled(state)) {
+    capacity += 0.9;
+  }
+  return clamp(capacity / 3.4, 0.38, 1.05);
 }
 
 function pickEnemyArchetype(state: SimulationState): EnemyArchetypeId {
@@ -1205,6 +1225,67 @@ function planCueShots(state: SimulationState): void {
     if (cueWeapon !== "green") {
       queueCueShotForEnemy(state, candidate.enemy, cue.timeSeconds, cueWeapon);
     }
+  }
+}
+
+function planCatchupCueKills(state: SimulationState): void {
+  if (getEnabledCueWeapons(state).length === 0) {
+    return;
+  }
+
+  let created = 0;
+  for (const enemy of state.enemies) {
+    if (created >= MAX_CATCHUP_CUES_PER_STEP) {
+      break;
+    }
+    if (enemy.scheduledCueTime !== null || !enemy.hasEnteredView) {
+      continue;
+    }
+    if (enemyAlreadyAssignedToCue(state.cueTimeline, enemy.id)) {
+      continue;
+    }
+
+    const aheadDistance = enemy.x - state.shipX;
+    if (aheadDistance > 8.8 || aheadDistance < -2.5) {
+      continue;
+    }
+
+    const weapon = selectCueWeaponForAssignment(state);
+    if (!weapon) {
+      break;
+    }
+
+    const shipX = state.shipX + 0.65;
+    const shipY = state.shipY;
+    const distance = Math.hypot(enemy.x - shipX, enemy.y - shipY);
+    const baseLead = clamp(distance / PLAYER_PROJECTILE_SPEED, 0.14, 0.75);
+    const cueTimeSeconds =
+      state.simTimeSeconds +
+      (weapon === "green" ? clamp(baseLead * 0.6, 0.14, 0.34) : clamp(baseLead, 0.18, 0.58));
+
+    enemy.scheduledCueTime = cueTimeSeconds;
+    const cue: ScheduledCue = {
+      timeSeconds: cueTimeSeconds,
+      planned: true,
+      assignedEnemyId: enemy.id,
+      assignedWeapon: weapon
+    };
+    insertScheduledCue(state, cue);
+
+    if (weapon !== "green") {
+      queueCueShotForEnemy(state, enemy, cueTimeSeconds, weapon);
+    }
+
+    created += 1;
+  }
+}
+
+function insertScheduledCue(state: SimulationState, cue: ScheduledCue): void {
+  const insertAt = state.cueTimeline.findIndex((candidate) => candidate.timeSeconds > cue.timeSeconds);
+  if (insertAt < 0) {
+    state.cueTimeline.push(cue);
+  } else {
+    state.cueTimeline.splice(insertAt, 0, cue);
   }
 }
 

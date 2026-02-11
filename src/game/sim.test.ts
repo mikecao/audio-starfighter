@@ -266,6 +266,28 @@ describe("simulation cue scheduling", () => {
     expect(finalSnapshot.cueMissedCount).toBeLessThanOrEqual(2);
   });
 
+  it("keeps yellow+green loadout from accumulating surviving enemies", () => {
+    const sim = createSimulation();
+    sim.setShipWeapons({ primaryProjectiles: false, queuedCueShots: true, cleanupLaser: true });
+    const cues: number[] = [];
+    for (let t = 0.7; t <= 9.4; t += 0.35) {
+      cues.push(Number(t.toFixed(3)));
+    }
+    sim.startTrackRun(cues);
+
+    let maxEnemyCount = 0;
+    for (let i = 0; i < 60 * 12; i += 1) {
+      sim.step(1 / 60);
+      const snapshot = sim.getSnapshot();
+      maxEnemyCount = Math.max(maxEnemyCount, snapshot.enemyCount);
+    }
+
+    const finalSnapshot = sim.getSnapshot();
+    expect(maxEnemyCount).toBeLessThan(100);
+    expect(finalSnapshot.enemyCount).toBeLessThan(20);
+    expect(finalSnapshot.cueResolvedCount).toBeGreaterThan(finalSnapshot.cueMissedCount);
+  });
+
   it("keeps simulation stable when cleanup laser weapon is disabled", () => {
     const sim = createSimulation();
     sim.setShipWeapons({ cleanupLaser: false });
