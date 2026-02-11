@@ -5,7 +5,6 @@ const RUN_SEED_STORAGE_KEY = "audio-starfighter.run-seed";
 type AudioPanelHandlers = {
   onAnalyze: (file: File) => Promise<AudioAnalysisResult>;
   onStartRun: (analysis: AudioAnalysisResult, seed: number) => void | Promise<void>;
-  onExportSummary: (seed: number) => Record<string, unknown> | null;
   onToggleUi: () => boolean;
 };
 
@@ -30,8 +29,15 @@ export function createAudioPanel(
   const fileInput = document.createElement("input");
   fileInput.type = "file";
   fileInput.accept = "audio/*";
-  fileInput.className = "audio-controls__file";
-  controlsMain.appendChild(fileInput);
+  fileInput.className = "audio-controls__file-input";
+
+  const chooseFileButton = document.createElement("button");
+  chooseFileButton.type = "button";
+  chooseFileButton.className = "audio-controls__pick";
+  chooseFileButton.textContent = "Open File";
+  chooseFileButton.title = "Select an audio file";
+
+  controlsMain.append(chooseFileButton, fileInput);
 
   const summary = document.createElement("p");
   summary.className = "audio-controls__summary";
@@ -69,13 +75,6 @@ export function createAudioPanel(
   restartButton.textContent = "Restart Run";
   restartButton.disabled = true;
   controlsActions.appendChild(restartButton);
-
-  const exportButton = document.createElement("button");
-  exportButton.className = "audio-controls__button audio-controls__button--secondary";
-  exportButton.type = "button";
-  exportButton.textContent = "Export Summary";
-  exportButton.disabled = false;
-  controlsActions.appendChild(exportButton);
 
   controlsMain.appendChild(controlsActions);
 
@@ -132,6 +131,10 @@ export function createAudioPanel(
     void analyzeAndLoadFile(file);
   });
 
+  chooseFileButton.addEventListener("click", () => {
+    fileInput.click();
+  });
+
   async function analyzeAndLoadFile(file: File): Promise<void> {
     const currentRequestId = ++requestId;
     playbackTimeSeconds = 0;
@@ -159,6 +162,7 @@ export function createAudioPanel(
       audio.load();
       summary.textContent = [
         `BPM ${analysis.beat.bpm.toFixed(1)}`,
+        `Frames ${analysis.frames.length}`,
         `Mood ${analysis.mood.label}`,
         `Duration ${analysis.durationSeconds.toFixed(1)}s`
       ].join(" | ");
@@ -185,27 +189,6 @@ export function createAudioPanel(
 
   restartButton.addEventListener("click", () => {
     void startRun("restart");
-  });
-
-  exportButton.addEventListener("click", () => {
-    const seed = Number(seedInput.value);
-    const normalizedSeed = Number.isFinite(seed) ? seed : 7;
-    const exportSummary = handlers.onExportSummary(normalizedSeed);
-    if (!exportSummary) {
-      return;
-    }
-    if (!latestAnalysis) {
-      return;
-    }
-
-    const json = JSON.stringify(exportSummary, null, 2);
-    const blob = new Blob([json], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `run-summary-${Date.now()}.json`;
-    link.click();
-    URL.revokeObjectURL(url);
   });
 
   toggleUiButton.addEventListener("click", () => {
@@ -246,6 +229,22 @@ export function createAudioPanel(
       event.preventDefault();
       void startRun("restart");
     }
+  });
+
+  canvas.addEventListener("pointerdown", (event) => {
+    if (!latestAnalysis) {
+      return;
+    }
+    const rect = canvas.getBoundingClientRect();
+    if (rect.width <= 0) {
+      return;
+    }
+    const localX = clamp(event.clientX - rect.left, 0, rect.width);
+    const targetSeconds = (localX / rect.width) * latestAnalysis.durationSeconds;
+    audio.currentTime = targetSeconds;
+    playbackTimeSeconds = targetSeconds;
+    lastTimelineDrawPlaybackTime = -1;
+    drawTimeline(canvas, latestAnalysis, playbackTimeSeconds);
   });
 
   drawPlaceholder(canvas, placeholderText);
@@ -504,4 +503,8 @@ function prepareCanvasForHiDpi(
 
   context.setTransform(dpr, 0, 0, dpr, 0, 0);
   return { width: cssWidth, height: cssHeight };
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
 }

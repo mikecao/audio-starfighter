@@ -138,41 +138,6 @@ const audioPanel = createAudioPanel(uiHost, {
       loadingOverlay.hide();
     }
   },
-  onExportSummary(seed) {
-    const analysis = audioPanel.getLatestAnalysis();
-    if (!analysis) {
-      return null;
-    }
-
-    return {
-      exportedAtIso: new Date().toISOString(),
-      trackFileName: analysis.fileName,
-      seed,
-      bpm: analysis.beat.bpm,
-      mood: analysis.mood.label,
-      moodConfidence: analysis.mood.confidence,
-      cueCount: buildRunTimelineEvents(analysis).events.length,
-      simTimeSeconds: latestSnapshot.simTimeSeconds,
-      cueResolvedCount: latestSnapshot.cueResolvedCount,
-      cueMissedCount: latestSnapshot.cueMissedCount,
-      cueHitRate:
-        latestSnapshot.cueResolvedCount + latestSnapshot.cueMissedCount > 0
-          ? latestSnapshot.cueResolvedCount /
-            (latestSnapshot.cueResolvedCount + latestSnapshot.cueMissedCount)
-          : 0,
-      pendingCueCount: latestSnapshot.pendingCueCount,
-      plannedCueCount: latestSnapshot.plannedCueCount,
-      queuedCueShotCount: latestSnapshot.queuedCueShotCount,
-      avgCueErrorMs: latestSnapshot.avgCueErrorMs,
-      score: latestSnapshot.score,
-      bestScore: currentBestScore,
-      combo: latestSnapshot.combo,
-      playbackDriftMs:
-        analysis && audioPanel.getAudioPlaybackTime() > 0
-          ? (latestSnapshot.simTimeSeconds - audioPanel.getAudioPlaybackTime()) * 1000
-          : null
-    };
-  },
   onToggleUi() {
     setUiHidden(!uiHidden);
     return uiHidden;
