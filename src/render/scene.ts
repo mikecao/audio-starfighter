@@ -164,6 +164,7 @@ export function setupScene(container: HTMLElement): RenderScene {
   const explosionParticleBursts: ExplosionBurst[] = [];
   const coreColor = new Color();
   const ringColor = new Color();
+  const sparkColor = new Color();
 
   const closeStars = createStarLayer(130, 0xe0f2fe, 10.5, 0.12, 0.56);
   const nearStars = createStarLayer(220, 0x93c5fd, 6.6, 0.08, 0.34);
@@ -397,9 +398,11 @@ export function setupScene(container: HTMLElement): RenderScene {
           Math.pow(1 - normalizedAge, 0.8) * (0.6 + peakNormalized * 0.9)
         );
 
+        sparkColor.lerpColors(coreColor, ringColor, 0.4 + normalizedAge * 0.35);
+
         burst.points.visible = true;
         burst.points.position.set(explosion.x, explosion.y, explosion.z + 0.08);
-        updateExplosionBurst(burst, normalizedAge, explosion.alpha, peakScale);
+        updateExplosionBurst(burst, normalizedAge, explosion.alpha, peakScale, sparkColor);
       }
     },
     render() {
@@ -597,7 +600,8 @@ function updateExplosionBurst(
   burst: ExplosionBurst,
   normalizedAge: number,
   alpha: number,
-  peakScale: number
+  peakScale: number,
+  color: Color
 ): void {
   const peakNormalized = normalizeExplosionPower(peakScale);
   const intensityScale = 0.3 + peakScale * 0.85;
@@ -612,6 +616,7 @@ function updateExplosionBurst(
   burst.positionAttribute.needsUpdate = true;
 
   const material = burst.points.material as PointsMaterial;
+  material.color.copy(color);
   material.opacity = Math.max(0, Math.pow(alpha, 0.3) * (0.72 + peakNormalized * 0.92));
   material.size = Math.max(
     1.8,
