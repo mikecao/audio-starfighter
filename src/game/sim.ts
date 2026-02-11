@@ -171,6 +171,8 @@ const SHIP_COLLISION_RADIUS = 0.7;
 const SHIP_ESCAPE_HORIZON_SECONDS = 1.05;
 const SHIP_ESCAPE_STEP_SECONDS = 1 / 15;
 const SHIP_ESCAPE_NEAR_MISS_RADIUS = 2.4;
+const ENEMY_SPAWN_INTERVAL_MULTIPLIER = 0.9;
+const ENEMY_FIRE_INTERVAL_MULTIPLIER = 1.15;
 
 type SimulationState = {
   simTimeSeconds: number;
@@ -1630,8 +1632,8 @@ function moodParameters(mood: MoodProfile): {
   }
   return {
     enemySpeedScale: 1,
-    spawnIntervalScale: 1,
-    enemyFireIntervalScale: 1,
+    spawnIntervalScale: ENEMY_SPAWN_INTERVAL_MULTIPLIER,
+    enemyFireIntervalScale: ENEMY_FIRE_INTERVAL_MULTIPLIER,
     playerFireIntervalScale: 1
   };
 }
