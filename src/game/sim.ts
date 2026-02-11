@@ -211,9 +211,11 @@ const ENEMY_EDGE_PRESSURE_WINDOW_X = 8.2;
 const ENEMY_EDGE_PRESSURE_WINDOW_Y = 3.6;
 const ENEMY_EDGE_PRESSURE_PROJECTILE_CAP = 8;
 const ENEMY_EDGE_PRESSURE_EXTRA_SPREAD = 0.11;
+const ENEMY_INTENSITY_SPAWN_BOOST = 0.08;
+const ENEMY_INTENSITY_FIRE_COOLDOWN_BOOST = 0.1;
 const ENEMY_BULLET_RATE_BASE = 2.05;
-const ENEMY_BULLET_RATE_INTENSITY_GAIN = 2.95;
-const ENEMY_BULLET_RATE_MAX = 10.5;
+const ENEMY_BULLET_RATE_INTENSITY_GAIN = 3.15;
+const ENEMY_BULLET_RATE_MAX = 10.9;
 const ENEMY_BULLET_BUDGET_WINDOW_SECONDS = 0.68;
 const ENEMY_SPAWN_INTERVAL_MULTIPLIER = 0.9;
 const ENEMY_FIRE_INTERVAL_MULTIPLIER = 1.15;
@@ -571,7 +573,12 @@ function spawnEnemies(state: SimulationState): void {
     const intensity = getIntensityAtTime(state, state.simTimeSeconds);
     const mood = moodParameters(state.moodProfile);
     const cadence = (0.9 - intensity * 0.5) * mood.spawnIntervalScale;
-    state.nextEnemySpawnTime += clamp(cadence + state.rng() * 0.35, 0.22, 0.95);
+    const intensitySpawnMultiplier = 1 - intensity * ENEMY_INTENSITY_SPAWN_BOOST;
+    state.nextEnemySpawnTime += clamp(
+      (cadence + state.rng() * 0.35) * intensitySpawnMultiplier,
+      0.22,
+      0.95
+    );
   }
 
   ensureCueSupportEnemies(state);
@@ -799,10 +806,12 @@ function updateEnemies(state: SimulationState, deltaSeconds: number): void {
     const burstCount = Math.min(desiredBurstCount, Math.max(1, Math.floor(state.enemyBulletBudget)));
     fireEnemyBurst(state, enemy, burstCount);
     state.enemyBulletBudget = Math.max(0, state.enemyBulletBudget - burstCount);
+    const fireCadenceIntensityMultiplier = enemyFireIntensityMultiplier(intensity);
     enemy.fireCooldownSeconds =
       (0.28 + (1 - intensity) * 0.52 + state.rng() * 0.32) *
       mood.enemyFireIntervalScale *
-      ENEMY_FIRE_COOLDOWN_MULTIPLIER;
+      ENEMY_FIRE_COOLDOWN_MULTIPLIER *
+      fireCadenceIntensityMultiplier;
     firedEnemies += 1;
   }
 
@@ -844,6 +853,10 @@ function fireEnemyBurst(state: SimulationState, enemy: Enemy, burstCount: number
     const centeredIndex = i - (burstCount - 1) * 0.5;
     spawnEnemyProjectile(state, enemy, centeredIndex * spreadStep);
   }
+}
+
+function enemyFireIntensityMultiplier(intensity: number): number {
+  return clamp(1 - intensity * ENEMY_INTENSITY_FIRE_COOLDOWN_BOOST, 0.82, 1);
 }
 
 function updateProjectiles(state: SimulationState, deltaSeconds: number): void {
@@ -1097,7 +1110,10 @@ function spawnReservedCueEnemy(state: SimulationState, cueTimeSeconds: number): 
     frequency: 0.8 + state.rng() * 1.15,
     radius: 0.44,
     fireCooldownSeconds:
-      (0.9 + state.rng() * 0.9) * mood.enemyFireIntervalScale * ENEMY_FIRE_COOLDOWN_MULTIPLIER,
+      (0.9 + state.rng() * 0.9) *
+      mood.enemyFireIntervalScale *
+      ENEMY_FIRE_COOLDOWN_MULTIPLIER *
+      enemyFireIntensityMultiplier(intensity),
     scheduledCueTime: cueTimeSeconds,
     cuePrimed: false,
     damageFlash: 0,
@@ -1140,7 +1156,8 @@ function spawnAmbientEnemy(state: SimulationState): void {
     fireCooldownSeconds:
       (0.5 + (1 - intensity) * 0.8 + state.rng() * 0.5) *
       mood.enemyFireIntervalScale *
-      ENEMY_FIRE_COOLDOWN_MULTIPLIER,
+      ENEMY_FIRE_COOLDOWN_MULTIPLIER *
+      enemyFireIntensityMultiplier(intensity),
     scheduledCueTime: null,
     cuePrimed: false,
     damageFlash: 0,
@@ -1225,7 +1242,10 @@ function spawnCueSupportEnemy(state: SimulationState): void {
     frequency: 0.8 + state.rng() * 0.8,
     radius: 0.44,
     fireCooldownSeconds:
-      (0.9 + state.rng() * 0.7) * mood.enemyFireIntervalScale * ENEMY_FIRE_COOLDOWN_MULTIPLIER,
+      (0.9 + state.rng() * 0.7) *
+      mood.enemyFireIntervalScale *
+      ENEMY_FIRE_COOLDOWN_MULTIPLIER *
+      enemyFireIntensityMultiplier(intensity),
     scheduledCueTime: null,
     cuePrimed: false,
     damageFlash: 0,
