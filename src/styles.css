@@ -217,236 +217,193 @@ body,
 .ui-host {
   width: min(100%, 1920px);
   margin: 0 auto;
-  padding: 0.9rem 0.9rem 1rem;
+  padding: 0.95rem 0.95rem 1.15rem;
   display: grid;
   grid-template-areas:
-    "toggle toggle"
-    "timeline timeline"
-    "audio hud";
-  grid-template-columns: minmax(640px, 1.55fr) minmax(460px, 1fr);
-  gap: 0.75rem;
+    "controls"
+    "timeline"
+    "waveform"
+    "playback";
+  grid-template-columns: minmax(320px, 1fr);
+  gap: 0.68rem;
   align-items: stretch;
 }
 
-.ui-toggle-button {
-  position: static;
-  grid-area: toggle;
-  justify-self: start;
-  border: 1px solid rgb(103 232 249 / 45%);
-  border-radius: 0.4rem;
-  background: rgb(8 19 39 / 95%);
-  color: #baf2ff;
-  padding: 0.34rem 0.62rem;
-  font-family: "Consolas", "Courier New", monospace;
-  font-size: 0.71rem;
-  cursor: pointer;
-}
-
-.ui-toggle-button:hover {
-  border-color: rgb(103 232 249 / 70%);
-}
-
-.debug-hud {
-  position: static;
-  grid-area: hud;
-  min-width: 0;
-  padding: 0.75rem 0.9rem;
-  border-radius: 0.6rem;
-  border: 1px solid rgb(128 160 215 / 40%);
-  background: rgb(4 11 26 / 75%);
-  backdrop-filter: blur(5px);
-}
-
-.debug-hud__title {
-  margin: 0 0 0.4rem;
-  font-size: 0.82rem;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
-  color: #b3dcff;
-}
-
-.debug-hud__list {
-  margin: 0;
-  display: grid;
-  gap: 0.25rem;
-}
-
-.debug-hud__row {
+.audio-controls-bar {
+  grid-area: controls;
   display: flex;
+  align-items: center;
   justify-content: space-between;
-  gap: 1rem;
-  font-family: "Consolas", "Courier New", monospace;
-  font-size: 0.74rem;
-}
-
-.debug-hud__row dt {
-  color: #9eb4d3;
-}
-
-.debug-hud__row dd {
-  margin: 0;
-  color: #f0f7ff;
-}
-
-.audio-panel {
-  position: static;
-  grid-area: audio;
-  width: 100%;
-  padding: 0.8rem 0.9rem;
-  border-radius: 0.6rem;
+  gap: 0.8rem;
+  padding: 0.7rem 0.85rem;
+  border-radius: 0.62rem;
   border: 1px solid rgb(128 160 215 / 40%);
   background: rgb(4 11 26 / 78%);
   backdrop-filter: blur(5px);
 }
 
-.audio-panel__title {
-  margin: 0 0 0.55rem;
-  font-size: 0.82rem;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
-  color: #b3dcff;
+.audio-controls-bar__main {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+  gap: 0.62rem;
+  flex-wrap: wrap;
 }
 
-.audio-panel__file {
-  width: 100%;
-  margin: 0 0 0.55rem;
+.audio-controls__file {
+  flex: 0 0 auto;
+  width: auto;
   font: inherit;
   color: #d9e8ff;
 }
 
-.audio-panel__file::file-selector-button {
-  margin-right: 0.65rem;
+.audio-controls__file::file-selector-button,
+.audio-controls__file::-webkit-file-upload-button {
+  margin-right: 0.62rem;
   border: 1px solid rgb(103 232 249 / 45%);
   border-radius: 0.4rem;
   background: linear-gradient(180deg, rgb(9 23 45 / 98%), rgb(7 17 34 / 98%));
   color: #baf2ff;
-  padding: 0.34rem 0.58rem;
+  padding: 0.42rem 0.72rem;
   font-family: "Consolas", "Courier New", monospace;
-  font-size: 0.71rem;
+  font-size: 0.84rem;
   letter-spacing: 0.02em;
   cursor: pointer;
 }
 
-.audio-panel__file::file-selector-button:hover {
+.audio-controls__file::file-selector-button:hover,
+.audio-controls__file::-webkit-file-upload-button:hover {
   border-color: rgb(103 232 249 / 70%);
   background: linear-gradient(180deg, rgb(11 29 58 / 98%), rgb(8 21 41 / 98%));
 }
 
-.audio-panel__file::file-selector-button:active {
-  transform: translateY(1px);
-}
-
-.audio-panel__file::-webkit-file-upload-button {
-  margin-right: 0.65rem;
-  border: 1px solid rgb(103 232 249 / 45%);
-  border-radius: 0.4rem;
-  background: linear-gradient(180deg, rgb(9 23 45 / 98%), rgb(7 17 34 / 98%));
-  color: #baf2ff;
-  padding: 0.34rem 0.58rem;
+.audio-controls__summary {
+  margin: 0;
+  padding: 0.22rem 0.45rem;
+  border-radius: 0.36rem;
+  border: 1px solid rgb(95 132 196 / 30%);
+  background: rgb(5 13 29 / 66%);
   font-family: "Consolas", "Courier New", monospace;
-  font-size: 0.71rem;
-  letter-spacing: 0.02em;
-  cursor: pointer;
+  font-size: 0.88rem;
+  color: #dff1ff;
 }
 
-.audio-panel__status,
-.audio-panel__stats {
-  margin: 0 0 0.45rem;
+.audio-controls__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.audio-controls__seed-row {
+  display: flex;
+  align-items: center;
+  gap: 0.32rem;
+  padding: 0.24rem 0.35rem;
+  border-radius: 0.36rem;
+  border: 1px solid rgb(95 132 196 / 30%);
+  background: rgb(5 13 29 / 66%);
+}
+
+.audio-controls__seed-label {
   font-family: "Consolas", "Courier New", monospace;
-  font-size: 0.72rem;
-  color: #f0f7ff;
-}
-
-.audio-panel__stats {
+  font-size: 0.82rem;
   color: #9eb4d3;
 }
 
-.audio-panel__timeline {
-  display: block;
-  width: 100%;
-  height: 108px;
+.audio-controls__seed-input {
+  width: 86px;
   border: 1px solid rgb(95 132 196 / 40%);
-  border-radius: 0.35rem;
+  border-radius: 0.33rem;
+  background: rgb(5 13 29 / 90%);
+  color: #f0f7ff;
+  font-family: "Consolas", "Courier New", monospace;
+  font-size: 0.84rem;
+  padding: 0.21rem 0.3rem;
 }
 
-.audio-panel__run {
-  margin-top: 0.55rem;
-  width: 100%;
+.audio-controls__button,
+.audio-controls-toggle {
   border: 1px solid rgb(103 232 249 / 45%);
   border-radius: 0.4rem;
   background: rgb(8 19 39 / 95%);
   color: #baf2ff;
-  padding: 0.4rem 0.6rem;
+  padding: 0.44rem 0.7rem;
   font-family: "Consolas", "Courier New", monospace;
-  font-size: 0.73rem;
+  font-size: 0.84rem;
   cursor: pointer;
 }
 
-.audio-panel__run:disabled {
+.audio-controls__button:hover,
+.audio-controls-toggle:hover {
+  border-color: rgb(103 232 249 / 70%);
+}
+
+.audio-controls__button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
 
-.audio-panel__run--secondary {
-  margin-top: 0.35rem;
+.audio-controls__button--secondary {
   border-color: rgb(244 114 182 / 35%);
   color: #ffd7eb;
 }
 
-.audio-panel__audio {
-  margin-top: 0.55rem;
+.waveform-panel {
+  grid-area: waveform;
+  padding: 0.78rem 0.85rem;
+  border-radius: 0.62rem;
+  border: 1px solid rgb(128 160 215 / 40%);
+  background: rgb(4 11 26 / 78%);
+  backdrop-filter: blur(5px);
+}
+
+.waveform-panel__canvas {
+  display: block;
   width: 100%;
-  height: 28px;
+  height: 128px;
+  border: 1px solid rgb(95 132 196 / 40%);
+  border-radius: 0.35rem;
+}
+
+.playback-panel {
+  grid-area: playback;
+  padding: 0.64rem 0.85rem;
+  border-radius: 0.62rem;
+  border: 1px solid rgb(128 160 215 / 40%);
+  background: rgb(4 11 26 / 78%);
+  backdrop-filter: blur(5px);
+}
+
+.playback-panel__audio {
+  width: 100%;
+  height: 34px;
   border-radius: 0.42rem;
   border: 1px solid rgb(103 232 249 / 35%);
   background: rgb(5 13 29 / 95%);
   color-scheme: dark;
 }
 
-.audio-panel__audio::-webkit-media-controls-panel {
+.playback-panel__audio::-webkit-media-controls-panel {
   background: linear-gradient(180deg, rgb(9 23 45 / 96%), rgb(7 16 33 / 96%));
 }
 
-.audio-panel__audio::-webkit-media-controls-current-time-display,
-.audio-panel__audio::-webkit-media-controls-time-remaining-display {
+.playback-panel__audio::-webkit-media-controls-current-time-display,
+.playback-panel__audio::-webkit-media-controls-time-remaining-display {
   color: #c7e8ff;
   font-family: "Consolas", "Courier New", monospace;
-  font-size: 0.7rem;
+  font-size: 0.78rem;
 }
 
-.audio-panel__audio::-webkit-media-controls-play-button,
-.audio-panel__audio::-webkit-media-controls-mute-button {
+.playback-panel__audio::-webkit-media-controls-play-button,
+.playback-panel__audio::-webkit-media-controls-mute-button {
   filter: brightness(1.12) saturate(1.2);
 }
 
-.audio-panel__audio::-webkit-media-controls-timeline,
-.audio-panel__audio::-webkit-media-controls-volume-slider {
+.playback-panel__audio::-webkit-media-controls-timeline,
+.playback-panel__audio::-webkit-media-controls-volume-slider {
   filter: saturate(1.2) brightness(1.08);
-}
-
-.audio-panel__seed-row {
-  margin-top: 0.55rem;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.7rem;
-}
-
-.audio-panel__seed-label {
-  font-family: "Consolas", "Courier New", monospace;
-  font-size: 0.72rem;
-  color: #9eb4d3;
-}
-
-.audio-panel__seed-input {
-  width: 120px;
-  border: 1px solid rgb(95 132 196 / 40%);
-  border-radius: 0.35rem;
-  background: rgb(5 13 29 / 90%);
-  color: #f0f7ff;
-  font-family: "Consolas", "Courier New", monospace;
-  font-size: 0.72rem;
-  padding: 0.24rem 0.35rem;
 }
 
 .event-timeline {
@@ -471,7 +428,7 @@ body,
 .event-timeline__legend {
   margin: 0;
   font-family: "Consolas", "Courier New", monospace;
-  font-size: 0.69rem;
+  font-size: 0.78rem;
 }
 
 .event-timeline__title {
@@ -501,19 +458,31 @@ body,
   .ui-host {
     padding: 0.6rem 0.6rem 0.85rem;
     grid-template-areas:
-      "toggle"
+      "controls"
       "timeline"
-      "audio"
-      "hud";
+      "waveform"
+      "playback";
     grid-template-columns: 1fr;
     gap: 0.6rem;
   }
 
-  .audio-panel,
-  .debug-hud,
-  .event-timeline,
-  .ui-toggle-button {
+  .audio-controls-bar,
+  .waveform-panel,
+  .playback-panel,
+  .event-timeline {
     height: auto;
+  }
+
+  .audio-controls-bar {
+    align-items: flex-start;
+  }
+
+  .audio-controls-bar__main {
+    width: 100%;
+  }
+
+  .audio-controls-toggle {
+    align-self: stretch;
   }
 
   .event-timeline {

@@ -7,7 +7,6 @@ import {
   buildPrecomputedRunAsync,
   type PrecomputedRun
 } from "./game/precomputedRun";
-import { createDebugHud } from "./ui/debugHud";
 import { createAudioPanel } from "./ui/audioPanel";
 import { createEventTimeline } from "./ui/eventTimeline";
 import { createLoadingOverlay, type LoadingPhaseTone } from "./ui/loadingOverlay";
@@ -38,21 +37,18 @@ app.appendChild(uiHost);
 const scene = setupScene(sceneHost);
 const sim = createSimulation();
 sim.setEnemyBulletRatio(ENEMY_BULLET_RATIO);
-const hud = createDebugHud(uiHost);
 const eventTimeline = createEventTimeline(uiHost);
-const canvasOnlyButton = document.createElement("button");
-canvasOnlyButton.type = "button";
-canvasOnlyButton.className = "ui-toggle-button";
-canvasOnlyButton.textContent = "Hide UI";
-canvasOnlyButton.title = "Toggle interface visibility";
-uiHost.appendChild(canvasOnlyButton);
 
 let uiHidden = false;
-const uiOverlaySelectors = [".audio-panel", ".debug-hud", ".event-timeline"];
+const uiOverlaySelectors = [
+  ".audio-controls-bar__main",
+  ".event-timeline",
+  ".waveform-panel",
+  ".playback-panel"
+];
 
 function setUiHidden(hidden: boolean): void {
   uiHidden = hidden;
-  canvasOnlyButton.textContent = hidden ? "Show UI" : "Hide UI";
   for (const selector of uiOverlaySelectors) {
     const nodes = app!.querySelectorAll<HTMLElement>(selector);
     nodes.forEach((node) => {
@@ -61,13 +57,8 @@ function setUiHidden(hidden: boolean): void {
   }
 }
 
-canvasOnlyButton.addEventListener("click", () => {
-  setUiHidden(!uiHidden);
-});
-
 let latestSnapshot: SimulationSnapshot = sim.getSnapshot();
 let precomputedRun: PrecomputedRun | null = null;
-let precomputeStatsText = "off";
 let currentBestScore = 0;
 let currentRunKey: string | null = null;
 let cachedTimelineAnalysisRef: object | null = null;
@@ -136,7 +127,6 @@ const audioPanel = createAudioPanel(uiHost, {
           }
         }
       );
-      precomputeStatsText = formatPrecomputeStats(precomputedRun);
       latestSnapshot = precomputedRun.getSnapshotAtTime(0);
       cachedTimelineAnalysisRef = analysis;
       cachedTimelineCues = runTimeline.events;
@@ -182,6 +172,10 @@ const audioPanel = createAudioPanel(uiHost, {
           ? (latestSnapshot.simTimeSeconds - audioPanel.getAudioPlaybackTime()) * 1000
           : null
     };
+  },
+  onToggleUi() {
+    setUiHidden(!uiHidden);
+    return uiHidden;
   }
 });
 
@@ -294,7 +288,6 @@ function animate(frameTimeMs: number): void {
     sim.setIntensityTimeline(buildIntensityTimeline(analysis.frames));
     sim.setCueTimeline(runTimeline.events.map((cue) => cue.timeSeconds));
     precomputedRun = null;
-    precomputeStatsText = "off";
     cachedTimelineAnalysisRef = analysis;
     cachedTimelineCues = runTimeline.events;
     usingCueFallback = runTimeline.usingCueFallback;
@@ -333,30 +326,6 @@ function animate(frameTimeMs: number): void {
       cueMissedCount: snapshot.cueMissedCount,
       cues: cachedTimelineCues,
       usingBeatFallback: usingCueFallback
-    });
-    hud.update({
-      fps: frameSeconds > 0 ? 1 / frameSeconds : 0,
-      simTimeSeconds: snapshot.simTimeSeconds,
-      simTick: snapshot.simTick,
-      enemyCount: snapshot.enemyCount,
-      projectileCount: snapshot.projectileCount,
-      bpm: analysis?.beat.bpm ?? null,
-      cueCount: cachedTimelineCues?.length ?? 0,
-      cueResolvedCount: snapshot.cueResolvedCount,
-      cueMissedCount: snapshot.cueMissedCount,
-      avgCueErrorMs: snapshot.avgCueErrorMs,
-      currentIntensity: snapshot.currentIntensity,
-      score: snapshot.score,
-      combo: snapshot.combo,
-      playbackDriftMs,
-      pendingCueCount: snapshot.pendingCueCount,
-      plannedCueCount: snapshot.plannedCueCount,
-      upcomingCueWindowCount: snapshot.upcomingCueWindowCount,
-      availableCueTargetCount: snapshot.availableCueTargetCount,
-      queuedCueShotCount: snapshot.queuedCueShotCount,
-      bestScore: currentBestScore,
-      moodProfile: snapshot.moodProfile,
-      precomputeStats: precomputeStatsText
     });
   }
 
@@ -495,11 +464,6 @@ function saveBestScore(key: string, value: number): void {
   } catch {
     // Ignore storage failures.
   }
-}
-
-function formatPrecomputeStats(run: PrecomputedRun): string {
-  const mb = run.estimatedBytes / (1024 * 1024);
-  return `${run.snapshots.length} frames | ${run.buildMs.toFixed(0)}ms | ${mb.toFixed(1)}MB`;
 }
 
 function mapAnalyzeStageToPhase(stage: string): { label: string; tone: LoadingPhaseTone } {

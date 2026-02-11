@@ -6,6 +6,7 @@ type AudioPanelHandlers = {
   onAnalyze: (file: File) => Promise<AudioAnalysisResult>;
   onStartRun: (analysis: AudioAnalysisResult, seed: number) => void | Promise<void>;
   onExportSummary: (seed: number) => Record<string, unknown> | null;
+  onToggleUi: () => boolean;
 };
 
 export type AudioPanel = {
@@ -20,78 +21,91 @@ export function createAudioPanel(
   container: HTMLElement,
   handlers: AudioPanelHandlers
 ): AudioPanel {
-  const panel = document.createElement("section");
-  panel.className = "audio-panel";
+  const controlsBar = document.createElement("section");
+  controlsBar.className = "audio-controls-bar";
 
-  const title = document.createElement("h2");
-  title.className = "audio-panel__title";
-  title.textContent = "Audio Analysis";
-  panel.appendChild(title);
+  const controlsMain = document.createElement("div");
+  controlsMain.className = "audio-controls-bar__main";
 
   const fileInput = document.createElement("input");
   fileInput.type = "file";
   fileInput.accept = "audio/*";
-  fileInput.className = "audio-panel__file";
-  panel.appendChild(fileInput);
+  fileInput.className = "audio-controls__file";
+  controlsMain.appendChild(fileInput);
 
-  const status = document.createElement("p");
-  status.className = "audio-panel__status";
-  status.textContent = "Load a track to generate BPM and cue timeline.";
-  panel.appendChild(status);
+  const summary = document.createElement("p");
+  summary.className = "audio-controls__summary";
+  summary.textContent = "Load a track";
+  controlsMain.appendChild(summary);
 
-  const stats = document.createElement("p");
-  stats.className = "audio-panel__stats";
-  stats.textContent = "No analysis yet.";
-  panel.appendChild(stats);
-
-  const canvas = document.createElement("canvas");
-  canvas.className = "audio-panel__timeline";
-  canvas.width = 960;
-  canvas.height = 108;
-  panel.appendChild(canvas);
-
-  const runButton = document.createElement("button");
-  runButton.className = "audio-panel__run";
-  runButton.type = "button";
-  runButton.textContent = "Start Synced Run";
-  runButton.disabled = true;
-  panel.appendChild(runButton);
-
-  const restartButton = document.createElement("button");
-  restartButton.className = "audio-panel__run audio-panel__run--secondary";
-  restartButton.type = "button";
-  restartButton.textContent = "Restart Run";
-  restartButton.disabled = true;
-  panel.appendChild(restartButton);
-
-  const exportButton = document.createElement("button");
-  exportButton.className = "audio-panel__run audio-panel__run--secondary";
-  exportButton.type = "button";
-  exportButton.textContent = "Export Summary";
-  exportButton.disabled = false;
-  panel.appendChild(exportButton);
+  const controlsActions = document.createElement("div");
+  controlsActions.className = "audio-controls__actions";
 
   const seedRow = document.createElement("div");
-  seedRow.className = "audio-panel__seed-row";
+  seedRow.className = "audio-controls__seed-row";
   const seedLabel = document.createElement("label");
-  seedLabel.className = "audio-panel__seed-label";
-  seedLabel.textContent = "Run Seed";
+  seedLabel.className = "audio-controls__seed-label";
+  seedLabel.textContent = "Seed";
   seedLabel.htmlFor = "run-seed";
   const seedInput = document.createElement("input");
-  seedInput.className = "audio-panel__seed-input";
+  seedInput.className = "audio-controls__seed-input";
   seedInput.id = "run-seed";
   seedInput.type = "number";
   seedInput.value = loadSeedFromStorage();
   seedInput.step = "1";
   seedRow.append(seedLabel, seedInput);
-  panel.appendChild(seedRow);
+  controlsActions.appendChild(seedRow);
+
+  const runButton = document.createElement("button");
+  runButton.className = "audio-controls__button";
+  runButton.type = "button";
+  runButton.textContent = "Start Synced Run";
+  runButton.disabled = true;
+  controlsActions.appendChild(runButton);
+
+  const restartButton = document.createElement("button");
+  restartButton.className = "audio-controls__button audio-controls__button--secondary";
+  restartButton.type = "button";
+  restartButton.textContent = "Restart Run";
+  restartButton.disabled = true;
+  controlsActions.appendChild(restartButton);
+
+  const exportButton = document.createElement("button");
+  exportButton.className = "audio-controls__button audio-controls__button--secondary";
+  exportButton.type = "button";
+  exportButton.textContent = "Export Summary";
+  exportButton.disabled = false;
+  controlsActions.appendChild(exportButton);
+
+  controlsMain.appendChild(controlsActions);
+
+  const toggleUiButton = document.createElement("button");
+  toggleUiButton.type = "button";
+  toggleUiButton.className = "audio-controls-toggle";
+  toggleUiButton.textContent = "Hide UI";
+  toggleUiButton.title = "Toggle interface visibility";
+
+  controlsBar.append(controlsMain, toggleUiButton);
+  container.appendChild(controlsBar);
+
+  const waveformPanel = document.createElement("section");
+  waveformPanel.className = "waveform-panel";
+
+  const canvas = document.createElement("canvas");
+  canvas.className = "waveform-panel__canvas";
+  canvas.width = 960;
+  canvas.height = 108;
+  waveformPanel.appendChild(canvas);
+  container.appendChild(waveformPanel);
+
+  const playbackPanel = document.createElement("section");
+  playbackPanel.className = "playback-panel";
 
   const audio = document.createElement("audio");
-  audio.className = "audio-panel__audio";
+  audio.className = "playback-panel__audio";
   audio.controls = true;
-  panel.appendChild(audio);
-
-  container.appendChild(panel);
+  playbackPanel.appendChild(audio);
+  container.appendChild(playbackPanel);
 
   let latestAnalysis: AudioAnalysisResult | null = null;
   let requestId = 0;
@@ -123,8 +137,7 @@ export function createAudioPanel(
     playbackTimeSeconds = 0;
     lastTimelineDrawPlaybackTime = -1;
     placeholderText = "Analyzing...";
-    status.textContent = `Analyzing ${file.name}...`;
-    stats.textContent = "Processing waveform...";
+    summary.textContent = `Analyzing ${file.name}...`;
     drawPlaceholder(canvas, placeholderText);
 
     try {
@@ -144,13 +157,10 @@ export function createAudioPanel(
       trackUrl = URL.createObjectURL(file);
       audio.src = trackUrl;
       audio.load();
-      status.textContent = `Analyzed ${analysis.fileName}`;
-      stats.textContent = [
+      summary.textContent = [
         `BPM ${analysis.beat.bpm.toFixed(1)}`,
         `Mood ${analysis.mood.label}`,
-        `Cues ${analysis.cues.length}`,
-        `Duration ${analysis.durationSeconds.toFixed(1)}s`,
-        `Confidence ${(analysis.beat.confidence * 100).toFixed(0)}%`
+        `Duration ${analysis.durationSeconds.toFixed(1)}s`
       ].join(" | ");
 
       drawTimeline(canvas, analysis, 0);
@@ -161,8 +171,7 @@ export function createAudioPanel(
         return;
       }
       const message = error instanceof Error ? error.message : String(error);
-      status.textContent = "Analysis failed";
-      stats.textContent = message;
+      summary.textContent = `Analysis failed: ${message}`;
       placeholderText = "Analysis failed. Try another track.";
       drawPlaceholder(canvas, placeholderText);
       runButton.disabled = true;
@@ -181,13 +190,15 @@ export function createAudioPanel(
   exportButton.addEventListener("click", () => {
     const seed = Number(seedInput.value);
     const normalizedSeed = Number.isFinite(seed) ? seed : 7;
-    const summary = handlers.onExportSummary(normalizedSeed);
-    if (!summary) {
-      status.textContent = "No run summary available yet.";
+    const exportSummary = handlers.onExportSummary(normalizedSeed);
+    if (!exportSummary) {
+      return;
+    }
+    if (!latestAnalysis) {
       return;
     }
 
-    const json = JSON.stringify(summary, null, 2);
+    const json = JSON.stringify(exportSummary, null, 2);
     const blob = new Blob([json], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
@@ -195,7 +206,11 @@ export function createAudioPanel(
     link.download = `run-summary-${Date.now()}.json`;
     link.click();
     URL.revokeObjectURL(url);
-    status.textContent = "Run summary exported.";
+  });
+
+  toggleUiButton.addEventListener("click", () => {
+    const hidden = handlers.onToggleUi();
+    toggleUiButton.textContent = hidden ? "Show UI" : "Hide UI";
   });
 
   seedInput.addEventListener("change", () => {
@@ -219,7 +234,7 @@ export function createAudioPanel(
       event.preventDefault();
       if (audio.paused) {
         void audio.play().catch(() => {
-          status.textContent = "Press play to start audio playback.";
+          summary.textContent = "Press play to start audio playback.";
         });
       } else {
         audio.pause();
@@ -275,7 +290,7 @@ export function createAudioPanel(
     runStarting = true;
     runButton.disabled = true;
     restartButton.disabled = true;
-    status.textContent =
+    summary.textContent =
       mode === "start"
         ? `Preparing synced run for ${latestAnalysis.fileName}...`
         : `Preparing restart for ${latestAnalysis.fileName}...`;
@@ -286,19 +301,18 @@ export function createAudioPanel(
       lastTimelineDrawPlaybackTime = -1;
       audio.currentTime = 0;
       void audio.play().catch(() => {
-        status.textContent =
+        summary.textContent =
           mode === "start"
             ? "Press play to start audio playback."
             : "Press play to restart audio playback.";
       });
-      status.textContent =
+      summary.textContent =
         mode === "start"
           ? `Synced run started for ${latestAnalysis.fileName}`
           : `Run restarted for ${latestAnalysis.fileName}`;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      status.textContent = "Run start failed";
-      stats.textContent = message;
+      summary.textContent = `Run start failed: ${message}`;
     } finally {
       runStarting = false;
       runButton.disabled = latestAnalysis === null;
