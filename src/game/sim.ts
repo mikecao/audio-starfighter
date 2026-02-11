@@ -149,7 +149,12 @@ const CUE_SUPPORT_LEAD_PADDING_SECONDS = 0.55;
 const MAX_CUE_SUPPORT_SPAWNS_PER_STEP = 12;
 const PLAYER_PROJECTILE_SPEED = 22;
 const PLAYER_TARGET_MAX_DISTANCE_X = 4.8;
-const PLAYER_SECONDARY_TARGET_DISTANCE_X = 8.4;
+const PLAYER_TARGET_HARD_DISTANCE_X = 12.6;
+const PLAYER_TARGET_MAX_LATERAL_DISTANCE = 7.2;
+const PLAYER_TARGET_LOCK_MIN_SECONDS = 0.24;
+const PLAYER_TARGET_LOCK_MAX_SECONDS = 0.5;
+const PLAYER_AIM_LOCKED_JITTER = 0.06;
+const PLAYER_AIM_UNLOCKED_JITTER = 0.14;
 const LASER_COOLDOWN_SECONDS = 0.22;
 const LASER_REQUIRED_OUT_OF_RANGE_COUNT = 4;
 const LASER_BEAM_LIFETIME_SECONDS = 0.26;
@@ -223,6 +228,10 @@ type SimulationState = {
   shipTargetX: number;
   shipTargetY: number;
   nextShipRetargetTime: number;
+  lockedTargetEnemyId: number | null;
+  targetLockUntilSeconds: number;
+  lastPlayerAimX: number;
+  lastPlayerAimY: number;
   edgeDwellSeconds: number;
   edgeBreakoutSeconds: number;
   recentEdgeSideY: number;
@@ -281,6 +290,10 @@ export function createSimulation(): Simulation {
     shipTargetX: -6,
     shipTargetY: 0,
     nextShipRetargetTime: 0,
+    lockedTargetEnemyId: null,
+    targetLockUntilSeconds: 0,
+    lastPlayerAimX: 1,
+    lastPlayerAimY: 0,
     edgeDwellSeconds: 0,
     edgeBreakoutSeconds: 0,
     recentEdgeSideY: 0,
@@ -512,6 +525,10 @@ function resetRunState(state: SimulationState): void {
   state.shipTargetX = -6;
   state.shipTargetY = 0;
   state.nextShipRetargetTime = 0;
+  state.lockedTargetEnemyId = null;
+  state.targetLockUntilSeconds = 0;
+  state.lastPlayerAimX = 1;
+  state.lastPlayerAimY = 0;
   state.edgeDwellSeconds = 0;
   state.edgeBreakoutSeconds = 0;
   state.recentEdgeSideY = 0;
@@ -563,32 +580,41 @@ function fireProjectiles(state: SimulationState): void {
     const shipX = state.shipX + 0.65;
     const shipY = state.shipY;
 
-    let target = findBestTarget(state.enemies, shipX, shipY);
-    if (!target) {
-      target = findBestTarget(state.enemies, shipX, shipY, PLAYER_SECONDARY_TARGET_DISTANCE_X);
-    }
-    let directionX = 1;
-    let directionY = clamp(state.shipVy * 0.035, -0.12, 0.12);
+    const target = selectPlayerFireTarget(state, shipX, shipY);
+    let directionX = state.lastPlayerAimX;
+    let directionY = state.lastPlayerAimY;
 
     if (target) {
-      const directDx = target.x - shipX;
-      const directDy = target.y - shipY;
-      const directDistance = Math.hypot(directDx, directDy);
-      const travelSeconds = clamp(directDistance / PLAYER_PROJECTILE_SPEED, 0.04, 0.5);
-      const futureTarget = predictEnemyPosition(target, travelSeconds);
+      const futureTarget = solveProjectileIntercept(shipX, shipY, target, PLAYER_PROJECTILE_SPEED);
       const dx = futureTarget.x - shipX;
       const dy = futureTarget.y - shipY;
       const mag = Math.hypot(dx, dy);
       if (mag > 1e-6) {
-        const leadFalloff = clamp(1 - (mag - 6.5) / 9.5, 0.28, 1);
-        const jitter = (state.rng() - 0.5) * (1 - leadFalloff) * 0.2;
-        directionX = dx / mag;
-        directionY = dy / mag + jitter;
-        const directionMag = Math.hypot(directionX, directionY) || 1;
-        directionX /= directionMag;
-        directionY /= directionMag;
+        const locked = state.lockedTargetEnemyId === target.id;
+        const baseJitter = locked ? PLAYER_AIM_LOCKED_JITTER : PLAYER_AIM_UNLOCKED_JITTER;
+        const cueBias = target.scheduledCueTime !== null ? 0.55 : 1;
+        const jitter = (state.rng() - 0.5) * baseJitter * cueBias;
+        const desired = normalizeDirection(dx, dy + jitter);
+        const blend = locked ? 0.84 : 0.72;
+        const blended = normalizeDirection(
+          state.lastPlayerAimX * (1 - blend) + desired.x * blend,
+          state.lastPlayerAimY * (1 - blend) + desired.y * blend
+        );
+        directionX = blended.x;
+        directionY = blended.y;
       }
+    } else {
+      state.lockedTargetEnemyId = null;
+      const fallback = normalizeDirection(
+        1,
+        clamp(state.shipVy * 0.03 + Math.sin(state.simTimeSeconds * 1.15) * 0.04, -0.12, 0.12)
+      );
+      directionX = fallback.x;
+      directionY = fallback.y;
     }
+
+    state.lastPlayerAimX = directionX;
+    state.lastPlayerAimY = directionY;
 
     state.projectiles.push({
       id: state.nextProjectileId++,
@@ -605,6 +631,109 @@ function fireProjectiles(state: SimulationState): void {
     const interval = (0.2 - intensity * 0.07) * mood.playerFireIntervalScale;
     state.nextPlayerFireTime += clamp(interval, 0.1, 0.24);
   }
+}
+
+function selectPlayerFireTarget(state: SimulationState, shipX: number, shipY: number): Enemy | null {
+  if (state.lockedTargetEnemyId !== null && state.simTimeSeconds <= state.targetLockUntilSeconds) {
+    const lockedTarget = getEnemyById(state.enemies, state.lockedTargetEnemyId);
+    if (lockedTarget && isPlayerTargetViable(lockedTarget, shipX, shipY)) {
+      return lockedTarget;
+    }
+  }
+
+  let bestTarget: Enemy | null = null;
+  let bestScore = Number.POSITIVE_INFINITY;
+
+  for (const enemy of state.enemies) {
+    if (!isPlayerTargetViable(enemy, shipX, shipY)) {
+      continue;
+    }
+
+    const score = scorePlayerFireTarget(state, enemy, shipX, shipY);
+    if (score < bestScore) {
+      bestScore = score;
+      bestTarget = enemy;
+    }
+  }
+
+  if (!bestTarget) {
+    state.lockedTargetEnemyId = null;
+    state.targetLockUntilSeconds = 0;
+    return null;
+  }
+
+  state.lockedTargetEnemyId = bestTarget.id;
+  state.targetLockUntilSeconds =
+    state.simTimeSeconds +
+    PLAYER_TARGET_LOCK_MIN_SECONDS +
+    state.rng() * (PLAYER_TARGET_LOCK_MAX_SECONDS - PLAYER_TARGET_LOCK_MIN_SECONDS);
+  return bestTarget;
+}
+
+function scorePlayerFireTarget(
+  state: SimulationState,
+  enemy: Enemy,
+  shipX: number,
+  shipY: number
+): number {
+  const intercept = solveProjectileIntercept(shipX, shipY, enemy, PLAYER_PROJECTILE_SPEED);
+  const dx = intercept.x - shipX;
+  const dy = intercept.y - shipY;
+  const distance = Math.hypot(dx, dy);
+  let score = dx * 0.52 + Math.abs(dy) * 1.35 + distance * 0.06;
+
+  if (enemy.scheduledCueTime !== null) {
+    const timeUntilCue = enemy.scheduledCueTime - state.simTimeSeconds;
+    if (timeUntilCue > 0.06 && timeUntilCue < 1.2) {
+      score -= 1.2 + (1.2 - timeUntilCue) * 0.45;
+    } else {
+      score -= 0.55;
+    }
+  }
+  if (enemy.cuePrimed) {
+    score -= 0.35;
+  }
+  if (!enemy.hasEnteredView) {
+    score += 0.28;
+  }
+  if (state.lockedTargetEnemyId === enemy.id) {
+    score -= 0.7;
+  }
+
+  return score;
+}
+
+function isPlayerTargetViable(enemy: Enemy, shipX: number, shipY: number): boolean {
+  if (enemy.x < shipX + 0.5) {
+    return false;
+  }
+  if (enemy.x > shipX + PLAYER_TARGET_HARD_DISTANCE_X || enemy.x > LASER_MAX_TARGET_X + 1.2) {
+    return false;
+  }
+  if (Math.abs(enemy.y - shipY) > PLAYER_TARGET_MAX_LATERAL_DISTANCE) {
+    return false;
+  }
+  return true;
+}
+
+function solveProjectileIntercept(
+  shipX: number,
+  shipY: number,
+  enemy: Enemy,
+  projectileSpeed: number
+): { x: number; y: number } {
+  const initialDx = enemy.x - shipX;
+  const initialDy = enemy.y - shipY;
+  let travelSeconds = clamp(Math.hypot(initialDx, initialDy) / projectileSpeed, 0.03, 0.85);
+
+  for (let i = 0; i < 3; i += 1) {
+    const future = predictEnemyPosition(enemy, travelSeconds);
+    const dx = future.x - shipX;
+    const dy = future.y - shipY;
+    travelSeconds = clamp(Math.hypot(dx, dy) / projectileSpeed, 0.03, 0.85);
+  }
+
+  return predictEnemyPosition(enemy, travelSeconds);
 }
 
 function updateEnemies(state: SimulationState, deltaSeconds: number): void {
@@ -1783,7 +1912,14 @@ function evaluateEscapeCandidate(
 }
 
 function chooseShipTarget(state: SimulationState): { x: number; y: number } {
-  const focus = findBestTarget(state.enemies, state.shipX, state.shipY);
+  const lockedTarget =
+    state.lockedTargetEnemyId === null
+      ? null
+      : getEnemyById(state.enemies, state.lockedTargetEnemyId);
+  const focus =
+    lockedTarget && isPlayerTargetViable(lockedTarget, state.shipX, state.shipY)
+      ? lockedTarget
+      : findBestTarget(state.enemies, state.shipX, state.shipY, PLAYER_TARGET_HARD_DISTANCE_X);
   const roamPhase = state.simTimeSeconds * 0.72;
 
   if (focus) {
@@ -1824,6 +1960,23 @@ function predictShipPosition(state: SimulationState, dt: number): {
     baseY: clamp(projectedY, SHIP_MIN_Y, SHIP_MAX_Y),
     vx: state.shipVx,
     vy: state.shipVy
+  };
+}
+
+function getEnemyById(enemies: Enemy[], enemyId: number): Enemy | null {
+  for (const enemy of enemies) {
+    if (enemy.id === enemyId) {
+      return enemy;
+    }
+  }
+  return null;
+}
+
+function normalizeDirection(x: number, y: number): { x: number; y: number } {
+  const magnitude = Math.hypot(x, y) || 1;
+  return {
+    x: x / magnitude,
+    y: y / magnitude
   };
 }
 
