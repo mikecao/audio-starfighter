@@ -1656,8 +1656,8 @@ function moodParameters(mood: MoodProfile): {
   }
   if (mood === "aggressive") {
     return {
-      enemySpeedScale: 1.18,
-      spawnIntervalScale: 0.86,
+      enemySpeedScale: 1.1,
+      spawnIntervalScale: 0.82,
       enemyFireIntervalScale: 0.82,
       playerFireIntervalScale: 0.92
     };
