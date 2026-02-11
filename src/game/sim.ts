@@ -78,6 +78,7 @@ type Enemy = {
   scheduledCueTime: number | null;
   cuePrimed: boolean;
   damageFlash: number;
+  hasEnteredView: boolean;
 };
 
 type Projectile = {
@@ -166,6 +167,10 @@ const SHIP_RETARGET_MAX_SECONDS = 0.46;
 const SHIP_THREAT_HORIZON_SECONDS = 1.15;
 const SHIP_SAFE_RADIUS = 1.25;
 const SHIP_PANIC_THRESHOLD = 1.2;
+const SHIP_COLLISION_RADIUS = 0.7;
+const SHIP_ESCAPE_HORIZON_SECONDS = 1.05;
+const SHIP_ESCAPE_STEP_SECONDS = 1 / 15;
+const SHIP_ESCAPE_NEAR_MISS_RADIUS = 2.4;
 
 type SimulationState = {
   simTimeSeconds: number;
@@ -557,6 +562,9 @@ function updateEnemies(state: SimulationState, deltaSeconds: number): void {
     }
 
     enemy.damageFlash = Math.max(0, enemy.damageFlash - deltaSeconds * 8);
+    if (!enemy.hasEnteredView && enemy.x <= LASER_MAX_TARGET_X) {
+      enemy.hasEnteredView = true;
+    }
     enemy.fireCooldownSeconds -= deltaSeconds;
     if (enemy.fireCooldownSeconds <= 0 && enemy.x > state.shipX + 2.5) {
       const burstCount = intensity > 0.72 ? 3 : intensity > 0.45 ? 2 : 1;
@@ -592,12 +600,36 @@ function fireCleanupLaser(state: SimulationState): void {
     return;
   }
 
+  const behindShip = state.enemies.filter(
+    (enemy) =>
+      enemy.ageSeconds >= MIN_ENEMY_SURVIVAL_SECONDS &&
+      enemy.hasEnteredView &&
+      enemy.scheduledCueTime === null &&
+      enemy.x < state.shipX - 0.45
+  );
+
+  if (behindShip.length > 0) {
+    let target = behindShip[0];
+    for (const enemy of behindShip) {
+      if (enemy.x < target.x) {
+        target = enemy;
+      }
+    }
+
+    spawnLaserBeam(state, target.x, target.y);
+    spawnExplosion(state, target.x, target.y, target.z);
+    state.enemies = state.enemies.filter((enemy) => enemy.id !== target.id);
+    state.nextLaserFireTime = state.simTimeSeconds + LASER_COOLDOWN_SECONDS * 0.65;
+    return;
+  }
+
   const outOfRange = state.enemies.filter(
     (enemy) =>
       enemy.ageSeconds >= MIN_ENEMY_SURVIVAL_SECONDS &&
+      enemy.hasEnteredView &&
       enemy.scheduledCueTime === null &&
       enemy.x <= LASER_MAX_TARGET_X &&
-      (enemy.x > state.shipX + PLAYER_TARGET_MAX_DISTANCE_X + 0.8 || enemy.x < state.shipX - 0.3)
+      enemy.x > state.shipX + PLAYER_TARGET_MAX_DISTANCE_X + 0.8
   );
 
   if (outOfRange.length < LASER_REQUIRED_OUT_OF_RANGE_COUNT) {
@@ -776,7 +808,8 @@ function spawnReservedCueEnemy(state: SimulationState, cueTimeSeconds: number): 
     fireCooldownSeconds: (0.9 + state.rng() * 0.9) * mood.enemyFireIntervalScale,
     scheduledCueTime: cueTimeSeconds,
     cuePrimed: false,
-    damageFlash: 0
+    damageFlash: 0,
+    hasEnteredView: false
   };
   state.enemies.push(enemy);
   state.spawnIndex += 1;
@@ -816,7 +849,8 @@ function spawnAmbientEnemy(state: SimulationState): void {
       (0.5 + (1 - intensity) * 0.8 + state.rng() * 0.5) * mood.enemyFireIntervalScale,
     scheduledCueTime: null,
     cuePrimed: false,
-    damageFlash: 0
+    damageFlash: 0,
+    hasEnteredView: false
   });
 }
 
@@ -899,7 +933,8 @@ function spawnCueSupportEnemy(state: SimulationState): void {
     fireCooldownSeconds: (0.9 + state.rng() * 0.7) * mood.enemyFireIntervalScale,
     scheduledCueTime: null,
     cuePrimed: false,
-    damageFlash: 0
+    damageFlash: 0,
+    hasEnteredView: false
   });
 
   state.spawnIndex += 1;
@@ -1213,15 +1248,16 @@ function updateShipMotion(state: SimulationState, deltaSeconds: number): void {
   const panicFactor = clamp(threat.score / SHIP_PANIC_THRESHOLD, 0, 1);
 
   const desiredX = clamp(
-    state.shipTargetX + threat.dodgeX * (0.8 + panicFactor * 2.2),
+    state.shipTargetX + threat.dodgeX * (0.8 + panicFactor * 2.2) - panicFactor * 1.6,
     SHIP_MIN_X,
     SHIP_MAX_X
   );
-  const desiredY = clamp(
+  const baseDesiredY = clamp(
     state.shipTargetY + threat.dodgeY * (0.95 + panicFactor * 2.4),
     SHIP_MIN_Y,
     SHIP_MAX_Y
   );
+  const desiredY = selectEscapeYTarget(state, baseDesiredY, panicFactor);
 
   const speedScale = 1 + panicFactor * 0.9;
   const accelScale = 1 + panicFactor * 1.35;
@@ -1300,6 +1336,88 @@ function analyzeProjectileThreat(state: SimulationState): {
     dodgeY,
     score
   };
+}
+
+function selectEscapeYTarget(
+  state: SimulationState,
+  baseDesiredY: number,
+  panicFactor: number
+): number {
+  if (state.enemyProjectiles.length === 0) {
+    return baseDesiredY;
+  }
+
+  const candidateTargets = [
+    clamp(baseDesiredY - 2.9, SHIP_MIN_Y, SHIP_MAX_Y),
+    clamp(baseDesiredY - 1.9, SHIP_MIN_Y, SHIP_MAX_Y),
+    clamp(baseDesiredY - 1.0, SHIP_MIN_Y, SHIP_MAX_Y),
+    clamp(baseDesiredY, SHIP_MIN_Y, SHIP_MAX_Y),
+    clamp(baseDesiredY + 1.0, SHIP_MIN_Y, SHIP_MAX_Y),
+    clamp(baseDesiredY + 1.9, SHIP_MIN_Y, SHIP_MAX_Y),
+    clamp(baseDesiredY + 2.9, SHIP_MIN_Y, SHIP_MAX_Y)
+  ];
+
+  let bestY = baseDesiredY;
+  let bestCost = Number.POSITIVE_INFINITY;
+
+  for (const candidateY of candidateTargets) {
+    const cost = evaluateEscapeCandidate(state, candidateY, panicFactor);
+    if (cost < bestCost) {
+      bestCost = cost;
+      bestY = candidateY;
+    }
+  }
+
+  return bestY;
+}
+
+function evaluateEscapeCandidate(
+  state: SimulationState,
+  targetY: number,
+  panicFactor: number
+): number {
+  let simY = state.shipY;
+  let simVy = state.shipVy;
+  let totalCost = 0;
+  const horizon = SHIP_ESCAPE_HORIZON_SECONDS;
+  const steps = Math.max(1, Math.floor(horizon / SHIP_ESCAPE_STEP_SECONDS));
+  const speedLimit = SHIP_MAX_SPEED_Y * (1 + panicFactor * 0.9);
+  const accelLimit = SHIP_ACCEL_Y * (1 + panicFactor * 1.35);
+
+  for (let i = 1; i <= steps; i += 1) {
+    const t = i * SHIP_ESCAPE_STEP_SECONDS;
+    const desiredVy = clamp((targetY - simY) * (3.8 + panicFactor * 2.6), -speedLimit, speedLimit);
+    simVy += clamp(desiredVy - simVy, -accelLimit * SHIP_ESCAPE_STEP_SECONDS, accelLimit * SHIP_ESCAPE_STEP_SECONDS);
+    simY = clamp(simY + simVy * SHIP_ESCAPE_STEP_SECONDS, SHIP_MIN_Y, SHIP_MAX_Y);
+
+    const projectedShipX = clamp(state.shipX + state.shipVx * t, SHIP_MIN_X, SHIP_MAX_X);
+    for (const projectile of state.enemyProjectiles) {
+      const px = projectile.x + projectile.vx * t;
+      const py = projectile.y + projectile.vy * t;
+      const dx = px - projectedShipX;
+      const dy = py - simY;
+      const dist = Math.hypot(dx, dy);
+      const imminence = 1 - t / horizon;
+
+      if (dist <= SHIP_COLLISION_RADIUS) {
+        totalCost += 5000 * (1 + imminence * 2.2);
+        continue;
+      }
+
+      if (dist <= SHIP_ESCAPE_NEAR_MISS_RADIUS) {
+        const nearMiss = SHIP_ESCAPE_NEAR_MISS_RADIUS - dist;
+        totalCost += nearMiss * nearMiss * (1.2 + imminence * 1.8);
+      }
+    }
+
+    const edgeDistance = Math.min(simY - SHIP_MIN_Y, SHIP_MAX_Y - simY);
+    if (edgeDistance < 0.5) {
+      totalCost += (0.5 - edgeDistance) * (2.6 + panicFactor * 1.8);
+    }
+  }
+
+  totalCost += Math.abs(targetY - state.shipY) * 0.14;
+  return totalCost;
 }
 
 function chooseShipTarget(state: SimulationState): { x: number; y: number } {
