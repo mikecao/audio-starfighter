@@ -13,6 +13,7 @@ import { createEventTimeline } from "./ui/eventTimeline";
 import { createLoadingOverlay, type LoadingPhaseTone } from "./ui/loadingOverlay";
 
 const BEST_SCORE_STORAGE_PREFIX = "audio-starfighter.best-score";
+const ENEMY_BULLET_RATIO = 0.94;
 
 const app = document.querySelector<HTMLDivElement>("#app");
 
@@ -32,6 +33,7 @@ app.appendChild(uiHost);
 
 const scene = setupScene(sceneHost);
 const sim = createSimulation();
+sim.setEnemyBulletRatio(ENEMY_BULLET_RATIO);
 const hud = createDebugHud(uiHost);
 const eventTimeline = createEventTimeline(uiHost);
 const canvasOnlyButton = document.createElement("button");
@@ -102,7 +104,8 @@ const audioPanel = createAudioPanel(uiHost, {
           moodProfile: analysis.mood.label,
           intensityTimeline,
           cueTimesSeconds,
-          durationSeconds: analysis.durationSeconds
+          durationSeconds: analysis.durationSeconds,
+          enemyBulletRatio: ENEMY_BULLET_RATIO
         },
         {
           onProgress(progress) {

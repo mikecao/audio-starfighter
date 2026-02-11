@@ -148,4 +148,32 @@ describe("simulation cue scheduling", () => {
     expect(aggressiveSnapshot.projectileCount).toBeGreaterThanOrEqual(calmSnapshot.projectileCount);
     expect(aggressiveSnapshot.enemyCount).toBeGreaterThanOrEqual(calmSnapshot.enemyCount);
   });
+
+  it("decouples enemy bullet volume from enemy population using bullet ratio", () => {
+    const noBullets = createSimulation();
+    noBullets.setRandomSeed(77);
+    noBullets.setMoodProfile("aggressive");
+    noBullets.setEnemyBulletRatio(0);
+
+    for (let i = 0; i < 60 * 6; i += 1) {
+      noBullets.step(1 / 60);
+    }
+
+    const noBulletsSnapshot = noBullets.getSnapshot();
+    expect(noBulletsSnapshot.enemyCount).toBeGreaterThan(0);
+    expect(noBulletsSnapshot.enemyProjectiles.length).toBe(0);
+
+    const boostedBullets = createSimulation();
+    boostedBullets.setRandomSeed(77);
+    boostedBullets.setMoodProfile("aggressive");
+    boostedBullets.setEnemyBulletRatio(1.6);
+
+    for (let i = 0; i < 60 * 6; i += 1) {
+      boostedBullets.step(1 / 60);
+    }
+
+    const boostedSnapshot = boostedBullets.getSnapshot();
+    expect(boostedSnapshot.enemyCount).toBeGreaterThan(0);
+    expect(boostedSnapshot.enemyProjectiles.length).toBeGreaterThan(0);
+  });
 });

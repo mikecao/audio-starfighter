@@ -23,6 +23,7 @@ type BuildPrecomputedRunParams = {
   cueTimesSeconds: number[];
   durationSeconds: number;
   stepSeconds?: number;
+  enemyBulletRatio?: number;
 };
 
 export function buildPrecomputedRun(params: BuildPrecomputedRunParams): PrecomputedRun {
@@ -31,6 +32,9 @@ export function buildPrecomputedRun(params: BuildPrecomputedRunParams): Precompu
   const sim = createSimulation();
   sim.setRandomSeed(params.seed);
   sim.setMoodProfile(params.moodProfile);
+  if (typeof params.enemyBulletRatio === "number" && Number.isFinite(params.enemyBulletRatio)) {
+    sim.setEnemyBulletRatio(params.enemyBulletRatio);
+  }
   sim.setIntensityTimeline(params.intensityTimeline);
   sim.startTrackRun(params.cueTimesSeconds);
 
@@ -59,6 +63,9 @@ export async function buildPrecomputedRunAsync(
   const sim = createSimulation();
   sim.setRandomSeed(params.seed);
   sim.setMoodProfile(params.moodProfile);
+  if (typeof params.enemyBulletRatio === "number" && Number.isFinite(params.enemyBulletRatio)) {
+    sim.setEnemyBulletRatio(params.enemyBulletRatio);
+  }
   sim.setIntensityTimeline(params.intensityTimeline);
   sim.startTrackRun(params.cueTimesSeconds);
 

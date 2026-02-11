@@ -205,6 +205,10 @@ const ENEMY_EDGE_PRESSURE_WINDOW_X = 8.2;
 const ENEMY_EDGE_PRESSURE_WINDOW_Y = 3.6;
 const ENEMY_EDGE_PRESSURE_PROJECTILE_CAP = 8;
 const ENEMY_EDGE_PRESSURE_EXTRA_SPREAD = 0.11;
+const ENEMY_BULLET_RATE_BASE = 2.05;
+const ENEMY_BULLET_RATE_INTENSITY_GAIN = 2.95;
+const ENEMY_BULLET_RATE_MAX = 10.5;
+const ENEMY_BULLET_BUDGET_WINDOW_SECONDS = 0.68;
 const ENEMY_SPAWN_INTERVAL_MULTIPLIER = 0.9;
 const ENEMY_FIRE_INTERVAL_MULTIPLIER = 1.15;
 const ENEMY_FIRE_COOLDOWN_MULTIPLIER = 1.25;
@@ -235,6 +239,9 @@ type SimulationState = {
   nextEnemyId: number;
   nextProjectileId: number;
   nextEnemyProjectileId: number;
+  enemyBulletBudget: number;
+  enemyBulletRatio: number;
+  enemyFireSelectionCursor: number;
   nextLaserFireTime: number;
   cueTimeline: ScheduledCue[];
   cueStartOffsetSeconds: number;
@@ -260,6 +267,7 @@ export type Simulation = {
   setIntensityTimeline: (samples: IntensitySample[]) => void;
   setRandomSeed: (seed: number) => void;
   setMoodProfile: (mood: MoodProfile) => void;
+  setEnemyBulletRatio: (ratio: number) => void;
 };
 
 export function createSimulation(): Simulation {
@@ -289,6 +297,9 @@ export function createSimulation(): Simulation {
     nextEnemyId: 1,
     nextProjectileId: 1,
     nextEnemyProjectileId: 1,
+    enemyBulletBudget: 0,
+    enemyBulletRatio: 1,
+    enemyFireSelectionCursor: 0,
     nextLaserFireTime: 0,
     cueTimeline: [],
     cueStartOffsetSeconds: 0,
@@ -480,6 +491,13 @@ export function createSimulation(): Simulation {
     },
     setMoodProfile(mood) {
       state.moodProfile = mood;
+    },
+    setEnemyBulletRatio(ratio) {
+      const normalizedRatio = clamp(ratio, 0, 4);
+      state.enemyBulletRatio = normalizedRatio;
+      if (normalizedRatio <= 0) {
+        state.enemyBulletBudget = 0;
+      }
     }
   };
 }
@@ -510,6 +528,8 @@ function resetRunState(state: SimulationState): void {
   state.nextEnemyId = 1;
   state.nextProjectileId = 1;
   state.nextEnemyProjectileId = 1;
+  state.enemyBulletBudget = 0;
+  state.enemyFireSelectionCursor = 0;
   state.nextLaserFireTime = 0;
   state.cueResolvedCount = 0;
   state.cueMissedCount = 0;
@@ -590,6 +610,7 @@ function fireProjectiles(state: SimulationState): void {
 function updateEnemies(state: SimulationState, deltaSeconds: number): void {
   const intensity = getIntensityAtTime(state, state.simTimeSeconds);
   const mood = moodParameters(state.moodProfile);
+  const readyToFire: Enemy[] = [];
 
   for (const enemy of state.enemies) {
     enemy.ageSeconds += deltaSeconds;
@@ -624,17 +645,71 @@ function updateEnemies(state: SimulationState, deltaSeconds: number): void {
     }
     enemy.fireCooldownSeconds -= deltaSeconds;
     if (enemy.fireCooldownSeconds <= 0 && enemy.x > state.shipX + 2.5) {
-      const burstCount = intensity > 0.72 ? 3 : intensity > 0.45 ? 2 : 1;
-      const spreadStep = 0.12 + state.rng() * 0.07;
-      for (let i = 0; i < burstCount; i += 1) {
-        const centeredIndex = i - (burstCount - 1) * 0.5;
-        spawnEnemyProjectile(state, enemy, centeredIndex * spreadStep);
-      }
-      enemy.fireCooldownSeconds =
-        (0.28 + (1 - intensity) * 0.52 + state.rng() * 0.32) *
-        mood.enemyFireIntervalScale *
-        ENEMY_FIRE_COOLDOWN_MULTIPLIER;
+      readyToFire.push(enemy);
     }
+  }
+
+  replenishEnemyBulletBudget(state, deltaSeconds, intensity, mood);
+  if (readyToFire.length === 0 || state.enemyBulletBudget < 1) {
+    return;
+  }
+
+  const startIndex = state.enemyFireSelectionCursor % readyToFire.length;
+  let firedEnemies = 0;
+  for (let offset = 0; offset < readyToFire.length; offset += 1) {
+    if (state.enemyBulletBudget < 1) {
+      break;
+    }
+
+    const enemy = readyToFire[(startIndex + offset) % readyToFire.length];
+    const desiredBurstCount = getEnemyBurstCount(intensity);
+    const burstCount = Math.min(desiredBurstCount, Math.max(1, Math.floor(state.enemyBulletBudget)));
+    fireEnemyBurst(state, enemy, burstCount);
+    state.enemyBulletBudget = Math.max(0, state.enemyBulletBudget - burstCount);
+    enemy.fireCooldownSeconds =
+      (0.28 + (1 - intensity) * 0.52 + state.rng() * 0.32) *
+      mood.enemyFireIntervalScale *
+      ENEMY_FIRE_COOLDOWN_MULTIPLIER;
+    firedEnemies += 1;
+  }
+
+  state.enemyFireSelectionCursor = (startIndex + firedEnemies) % readyToFire.length;
+}
+
+function replenishEnemyBulletBudget(
+  state: SimulationState,
+  deltaSeconds: number,
+  intensity: number,
+  mood: {
+    enemyBulletRateScale: number;
+  }
+): void {
+  const bulletsPerSecond = clamp(
+    (ENEMY_BULLET_RATE_BASE + intensity * ENEMY_BULLET_RATE_INTENSITY_GAIN) *
+      mood.enemyBulletRateScale *
+      state.enemyBulletRatio,
+    0,
+    ENEMY_BULLET_RATE_MAX
+  );
+  const maxBudget = bulletsPerSecond * ENEMY_BULLET_BUDGET_WINDOW_SECONDS;
+  state.enemyBulletBudget = Math.min(maxBudget, state.enemyBulletBudget + bulletsPerSecond * deltaSeconds);
+}
+
+function getEnemyBurstCount(intensity: number): number {
+  if (intensity > 0.72) {
+    return 3;
+  }
+  if (intensity > 0.45) {
+    return 2;
+  }
+  return 1;
+}
+
+function fireEnemyBurst(state: SimulationState, enemy: Enemy, burstCount: number): void {
+  const spreadStep = 0.12 + state.rng() * 0.07;
+  for (let i = 0; i < burstCount; i += 1) {
+    const centeredIndex = i - (burstCount - 1) * 0.5;
+    spawnEnemyProjectile(state, enemy, centeredIndex * spreadStep);
   }
 }
 
@@ -1928,6 +2003,7 @@ function moodParameters(mood: MoodProfile): {
   enemySpeedScale: number;
   spawnIntervalScale: number;
   enemyFireIntervalScale: number;
+  enemyBulletRateScale: number;
   playerFireIntervalScale: number;
 } {
   if (mood === "calm") {
@@ -1935,6 +2011,7 @@ function moodParameters(mood: MoodProfile): {
       enemySpeedScale: 0.88,
       spawnIntervalScale: 1.12,
       enemyFireIntervalScale: 1.15,
+      enemyBulletRateScale: 0.84,
       playerFireIntervalScale: 1.04
     };
   }
@@ -1943,6 +2020,7 @@ function moodParameters(mood: MoodProfile): {
       enemySpeedScale: 1.04,
       spawnIntervalScale: 0.8,
       enemyFireIntervalScale: 0.82,
+      enemyBulletRateScale: 1.22,
       playerFireIntervalScale: 0.92
     };
   }
@@ -1950,6 +2028,7 @@ function moodParameters(mood: MoodProfile): {
     enemySpeedScale: 1,
     spawnIntervalScale: ENEMY_SPAWN_INTERVAL_MULTIPLIER,
     enemyFireIntervalScale: ENEMY_FIRE_INTERVAL_MULTIPLIER,
+    enemyBulletRateScale: 1,
     playerFireIntervalScale: 1
   };
 }
