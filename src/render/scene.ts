@@ -122,6 +122,17 @@ export function setupScene(container: HTMLElement): RenderScene {
   const projectileGroup = new Group();
   scene.add(projectileGroup);
   const projectileMeshes: Mesh[] = [];
+  const missileGeometry = new SphereGeometry(0.18, 12, 10);
+  const missileMaterial = new MeshStandardMaterial({
+    color: "#a855f7",
+    roughness: 0.18,
+    metalness: 0.42,
+    emissive: "#7e22ce",
+    emissiveIntensity: 1
+  });
+  const missileGroup = new Group();
+  scene.add(missileGroup);
+  const missileMeshes: Mesh[] = [];
   const enemyProjectileGeometry = new SphereGeometry(0.15, 12, 8);
   const enemyProjectileMaterial = new MeshStandardMaterial({
     color: "#fb7185",
@@ -334,6 +345,26 @@ export function setupScene(container: HTMLElement): RenderScene {
         }
         mesh.visible = true;
         mesh.position.set(projectile.x, projectile.y, projectile.z);
+      }
+
+      syncMeshPool(missileMeshes, snapshot.missiles.length, missileGroup, () => {
+        const mesh = new Mesh(missileGeometry, missileMaterial.clone());
+        mesh.visible = false;
+        return mesh;
+      });
+      for (let i = 0; i < missileMeshes.length; i += 1) {
+        const mesh = missileMeshes[i];
+        const missile = snapshot.missiles[i];
+        if (!missile) {
+          mesh.visible = false;
+          continue;
+        }
+
+        mesh.visible = true;
+        mesh.position.set(missile.x, missile.y, missile.z + 0.01);
+        mesh.rotation.z = missile.rotationZ;
+        const pulse = 1 + Math.sin(snapshot.simTimeSeconds * 16 + i) * 0.08;
+        mesh.scale.set(1.35, pulse, pulse * 0.95);
       }
 
       syncMeshPool(laserMeshes, snapshot.laserBeams.length, laserGroup, () => {

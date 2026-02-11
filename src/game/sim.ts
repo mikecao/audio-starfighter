@@ -37,6 +37,13 @@ export type SimulationSnapshot = {
     rotationZ: number;
     isCueShot: boolean;
   }>;
+  missiles: Array<{
+    id: number;
+    x: number;
+    y: number;
+    z: number;
+    rotationZ: number;
+  }>;
   enemyProjectiles: Array<{
     id: number;
     x: number;
@@ -75,7 +82,7 @@ export type SimulationSnapshot = {
 };
 
 type EnemyPattern = "straight" | "sine" | "arc" | "zigzag" | "weave";
-type CueWeaponId = "blue" | "yellow" | "green";
+type CueWeaponId = "blue" | "yellow" | "green" | "purple";
 
 type Enemy = {
   id: number;
@@ -109,6 +116,21 @@ type Projectile = {
   maxLifetimeSeconds: number;
   radius: number;
   isCueShot: boolean;
+};
+
+type PurpleMissile = {
+  id: number;
+  x: number;
+  y: number;
+  z: number;
+  vx: number;
+  vy: number;
+  ageSeconds: number;
+  maxLifetimeSeconds: number;
+  targetEnemyId: number;
+  orbitPhase: number;
+  orbitFrequency: number;
+  orbitStrength: number;
 };
 
 type EnemyProjectile = {
@@ -156,6 +178,12 @@ type PlannedCueShot = {
   weapon: "blue" | "yellow";
 };
 
+type PlannedPurpleMissileShot = {
+  cueTimeSeconds: number;
+  enemyId: number;
+  fireTimeSeconds: number;
+};
+
 type IntensitySample = {
   timeSeconds: number;
   intensity: number;
@@ -167,7 +195,7 @@ const CUE_ASSIGN_MIN_LEAD_SECONDS = 0.2;
 const CUE_ASSIGN_MAX_LEAD_SECONDS = 0.8;
 const CUE_SUPPORT_LEAD_PADDING_SECONDS = 0.55;
 const MAX_CUE_SUPPORT_SPAWNS_PER_STEP = 12;
-const MAX_CATCHUP_CUES_PER_STEP = 4;
+const MAX_CATCHUP_CUES_PER_STEP = 7;
 const PLAYER_PROJECTILE_SPEED = 22;
 const PLAYER_TARGET_MAX_DISTANCE_X = 4.8;
 const PLAYER_TARGET_HARD_DISTANCE_X = 12.6;
@@ -177,6 +205,16 @@ const PLAYER_TARGET_LOCK_MAX_SECONDS = 0.5;
 const PLAYER_AIM_LOCKED_JITTER = 0.06;
 const PLAYER_AIM_UNLOCKED_JITTER = 0.14;
 const BLUE_LASER_FIRE_INTERVAL_MULTIPLIER = 0.5;
+const PURPLE_MISSILE_BASE_SPEED = 9.8;
+const PURPLE_MISSILE_MAX_SPEED = 14.2;
+const PURPLE_MISSILE_TURN_RATE = 7.2;
+const PURPLE_MISSILE_ORBIT_DECAY = 1.42;
+const PURPLE_MISSILE_COLLISION_RADIUS = 0.44;
+const PURPLE_MISSILE_LEAD_SCALE = 1.56;
+const PURPLE_MISSILE_MIN_LEAD_SECONDS = 0.24;
+const PURPLE_MISSILE_MAX_LEAD_SECONDS = 1.3;
+const PURPLE_MISSILE_FIRING_WINDOW_PADDING = 0.06;
+const PURPLE_WEAPON_ASSIGNMENT_WEIGHT = 2;
 const LASER_COOLDOWN_SECONDS = 0.22;
 const LASER_REQUIRED_OUT_OF_RANGE_COUNT = 4;
 const LASER_BEAM_LIFETIME_SECONDS = 0.26;
@@ -271,6 +309,7 @@ type SimulationState = {
   shipShieldAlpha: number;
   enemies: Enemy[];
   projectiles: Projectile[];
+  missiles: PurpleMissile[];
   enemyProjectiles: EnemyProjectile[];
   laserBeams: LaserBeam[];
   explosions: Explosion[];
@@ -279,6 +318,7 @@ type SimulationState = {
   spawnIndex: number;
   nextEnemyId: number;
   nextProjectileId: number;
+  nextMissileId: number;
   nextEnemyProjectileId: number;
   enemyBulletBudget: number;
   enemyBulletRatio: number;
@@ -293,6 +333,7 @@ type SimulationState = {
   cueMissedCount: number;
   cumulativeCueErrorMs: number;
   plannedCueShots: PlannedCueShot[];
+  plannedPurpleMissileShots: PlannedPurpleMissileShot[];
   score: number;
   combo: number;
   intensityTimeline: IntensitySample[];
@@ -339,6 +380,7 @@ export function createSimulation(): Simulation {
     shipShieldAlpha: 0,
     enemies: [],
     projectiles: [],
+    missiles: [],
     enemyProjectiles: [],
     laserBeams: [],
     explosions: [],
@@ -347,6 +389,7 @@ export function createSimulation(): Simulation {
     spawnIndex: 0,
     nextEnemyId: 1,
     nextProjectileId: 1,
+    nextMissileId: 1,
     nextEnemyProjectileId: 1,
     enemyBulletBudget: 0,
     enemyBulletRatio: 1,
@@ -361,6 +404,7 @@ export function createSimulation(): Simulation {
     cueMissedCount: 0,
     cumulativeCueErrorMs: 0,
     plannedCueShots: [],
+    plannedPurpleMissileShots: [],
     score: 0,
     combo: 0,
     intensityTimeline: [],
@@ -382,9 +426,11 @@ export function createSimulation(): Simulation {
       planCueShots(state);
       planCatchupCueKills(state);
       fireQueuedCueShots(state);
+      fireQueuedPurpleMissiles(state);
       fireProjectiles(state);
       updateEnemies(state, deltaSeconds);
       updateProjectiles(state, deltaSeconds);
+      updateMissiles(state, deltaSeconds);
       updateEnemyProjectiles(state, deltaSeconds);
       updateLaserBeams(state, deltaSeconds);
       updateExplosions(state, deltaSeconds);
@@ -423,7 +469,7 @@ export function createSimulation(): Simulation {
           z: 0
         },
         enemyCount: state.enemies.length,
-        projectileCount: state.projectiles.length + state.enemyProjectiles.length,
+        projectileCount: state.projectiles.length + state.missiles.length + state.enemyProjectiles.length,
         enemies: state.enemies.map((enemy) => ({
           x: enemy.x,
           y: enemy.y,
@@ -439,6 +485,13 @@ export function createSimulation(): Simulation {
           z: projectile.z,
           rotationZ: Math.atan2(projectile.vy, projectile.vx),
           isCueShot: projectile.isCueShot
+        })),
+        missiles: state.missiles.map((missile) => ({
+          id: missile.id,
+          x: missile.x,
+          y: missile.y,
+          z: missile.z,
+          rotationZ: Math.atan2(missile.vy, missile.vx)
         })),
         enemyProjectiles: state.enemyProjectiles.map((projectile) => ({
           id: projectile.id,
@@ -490,6 +543,7 @@ export function createSimulation(): Simulation {
       state.cueMissedCount = 0;
       state.cumulativeCueErrorMs = 0;
       state.plannedCueShots = [];
+      state.plannedPurpleMissileShots = [];
       for (const enemy of state.enemies) {
         enemy.scheduledCueTime = null;
         enemy.cuePrimed = false;
@@ -594,6 +648,7 @@ function resetRunState(state: SimulationState): void {
   state.shipShieldAlpha = 0;
   state.enemies = [];
   state.projectiles = [];
+  state.missiles = [];
   state.enemyProjectiles = [];
   state.laserBeams = [];
   state.explosions = [];
@@ -602,6 +657,7 @@ function resetRunState(state: SimulationState): void {
   state.spawnIndex = 0;
   state.nextEnemyId = 1;
   state.nextProjectileId = 1;
+  state.nextMissileId = 1;
   state.nextEnemyProjectileId = 1;
   state.enemyBulletBudget = 0;
   state.enemyFireSelectionCursor = 0;
@@ -614,6 +670,7 @@ function resetRunState(state: SimulationState): void {
   state.cueMissedCount = 0;
   state.cumulativeCueErrorMs = 0;
   state.plannedCueShots = [];
+  state.plannedPurpleMissileShots = [];
   state.score = 0;
   state.combo = 0;
   state.cueStartOffsetSeconds = 0;
@@ -640,6 +697,10 @@ function isCleanupLaserEnabled(state: SimulationState): boolean {
   return state.combatConfig.shipWeapons.cleanupLaser;
 }
 
+function isPurpleMissileEnabled(state: SimulationState): boolean {
+  return state.combatConfig.shipWeapons.purpleMissile;
+}
+
 function getEnabledCueWeapons(state: SimulationState): CueWeaponId[] {
   const enabled: CueWeaponId[] = [];
   if (isPrimaryWeaponEnabled(state)) {
@@ -651,16 +712,38 @@ function getEnabledCueWeapons(state: SimulationState): CueWeaponId[] {
   if (isCleanupLaserEnabled(state)) {
     enabled.push("green");
   }
+  if (isPurpleMissileEnabled(state)) {
+    enabled.push("purple");
+  }
   return enabled;
 }
 
+function getCueWeaponAssignmentPool(state: SimulationState): CueWeaponId[] {
+  const pool: CueWeaponId[] = [];
+  if (isPrimaryWeaponEnabled(state)) {
+    pool.push("blue");
+  }
+  if (isCueShotWeaponEnabled(state)) {
+    pool.push("yellow");
+  }
+  if (isCleanupLaserEnabled(state)) {
+    pool.push("green");
+  }
+  if (isPurpleMissileEnabled(state)) {
+    for (let i = 0; i < PURPLE_WEAPON_ASSIGNMENT_WEIGHT; i += 1) {
+      pool.push("purple");
+    }
+  }
+  return pool;
+}
+
 function selectCueWeaponForAssignment(state: SimulationState): CueWeaponId | null {
-  const enabled = getEnabledCueWeapons(state);
-  if (enabled.length === 0) {
+  const pool = getCueWeaponAssignmentPool(state);
+  if (pool.length === 0) {
     return null;
   }
-  const weapon = enabled[state.cueWeaponCursor % enabled.length];
-  state.cueWeaponCursor = (state.cueWeaponCursor + 1) % Math.max(1, enabled.length);
+  const weapon = pool[state.cueWeaponCursor % pool.length];
+  state.cueWeaponCursor = (state.cueWeaponCursor + 1) % Math.max(1, pool.length);
   return weapon;
 }
 
@@ -670,6 +753,9 @@ function isCueWeaponStillEnabled(state: SimulationState, weapon: CueWeaponId): b
   }
   if (weapon === "yellow") {
     return isCueShotWeaponEnabled(state);
+  }
+  if (weapon === "purple") {
+    return isPurpleMissileEnabled(state);
   }
   return isCleanupLaserEnabled(state);
 }
@@ -688,6 +774,19 @@ function getCombatPressureTuning(state: SimulationState): CombatPressureTuning {
   }
   if (!isCueShotWeaponEnabled(state)) {
     spawnScale *= 0.9;
+  }
+  if (!isPurpleMissileEnabled(state)) {
+    spawnScale *= 0.93;
+  }
+
+  const purpleOnlyLoadout =
+    isPurpleMissileEnabled(state) &&
+    !isPrimaryWeaponEnabled(state) &&
+    !isCueShotWeaponEnabled(state) &&
+    !isCleanupLaserEnabled(state);
+  if (purpleOnlyLoadout) {
+    spawnScale *= 0.72;
+    enemyFireScale *= 0.8;
   }
 
   const loadoutKillScale = getLoadoutKillScale(state);
@@ -711,7 +810,10 @@ function getLoadoutKillScale(state: SimulationState): number {
   if (isCleanupLaserEnabled(state)) {
     capacity += 0.9;
   }
-  return clamp(capacity / 3.4, 0.38, 1.05);
+  if (isPurpleMissileEnabled(state)) {
+    capacity += 1.35;
+  }
+  return clamp(capacity / 4.45, 0.38, 1.05);
 }
 
 function pickEnemyArchetype(state: SimulationState): EnemyArchetypeId {
@@ -1061,6 +1163,80 @@ function updateProjectiles(state: SimulationState, deltaSeconds: number): void {
   }
 }
 
+function updateMissiles(state: SimulationState, deltaSeconds: number): void {
+  if (state.missiles.length === 0) {
+    return;
+  }
+
+  const survivors: PurpleMissile[] = [];
+  for (const missile of state.missiles) {
+    missile.ageSeconds += deltaSeconds;
+    if (missile.ageSeconds >= missile.maxLifetimeSeconds) {
+      continue;
+    }
+
+    const enemy = getEnemyById(state.enemies, missile.targetEnemyId);
+    if (!enemy) {
+      continue;
+    }
+
+    const toTargetX = enemy.x - missile.x;
+    const toTargetY = enemy.y - missile.y;
+    const distance = Math.hypot(toTargetX, toTargetY);
+    const collisionRadius = enemy.radius + PURPLE_MISSILE_COLLISION_RADIUS;
+
+    if (distance <= collisionRadius) {
+      if (enemy.scheduledCueTime !== null) {
+        enemy.cuePrimed = true;
+        enemy.damageFlash = 1;
+      } else {
+        spawnExplosion(state, enemy.x, enemy.y, enemy.z);
+        state.enemies = state.enemies.filter((candidate) => candidate.id !== enemy.id);
+      }
+      continue;
+    }
+
+    if (enemy.scheduledCueTime !== null) {
+      const cueDelta = enemy.scheduledCueTime - state.simTimeSeconds;
+      if (cueDelta <= 0.12 && cueDelta >= -0.02 && distance <= collisionRadius * 2.35) {
+        enemy.cuePrimed = true;
+        enemy.damageFlash = 1;
+        continue;
+      }
+    }
+
+    const toTarget = normalizeDirection(toTargetX, toTargetY);
+    const orbitDecay = Math.exp(-missile.ageSeconds * PURPLE_MISSILE_ORBIT_DECAY);
+    const orbitWave = Math.sin(missile.ageSeconds * missile.orbitFrequency + missile.orbitPhase);
+    const orbitMagnitude = missile.orbitStrength * orbitDecay * clamp(distance / 6.8, 0.2, 0.95);
+    const orbitX = -toTarget.y * orbitWave * orbitMagnitude;
+    const orbitY = toTarget.x * orbitWave * orbitMagnitude;
+
+    const desiredVX = toTarget.x * PURPLE_MISSILE_MAX_SPEED + orbitX;
+    const desiredVY = toTarget.y * PURPLE_MISSILE_MAX_SPEED + orbitY;
+    const blend = clamp(deltaSeconds * PURPLE_MISSILE_TURN_RATE, 0.05, 0.92);
+    missile.vx += (desiredVX - missile.vx) * blend;
+    missile.vy += (desiredVY - missile.vy) * blend;
+
+    const speed = Math.hypot(missile.vx, missile.vy);
+    if (speed > PURPLE_MISSILE_MAX_SPEED) {
+      const scale = PURPLE_MISSILE_MAX_SPEED / speed;
+      missile.vx *= scale;
+      missile.vy *= scale;
+    } else if (speed < PURPLE_MISSILE_BASE_SPEED * 0.72 && speed > 1e-6) {
+      const scale = (PURPLE_MISSILE_BASE_SPEED * 0.72) / speed;
+      missile.vx *= scale;
+      missile.vy *= scale;
+    }
+
+    missile.x += missile.vx * deltaSeconds;
+    missile.y += missile.vy * deltaSeconds;
+    survivors.push(missile);
+  }
+
+  state.missiles = survivors;
+}
+
 function updateEnemyProjectiles(state: SimulationState, deltaSeconds: number): void {
   for (const projectile of state.enemyProjectiles) {
     projectile.ageSeconds += deltaSeconds;
@@ -1199,7 +1375,9 @@ function planCueShots(state: SimulationState): void {
         cue.planned = true;
         cue.assignedEnemyId = reserved.id;
         cue.assignedWeapon = cueWeapon;
-        if (cueWeapon !== "green") {
+        if (cueWeapon === "purple") {
+          queuePurpleMissileForEnemy(state, reserved, cue.timeSeconds);
+        } else if (cueWeapon !== "green") {
           queueCueShotForEnemy(state, reserved, cue.timeSeconds, cueWeapon);
         }
       }
@@ -1212,7 +1390,9 @@ function planCueShots(state: SimulationState): void {
       cue.planned = true;
       cue.assignedEnemyId = reserved.id;
       cue.assignedWeapon = cueWeapon;
-      if (cueWeapon !== "green") {
+      if (cueWeapon === "purple") {
+        queuePurpleMissileForEnemy(state, reserved, cue.timeSeconds);
+      } else if (cueWeapon !== "green") {
         queueCueShotForEnemy(state, reserved, cue.timeSeconds, cueWeapon);
       }
       continue;
@@ -1222,7 +1402,9 @@ function planCueShots(state: SimulationState): void {
     cue.planned = true;
     cue.assignedEnemyId = candidate.enemy.id;
     cue.assignedWeapon = cueWeapon;
-    if (cueWeapon !== "green") {
+    if (cueWeapon === "purple") {
+      queuePurpleMissileForEnemy(state, candidate.enemy, cue.timeSeconds);
+    } else if (cueWeapon !== "green") {
       queueCueShotForEnemy(state, candidate.enemy, cue.timeSeconds, cueWeapon);
     }
   }
@@ -1259,9 +1441,13 @@ function planCatchupCueKills(state: SimulationState): void {
     const shipY = state.shipY;
     const distance = Math.hypot(enemy.x - shipX, enemy.y - shipY);
     const baseLead = clamp(distance / PLAYER_PROJECTILE_SPEED, 0.14, 0.75);
-    const cueTimeSeconds =
-      state.simTimeSeconds +
-      (weapon === "green" ? clamp(baseLead * 0.6, 0.14, 0.34) : clamp(baseLead, 0.18, 0.58));
+    const cueLeadSeconds =
+      weapon === "green"
+        ? clamp(baseLead * 0.6, 0.14, 0.34)
+        : weapon === "purple"
+          ? clamp(baseLead * 1.45, 0.34, 0.92)
+          : clamp(baseLead, 0.18, 0.58);
+    const cueTimeSeconds = state.simTimeSeconds + cueLeadSeconds;
 
     enemy.scheduledCueTime = cueTimeSeconds;
     const cue: ScheduledCue = {
@@ -1272,7 +1458,9 @@ function planCatchupCueKills(state: SimulationState): void {
     };
     insertScheduledCue(state, cue);
 
-    if (weapon !== "green") {
+    if (weapon === "purple") {
+      queuePurpleMissileForEnemy(state, enemy, cueTimeSeconds);
+    } else if (weapon !== "green") {
       queueCueShotForEnemy(state, enemy, cueTimeSeconds, weapon);
     }
 
@@ -1287,6 +1475,127 @@ function insertScheduledCue(state: SimulationState, cue: ScheduledCue): void {
   } else {
     state.cueTimeline.splice(insertAt, 0, cue);
   }
+}
+
+function queuePurpleMissileForEnemy(
+  state: SimulationState,
+  enemy: Enemy,
+  cueTimeSeconds: number
+): void {
+  if (!isPurpleMissileEnabled(state)) {
+    return;
+  }
+
+  let fireTimeSeconds = solvePurpleMissileFireTime(state, enemy, cueTimeSeconds);
+  if (fireTimeSeconds === null) {
+    const leadSeconds = cueTimeSeconds - state.simTimeSeconds;
+    fireTimeSeconds = cueTimeSeconds - clamp(leadSeconds * 0.5, 0.18, 0.75);
+  }
+
+  fireTimeSeconds = Math.max(fireTimeSeconds, state.simTimeSeconds + 0.015);
+  fireTimeSeconds = Math.min(fireTimeSeconds, cueTimeSeconds - PURPLE_MISSILE_FIRING_WINDOW_PADDING);
+  if (
+    fireTimeSeconds <= state.simTimeSeconds + 0.01 ||
+    fireTimeSeconds >= cueTimeSeconds - PURPLE_MISSILE_FIRING_WINDOW_PADDING * 0.7
+  ) {
+    fireImmediatePurpleMissile(state, enemy);
+    return;
+  }
+
+  state.plannedPurpleMissileShots.push({
+    cueTimeSeconds,
+    enemyId: enemy.id,
+    fireTimeSeconds
+  });
+}
+
+function solvePurpleMissileFireTime(
+  state: SimulationState,
+  enemy: Enemy,
+  cueTimeSeconds: number
+): number | null {
+  const dtCue = cueTimeSeconds - state.simTimeSeconds;
+  if (dtCue <= 0.03) {
+    return null;
+  }
+
+  const enemyAtCue = predictEnemyPosition(enemy, dtCue);
+  const shipAtNowX = state.shipX + 0.65;
+  const shipAtNowY = state.shipY;
+  const straightDistance = Math.hypot(enemyAtCue.x - shipAtNowX, enemyAtCue.y - shipAtNowY);
+  const travelSeconds = clamp(
+    (straightDistance / PURPLE_MISSILE_BASE_SPEED) * PURPLE_MISSILE_LEAD_SCALE,
+    PURPLE_MISSILE_MIN_LEAD_SECONDS,
+    PURPLE_MISSILE_MAX_LEAD_SECONDS
+  );
+  const fireTimeSeconds = cueTimeSeconds - travelSeconds;
+
+  if (fireTimeSeconds <= state.simTimeSeconds || fireTimeSeconds >= cueTimeSeconds - 0.02) {
+    return null;
+  }
+  return fireTimeSeconds;
+}
+
+function fireImmediatePurpleMissile(state: SimulationState, enemy: Enemy): void {
+  if (!isPurpleMissileEnabled(state)) {
+    return;
+  }
+
+  spawnPurpleMissile(state, enemy);
+  enemy.damageFlash = Math.max(enemy.damageFlash, 0.35);
+}
+
+function fireQueuedPurpleMissiles(state: SimulationState): void {
+  if (state.plannedPurpleMissileShots.length === 0) {
+    return;
+  }
+
+  const remaining: PlannedPurpleMissileShot[] = [];
+  for (const shot of state.plannedPurpleMissileShots) {
+    if (shot.fireTimeSeconds > state.simTimeSeconds) {
+      remaining.push(shot);
+      continue;
+    }
+
+    if (!isPurpleMissileEnabled(state)) {
+      continue;
+    }
+
+    const enemy = state.enemies.find((candidate) => candidate.id === shot.enemyId);
+    if (!enemy) {
+      continue;
+    }
+
+    spawnPurpleMissile(state, enemy);
+    enemy.damageFlash = Math.max(enemy.damageFlash, 0.35);
+  }
+
+  state.plannedPurpleMissileShots = remaining;
+}
+
+function spawnPurpleMissile(state: SimulationState, enemy: Enemy): void {
+  const shipX = state.shipX + 0.65;
+  const shipY = state.shipY;
+  const launchAngle = state.rng() * Math.PI * 2;
+  const launchSpeed = PURPLE_MISSILE_BASE_SPEED * (0.82 + state.rng() * 0.36);
+  const targetDistance = Math.hypot(enemy.x - shipX, enemy.y - shipY);
+  const maxLifetimeSeconds =
+    clamp(targetDistance / Math.max(1, launchSpeed), 0.35, 1.2) + 0.85 + state.rng() * 0.35;
+
+  state.missiles.push({
+    id: state.nextMissileId++,
+    x: shipX,
+    y: shipY,
+    z: 0,
+    vx: Math.cos(launchAngle) * launchSpeed,
+    vy: Math.sin(launchAngle) * launchSpeed,
+    ageSeconds: 0,
+    maxLifetimeSeconds,
+    targetEnemyId: enemy.id,
+    orbitPhase: state.rng() * Math.PI * 2,
+    orbitFrequency: 5.2 + state.rng() * 3.4,
+    orbitStrength: 1.1 + state.rng() * 1.25
+  });
 }
 
 function queueCueShotForEnemy(

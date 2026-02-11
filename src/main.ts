@@ -22,7 +22,8 @@ let currentCombatConfig: CombatConfigPatch = {
   shipWeapons: {
     primaryProjectiles: true,
     queuedCueShots: true,
-    cleanupLaser: true
+    cleanupLaser: true,
+    purpleMissile: false
   },
   enemyRoster: {
     enabledArchetypes: ["redCube"],

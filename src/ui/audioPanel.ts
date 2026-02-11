@@ -22,6 +22,7 @@ type UiCombatState = {
   primaryProjectiles: boolean;
   queuedCueShots: boolean;
   cleanupLaser: boolean;
+  purpleMissile: boolean;
   redCubeEnabled: boolean;
   spawnScale: number;
   fireScale: number;
@@ -31,6 +32,7 @@ const DEFAULT_COMBAT_STATE: UiCombatState = {
   primaryProjectiles: true,
   queuedCueShots: true,
   cleanupLaser: true,
+  purpleMissile: false,
   redCubeEnabled: true,
   spawnScale: 1,
   fireScale: 1
@@ -143,7 +145,13 @@ export function createAudioPanel(
   const shipPrimaryToggle = createModalToggle("Blue Laser", true);
   const shipCueToggle = createModalToggle("Yellow Laser", true);
   const shipCleanupToggle = createModalToggle("Green Laser", true);
-  shipGroup.append(shipPrimaryToggle.root, shipCueToggle.root, shipCleanupToggle.root);
+  const shipPurpleToggle = createModalToggle("Purple Missile", false);
+  shipGroup.append(
+    shipPrimaryToggle.root,
+    shipCueToggle.root,
+    shipCleanupToggle.root,
+    shipPurpleToggle.root
+  );
 
   const enemyGroup = document.createElement("fieldset");
   enemyGroup.className = "audio-settings-modal__group";
@@ -308,6 +316,7 @@ export function createAudioPanel(
     shipPrimaryToggle.input.checked = state.primaryProjectiles;
     shipCueToggle.input.checked = state.queuedCueShots;
     shipCleanupToggle.input.checked = state.cleanupLaser;
+    shipPurpleToggle.input.checked = state.purpleMissile;
     enemyRedCubeToggle.input.checked = state.redCubeEnabled;
     enemySpawnScale.input.value = state.spawnScale.toFixed(2);
     enemyFireScale.input.value = state.fireScale.toFixed(2);
@@ -319,6 +328,7 @@ export function createAudioPanel(
     primaryProjectiles: shipPrimaryToggle.input.checked,
     queuedCueShots: shipCueToggle.input.checked,
     cleanupLaser: shipCleanupToggle.input.checked,
+    purpleMissile: shipPurpleToggle.input.checked,
     redCubeEnabled: enemyRedCubeToggle.input.checked,
     spawnScale: Number(enemySpawnScale.input.value),
     fireScale: Number(enemyFireScale.input.value)
@@ -333,7 +343,8 @@ export function createAudioPanel(
       shipWeapons: {
         primaryProjectiles: state.primaryProjectiles,
         queuedCueShots: state.queuedCueShots,
-        cleanupLaser: state.cleanupLaser
+        cleanupLaser: state.cleanupLaser,
+        purpleMissile: state.purpleMissile
       },
       enemyRoster: {
         enabledArchetypes,
