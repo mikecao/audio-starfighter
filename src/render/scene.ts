@@ -374,6 +374,10 @@ export function setupScene(container: HTMLElement): RenderScene {
           if (purplePulseIndexByMissileId.has(missile.id)) {
             continue;
           }
+          const travelDurationSeconds = computePurplePulseTravelDuration(snapshot.simTimeSeconds, missile);
+          if (missile.ageSeconds >= travelDurationSeconds - 1e-4) {
+            continue;
+          }
           if (bindingsThisFrame >= PURPLE_PULSE_MAX_NEW_BINDINGS_PER_FRAME) {
             break;
           }
@@ -397,9 +401,9 @@ export function setupScene(container: HTMLElement): RenderScene {
 
           const missile = missileById.get(pulse.missileId);
           if (missile) {
-            pulse.animationDurationSeconds = Math.max(
-              PURPLE_PULSE_MIN_DURATION_SECONDS,
-              missile.maxLifetimeSeconds
+            pulse.animationDurationSeconds = computePurplePulseTravelDuration(
+              snapshot.simTimeSeconds,
+              missile
             );
             pulse.animationStartTimeSeconds = snapshot.simTimeSeconds - missile.ageSeconds;
           }
@@ -604,6 +608,15 @@ function clearPurplePulseRenderable(pulse: PurplePulseRenderable): void {
   pulse.mesh.visible = false;
   setDashOffset(pulse.material, 0);
   setDashRatio(pulse.material, PURPLE_PULSE_TRAVEL_DASH_RATIO);
+}
+
+function computePurplePulseTravelDuration(
+  simTimeSeconds: number,
+  missile: SimulationSnapshot["missiles"][number]
+): number {
+  const launchTimeSeconds = simTimeSeconds - missile.ageSeconds;
+  const cueTravelSeconds = missile.cueTimeSeconds - launchTimeSeconds;
+  return Math.max(PURPLE_PULSE_MIN_DURATION_SECONDS, cueTravelSeconds);
 }
 
 function buildPurplePulsePathPoints(

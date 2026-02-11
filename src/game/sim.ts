@@ -49,6 +49,7 @@ export type SimulationSnapshot = {
     launchY: number;
     targetX: number;
     targetY: number;
+    cueTimeSeconds: number;
     loopDirection: number;
     loopTurns: number;
     pathVariant: number;
@@ -142,6 +143,7 @@ type PurpleMissile = {
   targetEnemyId: number;
   targetX: number;
   targetY: number;
+  cueTimeSeconds: number;
   loopTurns: number;
   loopDirection: number;
   pathVariant: number;
@@ -239,6 +241,7 @@ const PURPLE_MISSILE_LEAD_SCALE = 2.65;
 const PURPLE_MISSILE_MIN_LEAD_SECONDS = 0.24;
 const PURPLE_MISSILE_MAX_LEAD_SECONDS = 2.45;
 const PURPLE_MISSILE_FIRING_WINDOW_PADDING = 0.06;
+const PURPLE_MISSILE_SIM_BUFFER_SECONDS = 0.14;
 const PURPLE_WEAPON_ASSIGNMENT_WEIGHT = 3;
 const LASER_COOLDOWN_SECONDS = 0.22;
 const LASER_REQUIRED_OUT_OF_RANGE_COUNT = 4;
@@ -524,6 +527,7 @@ export function createSimulation(): Simulation {
             launchY: missile.launchY,
             targetX: missile.targetX,
             targetY: missile.targetY,
+            cueTimeSeconds: missile.cueTimeSeconds,
             loopDirection: missile.loopDirection,
             loopTurns: missile.loopTurns,
             pathVariant: missile.pathVariant
@@ -1567,7 +1571,7 @@ function spawnPurpleMissile(state: SimulationState, enemy: Enemy, cueTimeSeconds
   const targetY = targetAtCue.y;
   const dir = normalizeDirection(targetX - shipX, targetY - shipY);
   const launchSpeed = PURPLE_MISSILE_BASE_SPEED;
-  const maxLifetimeSeconds = clamp(cueLeadSeconds, 0.42, 1.35);
+  const maxLifetimeSeconds = clamp(cueLeadSeconds + PURPLE_MISSILE_SIM_BUFFER_SECONDS, 0.52, 1.5);
 
   state.missiles.push({
     id: state.nextMissileId++,
@@ -1583,6 +1587,7 @@ function spawnPurpleMissile(state: SimulationState, enemy: Enemy, cueTimeSeconds
     targetEnemyId: enemy.id,
     targetX,
     targetY,
+    cueTimeSeconds,
     loopTurns,
     loopDirection,
     pathVariant: state.rng()
