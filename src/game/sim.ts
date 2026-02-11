@@ -151,6 +151,8 @@ const PLAYER_TARGET_MAX_DISTANCE_X = 4.8;
 const LASER_COOLDOWN_SECONDS = 0.22;
 const LASER_REQUIRED_OUT_OF_RANGE_COUNT = 3;
 const LASER_BEAM_LIFETIME_SECONDS = 0.26;
+const MIN_ENEMY_SURVIVAL_SECONDS = 1.05;
+const LASER_MAX_TARGET_X = 17.2;
 const SHIP_MIN_X = -10.2;
 const SHIP_MAX_X = 1.2;
 const SHIP_MIN_Y = -4.4;
@@ -592,7 +594,9 @@ function fireCleanupLaser(state: SimulationState): void {
 
   const outOfRange = state.enemies.filter(
     (enemy) =>
+      enemy.ageSeconds >= MIN_ENEMY_SURVIVAL_SECONDS &&
       enemy.scheduledCueTime === null &&
+      enemy.x <= LASER_MAX_TARGET_X &&
       (enemy.x > state.shipX + PLAYER_TARGET_MAX_DISTANCE_X + 0.8 || enemy.x < state.shipX - 0.3)
   );
 
@@ -983,9 +987,11 @@ function resolveDueCueExplosions(state: SimulationState): void {
         state.combo = 0;
       }
     } else {
-      const fallbackEnemy = pickFallbackCueEnemy(state, cue.timeSeconds);
-      spawnLaserBeam(state, fallbackEnemy.x, fallbackEnemy.y);
-      spawnExplosion(state, fallbackEnemy.x, fallbackEnemy.y, fallbackEnemy.z);
+      const fallbackEnemy = pickFallbackCueEnemy(state);
+      if (fallbackEnemy) {
+        spawnLaserBeam(state, fallbackEnemy.x, fallbackEnemy.y);
+        spawnExplosion(state, fallbackEnemy.x, fallbackEnemy.y, fallbackEnemy.z);
+      }
       state.cueMissedCount += 1;
       state.combo = 0;
     }
@@ -1003,10 +1009,7 @@ function spawnLaserBeam(state: SimulationState, toX: number, toY: number): void 
   });
 }
 
-function pickFallbackCueEnemy(
-  state: SimulationState,
-  cueTimeSeconds: number
-): Enemy {
+function pickFallbackCueEnemy(state: SimulationState): Enemy | null {
   let bestEnemyIndex = -1;
   let bestScore = Number.POSITIVE_INFINITY;
   const targetX = state.shipX + 8;
@@ -1029,24 +1032,7 @@ function pickFallbackCueEnemy(
     return enemy;
   }
 
-  return {
-    id: state.nextEnemyId++,
-    x: state.shipX + 8,
-    y: Math.sin(cueTimeSeconds * 3.2) * 3.1,
-    z: 0,
-    vx: -2,
-    ageSeconds: 0,
-    pattern: "straight",
-    baseY: 0,
-    phase: 0,
-    amplitude: 0,
-    frequency: 0,
-    radius: 0.44,
-    fireCooldownSeconds: 999,
-    scheduledCueTime: cueTimeSeconds,
-    cuePrimed: false,
-    damageFlash: 0
-  };
+  return null;
 }
 
 function scheduledEnemyHasCueHit(state: SimulationState, enemy: Enemy): boolean {
