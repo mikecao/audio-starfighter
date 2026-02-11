@@ -357,32 +357,48 @@ function drawTimeline(
   context.fillStyle = "#050d1d";
   context.fillRect(0, 0, width, height);
 
+  const midY = Math.round(height * 0.5) + 0.5;
   context.strokeStyle = "rgba(95, 132, 196, 0.4)";
   context.lineWidth = 1;
-  for (let y = 0; y <= 4; y += 1) {
-    const gy = Math.round((y / 4) * (height - 1)) + 0.5;
+  for (let y = 0; y <= 6; y += 1) {
+    const gy = Math.round((y / 6) * (height - 1)) + 0.5;
     context.beginPath();
     context.moveTo(0, gy);
     context.lineTo(width, gy);
     context.stroke();
   }
+  context.strokeStyle = "rgba(146, 178, 230, 0.45)";
+  context.beginPath();
+  context.moveTo(0, midY);
+  context.lineTo(width, midY);
+  context.stroke();
 
-  const frames = analysis.frames;
-  if (frames.length > 1) {
-    context.strokeStyle = "#67e8f9";
-    context.lineWidth = 1.4;
-    context.beginPath();
-    for (let i = 0; i < frames.length; i += 1) {
-      const x = (frames[i].timeSeconds / analysis.durationSeconds) * width;
-      const y = height - frames[i].intensity * (height - 8) - 4;
-      if (i === 0) {
-        context.moveTo(x, y);
-      } else {
-        context.lineTo(x, y);
-      }
-    }
-    context.stroke();
-  }
+  const topBaseY = midY - 2;
+  const bottomBaseY = midY + 2;
+  const topMaxHeight = Math.max(8, topBaseY - 6);
+  const bottomMaxHeight = Math.max(8, height - 6 - bottomBaseY);
+
+  drawWaveformEnvelope(
+    context,
+    analysis.waveformLeft,
+    width,
+    topBaseY,
+    topMaxHeight,
+    "up",
+    "rgba(103, 232, 249, 0.88)",
+    "rgba(103, 232, 249, 0.22)"
+  );
+
+  drawWaveformEnvelope(
+    context,
+    analysis.waveformRight,
+    width,
+    bottomBaseY,
+    bottomMaxHeight,
+    "down",
+    "rgba(244, 114, 182, 0.9)",
+    "rgba(244, 114, 182, 0.24)"
+  );
 
   context.strokeStyle = "rgba(244, 114, 182, 0.9)";
   context.lineWidth = 1;
@@ -402,6 +418,58 @@ function drawTimeline(
   context.moveTo(clampedPlayheadX, 0);
   context.lineTo(clampedPlayheadX, height);
   context.stroke();
+}
+
+function drawWaveformEnvelope(
+  context: CanvasRenderingContext2D,
+  envelope: Float32Array,
+  width: number,
+  baseY: number,
+  maxHeight: number,
+  direction: "up" | "down",
+  stroke: string,
+  fill: string
+): void {
+  if (envelope.length === 0 || width <= 1) {
+    return;
+  }
+
+  context.fillStyle = fill;
+  context.beginPath();
+  context.moveTo(0, baseY);
+  for (let x = 0; x < width; x += 1) {
+    const amplitude = sampleWaveform(envelope, x, width);
+    const y =
+      direction === "up" ? baseY - amplitude * maxHeight : baseY + amplitude * maxHeight;
+    context.lineTo(x, y);
+  }
+  context.lineTo(width, baseY);
+  context.closePath();
+  context.fill();
+
+  context.strokeStyle = stroke;
+  context.lineWidth = 1.2;
+  context.beginPath();
+  for (let x = 0; x < width; x += 1) {
+    const amplitude = sampleWaveform(envelope, x, width);
+    const y =
+      direction === "up" ? baseY - amplitude * maxHeight : baseY + amplitude * maxHeight;
+    if (x === 0) {
+      context.moveTo(x, y);
+    } else {
+      context.lineTo(x, y);
+    }
+  }
+  context.stroke();
+}
+
+function sampleWaveform(envelope: Float32Array, x: number, width: number): number {
+  if (envelope.length === 0) {
+    return 0;
+  }
+  const normalized = width <= 1 ? 0 : x / (width - 1);
+  const index = Math.min(envelope.length - 1, Math.floor(normalized * (envelope.length - 1)));
+  return envelope[index] ?? 0;
 }
 
 function drawPlaceholder(canvas: HTMLCanvasElement, text: string): void {

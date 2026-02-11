@@ -39,6 +39,8 @@ export async function analyzeAudioTrack(
     fileName: file.name,
     durationSeconds: track.durationSeconds,
     sampleRate: track.sampleRate,
+    waveformLeft: track.waveformLeft,
+    waveformRight: track.waveformRight,
     frames,
     beat,
     mood,

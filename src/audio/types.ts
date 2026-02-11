@@ -1,5 +1,7 @@
 export type AudioTrackData = {
   channelData: Float32Array;
+  waveformLeft: Float32Array;
+  waveformRight: Float32Array;
   sampleRate: number;
   durationSeconds: number;
 };
@@ -37,6 +39,8 @@ export type AudioAnalysisResult = {
   fileName: string;
   durationSeconds: number;
   sampleRate: number;
+  waveformLeft: Float32Array;
+  waveformRight: Float32Array;
   frames: FeatureFrame[];
   beat: BeatAnalysis;
   mood: MoodAnalysis;
