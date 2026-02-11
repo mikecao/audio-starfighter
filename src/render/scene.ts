@@ -632,6 +632,8 @@ function buildPurplePulsePathPoints(
   const dy = targetY - startY;
   const distance = Math.max(1, Math.hypot(dx, dy));
   const effectiveDistance = Math.max(distance, PURPLE_PULSE_MIN_EFFECTIVE_DISTANCE);
+  const virtualDx = (dx / distance) * effectiveDistance;
+  const virtualDy = (dy / distance) * effectiveDistance;
   const dirX = dx / distance;
   const dirY = dy / distance;
   const perpX = -dirY;
@@ -693,8 +695,8 @@ function buildPurplePulsePathPoints(
       effectiveDistance *
       0.24;
 
-    const baseX = startX + dx * easedT;
-    const baseY = startY + dy * easedVerticalT;
+    const baseX = startX + virtualDx * easedT;
+    const baseY = startY + virtualDy * easedVerticalT;
     const verticalOffset = (perpY * lateral + dirY * axialLoop) * easedVerticalT;
     const offset = i * 3;
     const x = baseX + perpX * lateral + dirX * axialLoop + launchBack;
@@ -710,9 +712,106 @@ function buildPurplePulsePathPoints(
     points[offset + 2] = MISSILE_TRAIL_Z_OFFSET;
   }
 
+  smoothPurplePulseLaunchSegment(
+    points,
+    startX,
+    startY,
+    dirX,
+    dirY,
+    perpX,
+    perpY,
+    loopSide,
+    effectiveDistance
+  );
   smoothPurplePulseTerminalSegment(points, targetX, targetY, dirX, dirY);
 
   return points;
+}
+
+function smoothPurplePulseLaunchSegment(
+  points: Float32Array,
+  startX: number,
+  startY: number,
+  targetDirX: number,
+  targetDirY: number,
+  perpX: number,
+  perpY: number,
+  loopSide: number,
+  effectiveDistance: number
+): void {
+  const pointCount = points.length / 3;
+  if (pointCount < 5) {
+    return;
+  }
+
+  let launchEndIndex = clamp(
+    Math.floor((pointCount - 1) * PURPLE_PULSE_LAUNCH_PHASE_END),
+    2,
+    pointCount - 2
+  );
+  while (launchEndIndex < pointCount - 2) {
+    const offset = launchEndIndex * 3;
+    const span = Math.hypot(points[offset] - startX, points[offset + 1] - startY);
+    if (span >= PURPLE_PULSE_LAUNCH_MIN_SPAN) {
+      break;
+    }
+    launchEndIndex += 1;
+  }
+
+  const endOffset = launchEndIndex * 3;
+  const nextOffset = (launchEndIndex + 1) * 3;
+  const endX = points[endOffset];
+  const endY = points[endOffset + 1];
+  const nextX = points[nextOffset];
+  const nextY = points[nextOffset + 1];
+
+  const exitRawX = nextX - endX;
+  const exitRawY = nextY - endY;
+  const exitRawLength = Math.hypot(exitRawX, exitRawY);
+  const exitDirX = exitRawLength > 1e-4 ? exitRawX / exitRawLength : targetDirX;
+  const exitDirY = exitRawLength > 1e-4 ? exitRawY / exitRawLength : targetDirY;
+
+  const launchRawX =
+    -targetDirX * PURPLE_PULSE_LAUNCH_BACK_DIRECTION_WEIGHT +
+    loopSide * perpX * PURPLE_PULSE_LAUNCH_SIDE_DIRECTION_WEIGHT;
+  const launchRawY =
+    -targetDirY * PURPLE_PULSE_LAUNCH_BACK_DIRECTION_WEIGHT +
+    loopSide * perpY * PURPLE_PULSE_LAUNCH_SIDE_DIRECTION_WEIGHT;
+  const launchRawLength = Math.hypot(launchRawX, launchRawY);
+  const launchDirX = launchRawLength > 1e-4 ? launchRawX / launchRawLength : -targetDirX;
+  const launchDirY = launchRawLength > 1e-4 ? launchRawY / launchRawLength : -targetDirY;
+
+  const launchDistance = Math.max(0.8, Math.hypot(endX - startX, endY - startY));
+  const outHandleLength = clamp(
+    effectiveDistance * PURPLE_PULSE_LAUNCH_OUT_HANDLE_SCALE,
+    1.24,
+    Math.max(1.8, launchDistance * 0.95)
+  );
+  const inHandleLength = clamp(
+    launchDistance * PURPLE_PULSE_LAUNCH_IN_HANDLE_SCALE,
+    0.92,
+    Math.max(1.2, launchDistance * 0.86)
+  );
+
+  const controlOneX = startX + launchDirX * outHandleLength;
+  const controlOneY = startY + launchDirY * outHandleLength;
+  const controlTwoX = endX - exitDirX * inHandleLength;
+  const controlTwoY = endY - exitDirY * inHandleLength;
+
+  for (let i = 0; i <= launchEndIndex; i += 1) {
+    const u = launchEndIndex > 0 ? i / launchEndIndex : 1;
+    const invU = 1 - u;
+    const b0 = invU * invU * invU;
+    const b1 = 3 * invU * invU * u;
+    const b2 = 3 * invU * u * u;
+    const b3 = u * u * u;
+    const offset = i * 3;
+
+    points[offset] =
+      b0 * startX + b1 * controlOneX + b2 * controlTwoX + b3 * endX;
+    points[offset + 1] =
+      b0 * startY + b1 * controlOneY + b2 * controlTwoY + b3 * endY;
+  }
 }
 
 function smoothPurplePulseTerminalSegment(
@@ -874,8 +973,8 @@ const PURPLE_PULSE_MIN_DURATION_SECONDS = 0.72;
 const PURPLE_PULSE_MIN_POOL_SIZE = 4;
 const PURPLE_PULSE_MAX_POOL_SIZE = 20;
 const PURPLE_PULSE_MAX_NEW_BINDINGS_PER_FRAME = 5;
-const PURPLE_PULSE_TOTAL_SAMPLES = 96;
-const PURPLE_PULSE_MIN_EFFECTIVE_DISTANCE = 11.5;
+const PURPLE_PULSE_TOTAL_SAMPLES = 128;
+const PURPLE_PULSE_MIN_EFFECTIVE_DISTANCE = 15.5;
 const PURPLE_PULSE_VERTICAL_DELAY_PORTION = 0.26;
 const PURPLE_PULSE_AXIAL_SWEEP_BASE = 0.28;
 const PURPLE_PULSE_BACK_DRIFT_MIN = 1.9;
@@ -883,12 +982,18 @@ const PURPLE_PULSE_BACK_DRIFT_MAX = 3.25;
 const PURPLE_PULSE_BACK_DRIFT_DISTANCE_REFERENCE = 9.2;
 const PURPLE_PULSE_BACK_DRIFT_BOOST = 1.42;
 const PURPLE_PULSE_ENVELOPE_POWER_BASE = 0.72;
+const PURPLE_PULSE_LAUNCH_PHASE_END = 0.5;
+const PURPLE_PULSE_LAUNCH_MIN_SPAN = 7.2;
+const PURPLE_PULSE_LAUNCH_BACK_DIRECTION_WEIGHT = 1.08;
+const PURPLE_PULSE_LAUNCH_SIDE_DIRECTION_WEIGHT = 1.26;
+const PURPLE_PULSE_LAUNCH_OUT_HANDLE_SCALE = 0.44;
+const PURPLE_PULSE_LAUNCH_IN_HANDLE_SCALE = 0.46;
 const PURPLE_PULSE_LAUNCH_ARC_MIN = 0.28;
 const PURPLE_PULSE_LAUNCH_ARC_MAX = 0.92;
-const PURPLE_PULSE_LAUNCH_CLAMP_PORTION = 0.32;
-const PURPLE_PULSE_MAX_LAUNCH_SLOPE = 1;
+const PURPLE_PULSE_LAUNCH_CLAMP_PORTION = 0.14;
+const PURPLE_PULSE_MAX_LAUNCH_SLOPE = 2.4;
 const PURPLE_PULSE_TERMINAL_PHASE_START = 0.54;
-const PURPLE_PULSE_TERMINAL_MIN_SPAN = 6.2;
+const PURPLE_PULSE_TERMINAL_MIN_SPAN = 8.4;
 const PURPLE_PULSE_TERMINAL_OUT_HANDLE_SCALE = 0.5;
 const PURPLE_PULSE_TERMINAL_IN_HANDLE_SCALE = 0.64;
 const PURPLE_PULSE_DASH_START = 1 - PURPLE_PULSE_TRAVEL_DASH_RATIO + 0.001;
