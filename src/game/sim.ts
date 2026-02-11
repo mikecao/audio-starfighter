@@ -183,9 +183,28 @@ const SHIP_EDGE_AVOIDANCE_PENALTY = 0.45;
 const SHIP_EDGE_AVOIDANCE_BUFFER_X = 0.08;
 const SHIP_EDGE_AVOIDANCE_PENALTY_X = 0.35;
 const SHIP_EDGE_BREAKOUT_BAND = 0.85;
-const SHIP_EDGE_BREAKOUT_THREAT_MIN = 0.45;
-const SHIP_EDGE_BREAKOUT_TRIGGER_SECONDS = 0.35;
-const SHIP_EDGE_BREAKOUT_HOLD_SECONDS = 0.55;
+const SHIP_EDGE_BREAKOUT_THREAT_MIN = 0.55;
+const SHIP_EDGE_BREAKOUT_TRIGGER_SECONDS = 0.5;
+const SHIP_EDGE_BREAKOUT_HOLD_SECONDS = 0.45;
+const SHIP_PRE_BREAKOUT_TRIGGER_FRACTION = 0.58;
+const SHIP_CENTER_BIAS_THREAT_LOW = 0.25;
+const SHIP_CENTER_BIAS_THREAT_HIGH = 1.1;
+const SHIP_CENTER_BIAS_X_STRENGTH = 0.62;
+const SHIP_CENTER_BIAS_Y_STRENGTH = 0.76;
+const SHIP_EDGE_APPROACH_BUFFER_Y = 2.35;
+const SHIP_EDGE_APPROACH_BUFFER_X = 2.9;
+const SHIP_EDGE_APPROACH_PENALTY_Y = 0.95;
+const SHIP_EDGE_APPROACH_PENALTY_X = 0.52;
+const SHIP_EDGE_RETURN_COOLDOWN_SECONDS = 2.3;
+const SHIP_EDGE_RETURN_BAND_Y = 7.4;
+const SHIP_EDGE_RETURN_PENALTY = 1.7;
+const ENEMY_EDGE_AIM_RELAX_DISTANCE_Y = 3.2;
+const ENEMY_EDGE_AIM_RELAX_MAX_LAG_SECONDS = 0.12;
+const ENEMY_EDGE_AIM_RELAX_MAX_JITTER = 0.45;
+const ENEMY_EDGE_PRESSURE_WINDOW_X = 8.2;
+const ENEMY_EDGE_PRESSURE_WINDOW_Y = 3.6;
+const ENEMY_EDGE_PRESSURE_PROJECTILE_CAP = 8;
+const ENEMY_EDGE_PRESSURE_EXTRA_SPREAD = 0.11;
 const ENEMY_SPAWN_INTERVAL_MULTIPLIER = 0.9;
 const ENEMY_FIRE_INTERVAL_MULTIPLIER = 1.15;
 const ENEMY_FIRE_COOLDOWN_MULTIPLIER = 1.25;
@@ -202,6 +221,8 @@ type SimulationState = {
   nextShipRetargetTime: number;
   edgeDwellSeconds: number;
   edgeBreakoutSeconds: number;
+  recentEdgeSideY: number;
+  recentEdgeCooldownSeconds: number;
   shipShieldAlpha: number;
   enemies: Enemy[];
   projectiles: Projectile[];
@@ -254,6 +275,8 @@ export function createSimulation(): Simulation {
     nextShipRetargetTime: 0,
     edgeDwellSeconds: 0,
     edgeBreakoutSeconds: 0,
+    recentEdgeSideY: 0,
+    recentEdgeCooldownSeconds: 0,
     shipShieldAlpha: 0,
     enemies: [],
     projectiles: [],
@@ -473,6 +496,8 @@ function resetRunState(state: SimulationState): void {
   state.nextShipRetargetTime = 0;
   state.edgeDwellSeconds = 0;
   state.edgeBreakoutSeconds = 0;
+  state.recentEdgeSideY = 0;
+  state.recentEdgeCooldownSeconds = 0;
   state.shipShieldAlpha = 0;
   state.enemies = [];
   state.projectiles = [];
@@ -1297,9 +1322,23 @@ function updateShipMotion(state: SimulationState, deltaSeconds: number): void {
   const threat = analyzeProjectileThreat(state);
   const panicFactor = clamp(threat.score / SHIP_PANIC_THRESHOLD, 0, 1);
   const breakoutActive = updateEdgeBreakoutState(state, threat.score, deltaSeconds);
+  const preBreakoutActive =
+    !breakoutActive &&
+    state.edgeDwellSeconds >= SHIP_EDGE_BREAKOUT_TRIGGER_SECONDS * SHIP_PRE_BREAKOUT_TRIGGER_FRACTION &&
+    threat.score >= SHIP_EDGE_BREAKOUT_THREAT_MIN * 0.72;
+  const centerBiasStrength =
+    1 -
+    clamp(
+      (threat.score - SHIP_CENTER_BIAS_THREAT_LOW) /
+        Math.max(1e-4, SHIP_CENTER_BIAS_THREAT_HIGH - SHIP_CENTER_BIAS_THREAT_LOW),
+      0,
+      1
+    );
 
   let baseDesiredX = clamp(
-    state.shipTargetX + threat.dodgeX * (0.8 + panicFactor * 2.2) - panicFactor * (breakoutActive ? 0.45 : 1.6),
+    state.shipTargetX +
+      threat.dodgeX * (0.8 + panicFactor * 2.2) -
+      panicFactor * (breakoutActive ? 0.45 : preBreakoutActive ? 0.92 : 1.6),
     SHIP_MIN_X,
     SHIP_MAX_X
   );
@@ -1309,18 +1348,35 @@ function updateShipMotion(state: SimulationState, deltaSeconds: number): void {
     SHIP_MAX_Y
   );
 
-  if (breakoutActive) {
+  baseDesiredX = clamp(
+    baseDesiredX + (0 - baseDesiredX) * centerBiasStrength * SHIP_CENTER_BIAS_X_STRENGTH,
+    SHIP_MIN_X,
+    SHIP_MAX_X
+  );
+  baseDesiredY = clamp(
+    baseDesiredY + (0 - baseDesiredY) * centerBiasStrength * SHIP_CENTER_BIAS_Y_STRENGTH,
+    SHIP_MIN_Y,
+    SHIP_MAX_Y
+  );
+
+  if (preBreakoutActive || breakoutActive) {
     const inwardYDirection = state.shipY >= 0 ? -1 : 1;
+    const inwardYStrength = breakoutActive
+      ? 1.4 + panicFactor * 1.8
+      : 0.78 + panicFactor * 1.25;
     baseDesiredY = clamp(
-      baseDesiredY + inwardYDirection * (1.4 + panicFactor * 1.8),
+      baseDesiredY + inwardYDirection * inwardYStrength,
       SHIP_MIN_Y,
       SHIP_MAX_Y
     );
 
-    const centerX = SHIP_MIN_X * 0.4 + SHIP_MAX_X * 0.6;
+    const centerX = 0;
     const spreadDirection = state.shipX < centerX ? 1 : -1;
+    const spreadStrength = breakoutActive
+      ? 1.2 + panicFactor * 1.1
+      : 0.72 + panicFactor * 0.85;
     baseDesiredX = clamp(
-      baseDesiredX + spreadDirection * (1.2 + panicFactor * 1.1),
+      baseDesiredX + spreadDirection * spreadStrength,
       SHIP_MIN_X,
       SHIP_MAX_X
     );
@@ -1331,7 +1387,9 @@ function updateShipMotion(state: SimulationState, deltaSeconds: number): void {
     baseDesiredX,
     baseDesiredY,
     panicFactor,
-    breakoutActive
+    breakoutActive,
+    preBreakoutActive,
+    centerBiasStrength
   );
   const desiredX = escapeTarget.x;
   const desiredY = escapeTarget.y;
@@ -1420,8 +1478,16 @@ function updateEdgeBreakoutState(
   threatScore: number,
   deltaSeconds: number
 ): boolean {
+  if (state.recentEdgeCooldownSeconds > 0) {
+    state.recentEdgeCooldownSeconds = Math.max(0, state.recentEdgeCooldownSeconds - deltaSeconds);
+    if (state.recentEdgeCooldownSeconds <= 0) {
+      state.recentEdgeSideY = 0;
+    }
+  }
+
   const verticalEdgeDistance = Math.min(state.shipY - SHIP_MIN_Y, SHIP_MAX_Y - state.shipY);
   const isEdgePinned = verticalEdgeDistance < SHIP_EDGE_BREAKOUT_BAND;
+  const edgeSideY = isEdgePinned ? (state.shipY >= 0 ? 1 : -1) : 0;
   if (isEdgePinned && threatScore >= SHIP_EDGE_BREAKOUT_THREAT_MIN) {
     state.edgeDwellSeconds += deltaSeconds;
   } else {
@@ -1430,6 +1496,10 @@ function updateEdgeBreakoutState(
 
   if (state.edgeDwellSeconds >= SHIP_EDGE_BREAKOUT_TRIGGER_SECONDS) {
     state.edgeBreakoutSeconds = Math.max(state.edgeBreakoutSeconds, SHIP_EDGE_BREAKOUT_HOLD_SECONDS);
+    if (edgeSideY !== 0) {
+      state.recentEdgeSideY = edgeSideY;
+      state.recentEdgeCooldownSeconds = SHIP_EDGE_RETURN_COOLDOWN_SECONDS;
+    }
     state.edgeDwellSeconds = 0;
   }
 
@@ -1445,7 +1515,9 @@ function selectEscapeTarget(
   baseDesiredX: number,
   baseDesiredY: number,
   panicFactor: number,
-  breakoutActive: boolean
+  breakoutActive: boolean,
+  preBreakoutActive: boolean,
+  centerBiasStrength: number
 ): { x: number; y: number } {
   if (state.enemyProjectiles.length === 0) {
     return {
@@ -1456,9 +1528,13 @@ function selectEscapeTarget(
 
   const xOffsets = breakoutActive
     ? [-3.6, -2.2, -1.1, 0, 1.1, 2.2, 3.6]
+    : preBreakoutActive
+      ? [-2.8, -1.8, -1, 0, 1, 1.8, 2.8]
     : [-2.2, -1.3, -0.6, 0, 0.6, 1.3, 2.2];
   const yOffsets = breakoutActive
     ? [-4.2, -2.8, -1.5, 0, 1.5, 2.8, 4.2]
+    : preBreakoutActive
+      ? [-3.7, -2.5, -1.35, 0, 1.35, 2.5, 3.7]
     : [-2.9, -1.9, -1.0, 0, 1.0, 1.9, 2.9];
 
   let bestX = baseDesiredX;
@@ -1474,7 +1550,9 @@ function selectEscapeTarget(
         candidateX,
         candidateY,
         panicFactor,
-        breakoutActive
+        breakoutActive,
+        preBreakoutActive,
+        centerBiasStrength
       );
       if (cost < bestCost) {
         bestCost = cost;
@@ -1495,7 +1573,9 @@ function evaluateEscapeCandidate(
   targetX: number,
   targetY: number,
   panicFactor: number,
-  breakoutActive: boolean
+  breakoutActive: boolean,
+  preBreakoutActive: boolean,
+  centerBiasStrength: number
 ): number {
   let simX = state.shipX;
   let simY = state.shipY;
@@ -1553,12 +1633,30 @@ function evaluateEscapeCandidate(
         (SHIP_EDGE_AVOIDANCE_BUFFER - edgeDistanceY) *
         (SHIP_EDGE_AVOIDANCE_PENALTY + panicFactor * 0.8);
     }
+    if (edgeDistanceY < SHIP_EDGE_APPROACH_BUFFER_Y) {
+      const approach =
+        (SHIP_EDGE_APPROACH_BUFFER_Y - edgeDistanceY) / Math.max(1e-4, SHIP_EDGE_APPROACH_BUFFER_Y);
+      totalCost +=
+        approach *
+        approach *
+        (SHIP_EDGE_APPROACH_PENALTY_Y + centerBiasStrength * 1.15) *
+        (0.75 + panicFactor * 0.65);
+    }
 
     const edgeDistanceX = Math.min(simX - SHIP_MIN_X, SHIP_MAX_X - simX);
     if (edgeDistanceX < SHIP_EDGE_AVOIDANCE_BUFFER_X) {
       totalCost +=
         (SHIP_EDGE_AVOIDANCE_BUFFER_X - edgeDistanceX) *
         (SHIP_EDGE_AVOIDANCE_PENALTY_X + panicFactor * 0.6);
+    }
+    if (edgeDistanceX < SHIP_EDGE_APPROACH_BUFFER_X) {
+      const approach =
+        (SHIP_EDGE_APPROACH_BUFFER_X - edgeDistanceX) / Math.max(1e-4, SHIP_EDGE_APPROACH_BUFFER_X);
+      totalCost +=
+        approach *
+        approach *
+        (SHIP_EDGE_APPROACH_PENALTY_X + centerBiasStrength * 0.75) *
+        (0.72 + panicFactor * 0.55);
     }
 
     if (breakoutActive) {
@@ -1568,11 +1666,36 @@ function evaluateEscapeCandidate(
           (SHIP_EDGE_BREAKOUT_BAND - trappedEdgeDistance) *
           (4.4 + panicFactor * 2.8);
       }
+    } else if (preBreakoutActive) {
+      const trappedEdgeDistance = state.shipY >= 0 ? SHIP_MAX_Y - simY : simY - SHIP_MIN_Y;
+      if (trappedEdgeDistance < SHIP_EDGE_BREAKOUT_BAND) {
+        totalCost +=
+          (SHIP_EDGE_BREAKOUT_BAND - trappedEdgeDistance) *
+          (2.1 + panicFactor * 1.3 + centerBiasStrength * 1.5);
+      }
     }
   }
 
   totalCost += Math.abs(targetY - state.shipY) * 0.12;
   totalCost += Math.abs(targetX - state.shipX) * (breakoutActive ? 0.03 : 0.09);
+  totalCost += Math.abs(targetY) * (0.08 + centerBiasStrength * 0.54);
+  totalCost += Math.abs(targetX) * (0.04 + centerBiasStrength * 0.24);
+
+  if (state.recentEdgeCooldownSeconds > 0 && state.recentEdgeSideY !== 0) {
+    const targetSideY = targetY > 0 ? 1 : targetY < 0 ? -1 : 0;
+    if (targetSideY === state.recentEdgeSideY && Math.abs(targetY) > SHIP_EDGE_RETURN_BAND_Y) {
+      const cooldownT =
+        state.recentEdgeCooldownSeconds / Math.max(1e-4, SHIP_EDGE_RETURN_COOLDOWN_SECONDS);
+      const overshoot =
+        (Math.abs(targetY) - SHIP_EDGE_RETURN_BAND_Y) /
+        Math.max(0.2, SHIP_MAX_Y - SHIP_EDGE_RETURN_BAND_Y);
+      totalCost +=
+        (1 + overshoot * 1.8) *
+        SHIP_EDGE_RETURN_PENALTY *
+        cooldownT *
+        (0.7 + centerBiasStrength * 1.1);
+    }
+  }
 
   if (breakoutActive) {
     const xShift = Math.abs(targetX - state.shipX);
@@ -1660,17 +1783,43 @@ function findBestTarget(
 
 function spawnEnemyProjectile(state: SimulationState, enemy: Enemy, spreadRadians = 0): void {
   const speed = 6.8 + state.rng() * 2;
-  const jitter = (state.rng() - 0.5) * 0.55;
-  const targetX = state.shipX - 0.2;
-  const targetY = state.shipY + jitter;
+  const edgeDistanceY = Math.min(state.shipY - SHIP_MIN_Y, SHIP_MAX_Y - state.shipY);
+  const edgeProximity = clamp(
+    (ENEMY_EDGE_AIM_RELAX_DISTANCE_Y - edgeDistanceY) / ENEMY_EDGE_AIM_RELAX_DISTANCE_Y,
+    0,
+    1
+  );
+  let localProjectilePressure = 0;
+  for (const projectile of state.enemyProjectiles) {
+    if (projectile.x < state.shipX - 1 || projectile.x > state.shipX + ENEMY_EDGE_PRESSURE_WINDOW_X) {
+      continue;
+    }
+    if (Math.abs(projectile.y - state.shipY) > ENEMY_EDGE_PRESSURE_WINDOW_Y) {
+      continue;
+    }
+    localProjectilePressure += 1;
+    if (localProjectilePressure >= ENEMY_EDGE_PRESSURE_PROJECTILE_CAP) {
+      break;
+    }
+  }
+  const pressure = clamp(localProjectilePressure / ENEMY_EDGE_PRESSURE_PROJECTILE_CAP, 0, 1);
+  const edgePressure = edgeProximity * pressure;
+  const aimLagSeconds = edgePressure * ENEMY_EDGE_AIM_RELAX_MAX_LAG_SECONDS;
+  const relaxedShipX = state.shipX - state.shipVx * aimLagSeconds;
+  const relaxedShipY = state.shipY - state.shipVy * aimLagSeconds;
+  const jitter = (state.rng() - 0.5) * (0.55 + edgePressure * ENEMY_EDGE_AIM_RELAX_MAX_JITTER);
+  const targetX = relaxedShipX - 0.2;
+  const targetY = relaxedShipY + jitter;
   const dx = targetX - enemy.x;
   const dy = targetY - enemy.y;
   const magnitude = Math.hypot(dx, dy) || 1;
 
   const baseX = dx / magnitude;
   const baseY = dy / magnitude;
-  const cos = Math.cos(spreadRadians);
-  const sin = Math.sin(spreadRadians);
+  const spreadWithPressure =
+    spreadRadians + (state.rng() - 0.5) * edgePressure * ENEMY_EDGE_PRESSURE_EXTRA_SPREAD;
+  const cos = Math.cos(spreadWithPressure);
+  const sin = Math.sin(spreadWithPressure);
   const dirX = baseX * cos - baseY * sin;
   const dirY = baseX * sin + baseY * cos;
 
@@ -1791,8 +1940,8 @@ function moodParameters(mood: MoodProfile): {
   }
   if (mood === "aggressive") {
     return {
-      enemySpeedScale: 1.1,
-      spawnIntervalScale: 0.82,
+      enemySpeedScale: 1.04,
+      spawnIntervalScale: 0.8,
       enemyFireIntervalScale: 0.82,
       playerFireIntervalScale: 0.92
     };
