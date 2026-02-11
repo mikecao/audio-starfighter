@@ -7,6 +7,7 @@ import {
   buildPrecomputedRunAsync,
   type PrecomputedRun
 } from "./game/precomputedRun";
+import type { CombatConfigPatch } from "./game/combatConfig";
 import { createAudioPanel } from "./ui/audioPanel";
 import { createEventTimeline } from "./ui/eventTimeline";
 import { createLoadingOverlay, type LoadingPhaseTone } from "./ui/loadingOverlay";
@@ -17,6 +18,18 @@ const ANALYSIS_PROGRESS_START = 0.02;
 const ANALYSIS_PROGRESS_END = 0.2;
 const PRECOMPUTE_PROGRESS_START = 0.24;
 const PRECOMPUTE_PROGRESS_SPAN = 0.76;
+let currentCombatConfig: CombatConfigPatch = {
+  shipWeapons: {
+    primaryProjectiles: true,
+    queuedCueShots: true,
+    cleanupLaser: true
+  },
+  enemyRoster: {
+    enabledArchetypes: ["redCube"],
+    spawnScale: 1,
+    fireScale: 1
+  }
+};
 
 const app = document.querySelector<HTMLDivElement>("#app");
 
@@ -36,12 +49,14 @@ app.appendChild(uiHost);
 
 const scene = setupScene(sceneHost);
 const sim = createSimulation();
+sim.setCombatConfig(currentCombatConfig);
 sim.setEnemyBulletRatio(ENEMY_BULLET_RATIO);
 const eventTimeline = createEventTimeline(uiHost);
 
 let uiHidden = false;
 const uiOverlaySelectors = [
   ".audio-controls-bar__main",
+  ".audio-controls-settings",
   ".event-timeline",
   ".waveform-panel",
   ".playback-panel"
@@ -112,7 +127,8 @@ const audioPanel = createAudioPanel(uiHost, {
           intensityTimeline,
           cueTimesSeconds,
           durationSeconds: analysis.durationSeconds,
-          enemyBulletRatio: ENEMY_BULLET_RATIO
+          enemyBulletRatio: ENEMY_BULLET_RATIO,
+          combatConfig: currentCombatConfig
         },
         {
           onProgress(progress) {
@@ -138,6 +154,10 @@ const audioPanel = createAudioPanel(uiHost, {
     } finally {
       loadingOverlay.hide();
     }
+  },
+  onCombatConfigChange(config) {
+    currentCombatConfig = config;
+    sim.setCombatConfig(currentCombatConfig);
   },
   onToggleUi() {
     setUiHidden(!uiHidden);
@@ -251,6 +271,7 @@ function animate(frameTimeMs: number): void {
   if (analysis && analysis !== appliedAnalysisRef) {
     const runTimeline = buildRunTimelineEvents(analysis);
     sim.setMoodProfile(analysis.mood.label);
+    sim.setCombatConfig(currentCombatConfig);
     sim.setIntensityTimeline(buildIntensityTimeline(analysis.frames));
     sim.setCueTimeline(runTimeline.events.map((cue) => cue.timeSeconds));
     precomputedRun = null;

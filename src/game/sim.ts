@@ -1,3 +1,16 @@
+import {
+  DEFAULT_COMBAT_CONFIG,
+  ENEMY_ARCHETYPE_DEFINITIONS,
+  normalizeCombatConfig,
+  sanitizeEnabledArchetypes,
+  type CombatConfig,
+  type CombatConfigPatch,
+  type EnemyArchetypeDefinition,
+  type EnemyArchetypeId,
+  type EnemyRosterConfig,
+  type ShipWeaponsConfig
+} from "./combatConfig";
+
 export type SimulationSnapshot = {
   simTimeSeconds: number;
   simTick: number;
@@ -14,6 +27,7 @@ export type SimulationSnapshot = {
     z: number;
     rotationZ: number;
     damageFlash: number;
+    archetype: EnemyArchetypeId;
   }>;
   projectiles: Array<{
     id: number;
@@ -21,6 +35,7 @@ export type SimulationSnapshot = {
     y: number;
     z: number;
     rotationZ: number;
+    isCueShot: boolean;
   }>;
   enemyProjectiles: Array<{
     id: number;
@@ -63,6 +78,7 @@ type EnemyPattern = "straight" | "sine" | "arc" | "zigzag" | "weave";
 
 type Enemy = {
   id: number;
+  archetype: EnemyArchetypeId;
   x: number;
   y: number;
   z: number;
@@ -91,6 +107,7 @@ type Projectile = {
   ageSeconds: number;
   maxLifetimeSeconds: number;
   radius: number;
+  isCueShot: boolean;
 };
 
 type EnemyProjectile = {
@@ -221,6 +238,11 @@ const ENEMY_SPAWN_INTERVAL_MULTIPLIER = 0.9;
 const ENEMY_FIRE_INTERVAL_MULTIPLIER = 1.15;
 const ENEMY_FIRE_COOLDOWN_MULTIPLIER = 1.25;
 
+type CombatPressureTuning = {
+  spawnScale: number;
+  enemyFireScale: number;
+};
+
 type SimulationState = {
   simTimeSeconds: number;
   simTick: number;
@@ -254,6 +276,8 @@ type SimulationState = {
   enemyBulletBudget: number;
   enemyBulletRatio: number;
   enemyFireSelectionCursor: number;
+  combatConfig: CombatConfig;
+  activeEnemyArchetypes: EnemyArchetypeId[];
   nextLaserFireTime: number;
   cueTimeline: ScheduledCue[];
   cueStartOffsetSeconds: number;
@@ -280,6 +304,9 @@ export type Simulation = {
   setRandomSeed: (seed: number) => void;
   setMoodProfile: (mood: MoodProfile) => void;
   setEnemyBulletRatio: (ratio: number) => void;
+  setShipWeapons: (weapons: Partial<ShipWeaponsConfig>) => void;
+  setEnemyRoster: (roster: Partial<EnemyRosterConfig>) => void;
+  setCombatConfig: (config: CombatConfigPatch) => void;
 };
 
 export function createSimulation(): Simulation {
@@ -316,6 +343,8 @@ export function createSimulation(): Simulation {
     enemyBulletBudget: 0,
     enemyBulletRatio: 1,
     enemyFireSelectionCursor: 0,
+    combatConfig: normalizeCombatConfig(undefined),
+    activeEnemyArchetypes: sanitizeEnabledArchetypes(DEFAULT_COMBAT_CONFIG.enemyRoster.enabledArchetypes),
     nextLaserFireTime: 0,
     cueTimeline: [],
     cueStartOffsetSeconds: 0,
@@ -392,14 +421,16 @@ export function createSimulation(): Simulation {
           y: enemy.y,
           z: enemy.z,
           rotationZ: enemy.phase + enemy.ageSeconds * 2,
-          damageFlash: enemy.damageFlash
+          damageFlash: enemy.damageFlash,
+          archetype: enemy.archetype
         })),
         projectiles: state.projectiles.map((projectile) => ({
           id: projectile.id,
           x: projectile.x,
           y: projectile.y,
           z: projectile.z,
-          rotationZ: Math.atan2(projectile.vy, projectile.vx)
+          rotationZ: Math.atan2(projectile.vy, projectile.vx),
+          isCueShot: projectile.isCueShot
         })),
         enemyProjectiles: state.enemyProjectiles.map((projectile) => ({
           id: projectile.id,
@@ -517,6 +548,15 @@ export function createSimulation(): Simulation {
       if (normalizedRatio <= 0) {
         state.enemyBulletBudget = 0;
       }
+    },
+    setShipWeapons(weapons) {
+      applyCombatConfigPatch(state, { shipWeapons: weapons });
+    },
+    setEnemyRoster(roster) {
+      applyCombatConfigPatch(state, { enemyRoster: roster });
+    },
+    setCombatConfig(config) {
+      applyCombatConfigPatch(state, config);
     }
   };
 }
@@ -553,6 +593,9 @@ function resetRunState(state: SimulationState): void {
   state.nextEnemyProjectileId = 1;
   state.enemyBulletBudget = 0;
   state.enemyFireSelectionCursor = 0;
+  state.activeEnemyArchetypes = sanitizeEnabledArchetypes(
+    state.combatConfig.enemyRoster.enabledArchetypes
+  );
   state.nextLaserFireTime = 0;
   state.cueResolvedCount = 0;
   state.cueMissedCount = 0;
@@ -565,6 +608,64 @@ function resetRunState(state: SimulationState): void {
   state.rng = createMulberry32(state.randomSeed);
 }
 
+function applyCombatConfigPatch(state: SimulationState, patch: CombatConfigPatch): void {
+  state.combatConfig = normalizeCombatConfig(patch, state.combatConfig);
+  state.activeEnemyArchetypes = sanitizeEnabledArchetypes(
+    state.combatConfig.enemyRoster.enabledArchetypes
+  );
+}
+
+function getCombatPressureTuning(state: SimulationState): CombatPressureTuning {
+  let spawnScale = state.combatConfig.enemyRoster.spawnScale;
+  let enemyFireScale = state.combatConfig.enemyRoster.fireScale;
+
+  if (!state.combatConfig.shipWeapons.cleanupLaser) {
+    spawnScale *= 0.9;
+    enemyFireScale *= 0.92;
+  }
+  if (!state.combatConfig.shipWeapons.primaryProjectiles) {
+    spawnScale *= 0.82;
+    enemyFireScale *= 0.88;
+  }
+  if (!state.combatConfig.shipWeapons.queuedCueShots) {
+    spawnScale *= 0.9;
+  }
+
+  return {
+    spawnScale: clamp(spawnScale, 0.45, 2.4),
+    enemyFireScale: clamp(enemyFireScale, 0.45, 2.4)
+  };
+}
+
+function pickEnemyArchetype(state: SimulationState): EnemyArchetypeId {
+  const enabled = state.activeEnemyArchetypes;
+  if (enabled.length === 0) {
+    return "redCube";
+  }
+
+  let totalWeight = 0;
+  for (const archetypeId of enabled) {
+    totalWeight += getEnemyArchetypeDefinition(archetypeId).spawnWeight;
+  }
+  if (totalWeight <= 1e-6) {
+    return enabled[0];
+  }
+
+  let roll = state.rng() * totalWeight;
+  for (const archetypeId of enabled) {
+    roll -= getEnemyArchetypeDefinition(archetypeId).spawnWeight;
+    if (roll <= 0) {
+      return archetypeId;
+    }
+  }
+
+  return enabled[enabled.length - 1];
+}
+
+function getEnemyArchetypeDefinition(archetypeId: EnemyArchetypeId): EnemyArchetypeDefinition {
+  return ENEMY_ARCHETYPE_DEFINITIONS[archetypeId];
+}
+
 function spawnEnemies(state: SimulationState): void {
   while (state.simTimeSeconds >= state.nextEnemySpawnTime) {
     spawnAmbientEnemy(state);
@@ -572,10 +673,11 @@ function spawnEnemies(state: SimulationState): void {
     state.spawnIndex += 1;
     const intensity = getIntensityAtTime(state, state.simTimeSeconds);
     const mood = moodParameters(state.moodProfile);
+    const combatTuning = getCombatPressureTuning(state);
     const cadence = (0.9 - intensity * 0.5) * mood.spawnIntervalScale;
     const intensitySpawnMultiplier = 1 - intensity * ENEMY_INTENSITY_SPAWN_BOOST;
     state.nextEnemySpawnTime += clamp(
-      (cadence + state.rng() * 0.35) * intensitySpawnMultiplier,
+      ((cadence + state.rng() * 0.35) * intensitySpawnMultiplier) / combatTuning.spawnScale,
       0.22,
       0.95
     );
@@ -588,6 +690,14 @@ function fireProjectiles(state: SimulationState): void {
   while (state.simTimeSeconds >= state.nextPlayerFireTime) {
     const intensity = getIntensityAtTime(state, state.simTimeSeconds);
     const mood = moodParameters(state.moodProfile);
+    const interval = (0.2 - intensity * 0.07) * mood.playerFireIntervalScale;
+
+    if (!state.combatConfig.shipWeapons.primaryProjectiles) {
+      state.lockedTargetEnemyId = null;
+      state.nextPlayerFireTime += clamp(interval, 0.1, 0.24);
+      continue;
+    }
+
     const shipX = state.shipX + 0.65;
     const shipY = state.shipY;
 
@@ -636,10 +746,10 @@ function fireProjectiles(state: SimulationState): void {
       vy: directionY * PLAYER_PROJECTILE_SPEED,
       ageSeconds: 0,
       maxLifetimeSeconds: 1.45,
-      radius: 0.16
+      radius: 0.16,
+      isCueShot: false
     });
 
-    const interval = (0.2 - intensity * 0.07) * mood.playerFireIntervalScale;
     state.nextPlayerFireTime += clamp(interval, 0.1, 0.24);
   }
 }
@@ -750,6 +860,7 @@ function solveProjectileIntercept(
 function updateEnemies(state: SimulationState, deltaSeconds: number): void {
   const intensity = getIntensityAtTime(state, state.simTimeSeconds);
   const mood = moodParameters(state.moodProfile);
+  const combatTuning = getCombatPressureTuning(state);
   const readyToFire: Enemy[] = [];
 
   for (const enemy of state.enemies) {
@@ -789,7 +900,7 @@ function updateEnemies(state: SimulationState, deltaSeconds: number): void {
     }
   }
 
-  replenishEnemyBulletBudget(state, deltaSeconds, intensity, mood);
+  replenishEnemyBulletBudget(state, deltaSeconds, intensity, mood, combatTuning);
   if (readyToFire.length === 0 || state.enemyBulletBudget < 1) {
     return;
   }
@@ -811,7 +922,8 @@ function updateEnemies(state: SimulationState, deltaSeconds: number): void {
       (0.28 + (1 - intensity) * 0.52 + state.rng() * 0.32) *
       mood.enemyFireIntervalScale *
       ENEMY_FIRE_COOLDOWN_MULTIPLIER *
-      fireCadenceIntensityMultiplier;
+      fireCadenceIntensityMultiplier /
+      combatTuning.enemyFireScale;
     firedEnemies += 1;
   }
 
@@ -824,12 +936,14 @@ function replenishEnemyBulletBudget(
   intensity: number,
   mood: {
     enemyBulletRateScale: number;
-  }
+  },
+  combatTuning: CombatPressureTuning
 ): void {
   const bulletsPerSecond = clamp(
     (ENEMY_BULLET_RATE_BASE + intensity * ENEMY_BULLET_RATE_INTENSITY_GAIN) *
       mood.enemyBulletRateScale *
-      state.enemyBulletRatio,
+      state.enemyBulletRatio *
+      combatTuning.enemyFireScale,
     0,
     ENEMY_BULLET_RATE_MAX
   );
@@ -880,6 +994,8 @@ function fireCleanupLaser(state: SimulationState): void {
     return;
   }
 
+  const cleanupLaserEnabled = state.combatConfig.shipWeapons.cleanupLaser;
+
   const behindShip = state.enemies.filter(
     (enemy) =>
       enemy.ageSeconds >= MIN_ENEMY_SURVIVAL_SECONDS &&
@@ -896,10 +1012,13 @@ function fireCleanupLaser(state: SimulationState): void {
       }
     }
 
-    spawnLaserBeam(state, target.x, target.y);
+    if (cleanupLaserEnabled) {
+      spawnLaserBeam(state, target.x, target.y);
+    }
     spawnExplosion(state, target.x, target.y, target.z);
     state.enemies = state.enemies.filter((enemy) => enemy.id !== target.id);
-    state.nextLaserFireTime = state.simTimeSeconds + LASER_COOLDOWN_SECONDS * 1.15;
+    state.nextLaserFireTime =
+      state.simTimeSeconds + LASER_COOLDOWN_SECONDS * (cleanupLaserEnabled ? 1.15 : 1.35);
     return;
   }
 
@@ -912,7 +1031,10 @@ function fireCleanupLaser(state: SimulationState): void {
       enemy.x > state.shipX + PLAYER_TARGET_MAX_DISTANCE_X + CLEANUP_OUT_OF_RANGE_EXTRA_DISTANCE
   );
 
-  if (outOfRange.length < LASER_REQUIRED_OUT_OF_RANGE_COUNT) {
+  const requiredOutOfRangeCount = cleanupLaserEnabled
+    ? LASER_REQUIRED_OUT_OF_RANGE_COUNT
+    : LASER_REQUIRED_OUT_OF_RANGE_COUNT + 1;
+  if (outOfRange.length < requiredOutOfRangeCount) {
     return;
   }
 
@@ -923,11 +1045,15 @@ function fireCleanupLaser(state: SimulationState): void {
     }
   }
 
-  spawnLaserBeam(state, target.x, target.y);
+  if (cleanupLaserEnabled) {
+    spawnLaserBeam(state, target.x, target.y);
+  }
   spawnExplosion(state, target.x, target.y, target.z);
   state.enemies = state.enemies.filter((enemy) => enemy.id !== target.id);
   state.nextLaserFireTime =
-    state.simTimeSeconds + LASER_COOLDOWN_SECONDS * 1.25 + state.rng() * 0.08;
+    state.simTimeSeconds +
+    LASER_COOLDOWN_SECONDS * (cleanupLaserEnabled ? 1.25 : 1.45) +
+    state.rng() * 0.08;
 }
 
 function forceCleanupBehindEnemies(state: SimulationState): void {
@@ -941,7 +1067,9 @@ function forceCleanupBehindEnemies(state: SimulationState): void {
       continue;
     }
 
-    spawnLaserBeam(state, enemy.x, enemy.y);
+    if (state.combatConfig.shipWeapons.cleanupLaser) {
+      spawnLaserBeam(state, enemy.x, enemy.y);
+    }
     spawnExplosion(state, enemy.x, enemy.y, enemy.z);
     removedEnemyIds.add(enemy.id);
   }
@@ -1049,6 +1177,7 @@ function planCueShots(state: SimulationState): void {
         const reserved = spawnReservedCueEnemy(state, cue.timeSeconds);
         cue.planned = true;
         cue.assignedEnemyId = reserved.id;
+        queueCueShotForEnemy(state, reserved, cue.timeSeconds);
       }
       continue;
     }
@@ -1058,46 +1187,58 @@ function planCueShots(state: SimulationState): void {
       const reserved = spawnReservedCueEnemy(state, cue.timeSeconds);
       cue.planned = true;
       cue.assignedEnemyId = reserved.id;
-      continue;
-    }
-
-    const fireTimeSeconds = solveCueFireTime(state, candidate.enemy, cue.timeSeconds);
-    if (fireTimeSeconds === null) {
-      const reserved = spawnReservedCueEnemy(state, cue.timeSeconds);
-      cue.planned = true;
-      cue.assignedEnemyId = reserved.id;
-      continue;
-    }
-
-    if (fireTimeSeconds < state.simTimeSeconds || fireTimeSeconds > cue.timeSeconds) {
+      queueCueShotForEnemy(state, reserved, cue.timeSeconds);
       continue;
     }
 
     candidate.enemy.scheduledCueTime = cue.timeSeconds;
     cue.planned = true;
     cue.assignedEnemyId = candidate.enemy.id;
-    state.plannedCueShots.push({
-      cueTimeSeconds: cue.timeSeconds,
-      enemyId: candidate.enemy.id,
-      fireTimeSeconds
-    });
+    queueCueShotForEnemy(state, candidate.enemy, cue.timeSeconds);
   }
+}
+
+function queueCueShotForEnemy(state: SimulationState, enemy: Enemy, cueTimeSeconds: number): void {
+  if (!state.combatConfig.shipWeapons.queuedCueShots) {
+    return;
+  }
+
+  let fireTimeSeconds = solveCueFireTime(state, enemy, cueTimeSeconds);
+  if (fireTimeSeconds === null) {
+    const leadSeconds = cueTimeSeconds - state.simTimeSeconds;
+    fireTimeSeconds = cueTimeSeconds - clamp(leadSeconds * 0.35, 0.16, 0.46);
+  }
+
+  if (fireTimeSeconds <= state.simTimeSeconds + 0.01 || fireTimeSeconds >= cueTimeSeconds - 0.02) {
+    return;
+  }
+
+  state.plannedCueShots.push({
+    cueTimeSeconds,
+    enemyId: enemy.id,
+    fireTimeSeconds
+  });
 }
 
 function spawnReservedCueEnemy(state: SimulationState, cueTimeSeconds: number): Enemy {
   const intensity = getIntensityAtTime(state, state.simTimeSeconds);
   const mood = moodParameters(state.moodProfile);
+  const combatTuning = getCombatPressureTuning(state);
+  const archetype = pickEnemyArchetype(state);
+  const archetypeDef = getEnemyArchetypeDefinition(archetype);
   const leadSeconds = Math.max(0.2, cueTimeSeconds - state.simTimeSeconds);
   const shipAtCue = predictShipPosition(state, leadSeconds);
   const spawnX = 21.5 + state.rng() * 3.5;
   const targetX = shipAtCue.x + 6.8 + (state.rng() - 0.5) * 2.2;
   const requiredVx = (targetX - spawnX) / leadSeconds;
-  const vx = clamp(requiredVx, -6.2, -1.9) * mood.enemySpeedScale;
+  const vx =
+    clamp(requiredVx, -6.2, -1.9) * mood.enemySpeedScale * archetypeDef.speedScale;
   const lane = ((state.spawnIndex + 2) % 5) - 2;
   const laneOffset = lane * 0.82;
   const baseY = clamp(shipAtCue.baseY + laneOffset + (state.rng() - 0.5) * 0.45, -4.2, 4.2);
   const enemy: Enemy = {
     id: state.nextEnemyId++,
+    archetype,
     x: spawnX,
     y: baseY,
     z: 0,
@@ -1108,12 +1249,14 @@ function spawnReservedCueEnemy(state: SimulationState, cueTimeSeconds: number): 
     phase: state.rng() * Math.PI * 2,
     amplitude: 0.25 + state.rng() * (0.7 + intensity * 0.6),
     frequency: 0.8 + state.rng() * 1.15,
-    radius: 0.44,
+    radius: 0.44 * archetypeDef.radiusScale,
     fireCooldownSeconds:
       (0.9 + state.rng() * 0.9) *
       mood.enemyFireIntervalScale *
       ENEMY_FIRE_COOLDOWN_MULTIPLIER *
-      enemyFireIntensityMultiplier(intensity),
+      enemyFireIntensityMultiplier(intensity) *
+      archetypeDef.fireCooldownScale /
+      combatTuning.enemyFireScale,
     scheduledCueTime: cueTimeSeconds,
     cuePrimed: false,
     damageFlash: 0,
@@ -1127,6 +1270,9 @@ function spawnReservedCueEnemy(state: SimulationState, cueTimeSeconds: number): 
 function spawnAmbientEnemy(state: SimulationState): void {
   const intensity = getIntensityAtTime(state, state.simTimeSeconds);
   const mood = moodParameters(state.moodProfile);
+  const combatTuning = getCombatPressureTuning(state);
+  const archetype = pickEnemyArchetype(state);
+  const archetypeDef = getEnemyArchetypeDefinition(archetype);
   const lane = (state.spawnIndex % 5) - 2;
   const patternSelector = state.spawnIndex % 5;
   const pattern: EnemyPattern =
@@ -1142,22 +1288,28 @@ function spawnAmbientEnemy(state: SimulationState): void {
 
   state.enemies.push({
     id: state.nextEnemyId++,
+    archetype,
     x: 22.2 + state.rng() * 3.1,
     y: lane * 1.6,
     z: 0,
-    vx: (-2.5 - intensity * 1.8 - state.rng() * 0.95) * mood.enemySpeedScale,
+    vx:
+      (-2.5 - intensity * 1.8 - state.rng() * 0.95) *
+      mood.enemySpeedScale *
+      archetypeDef.speedScale,
     ageSeconds: 0,
     pattern,
     baseY: lane * 1.6,
     phase: state.rng() * Math.PI * 2,
     amplitude: 0.35 + state.rng() * 1.25,
     frequency: 1 + state.rng() * 1.4,
-    radius: 0.44,
+    radius: 0.44 * archetypeDef.radiusScale,
     fireCooldownSeconds:
       (0.5 + (1 - intensity) * 0.8 + state.rng() * 0.5) *
       mood.enemyFireIntervalScale *
       ENEMY_FIRE_COOLDOWN_MULTIPLIER *
-      enemyFireIntensityMultiplier(intensity),
+      enemyFireIntensityMultiplier(intensity) *
+      archetypeDef.fireCooldownScale /
+      combatTuning.enemyFireScale,
     scheduledCueTime: null,
     cuePrimed: false,
     damageFlash: 0,
@@ -1218,15 +1370,22 @@ function ensureCueSupportEnemies(state: SimulationState): void {
 function spawnCueSupportEnemy(state: SimulationState): void {
   const intensity = getIntensityAtTime(state, state.simTimeSeconds);
   const mood = moodParameters(state.moodProfile);
+  const combatTuning = getCombatPressureTuning(state);
+  const archetype = pickEnemyArchetype(state);
+  const archetypeDef = getEnemyArchetypeDefinition(archetype);
   const lane = ((state.spawnIndex + 1) % 5) - 2;
   const baseY = lane * 1.6 + (state.rng() - 0.5) * 0.35;
 
   state.enemies.push({
     id: state.nextEnemyId++,
+    archetype,
     x: 22 + state.rng() * 2.9,
     y: baseY,
     z: 0,
-    vx: (-2.15 - intensity * 1.2 - state.rng() * 0.6) * mood.enemySpeedScale,
+    vx:
+      (-2.15 - intensity * 1.2 - state.rng() * 0.6) *
+      mood.enemySpeedScale *
+      archetypeDef.speedScale,
     ageSeconds: 0,
     pattern:
       state.rng() < 0.5
@@ -1240,12 +1399,14 @@ function spawnCueSupportEnemy(state: SimulationState): void {
     phase: state.rng() * Math.PI * 2,
     amplitude: 0.2 + state.rng() * 0.65,
     frequency: 0.8 + state.rng() * 0.8,
-    radius: 0.44,
+    radius: 0.44 * archetypeDef.radiusScale,
     fireCooldownSeconds:
       (0.9 + state.rng() * 0.7) *
       mood.enemyFireIntervalScale *
       ENEMY_FIRE_COOLDOWN_MULTIPLIER *
-      enemyFireIntensityMultiplier(intensity),
+      enemyFireIntensityMultiplier(intensity) *
+      archetypeDef.fireCooldownScale /
+      combatTuning.enemyFireScale,
     scheduledCueTime: null,
     cuePrimed: false,
     damageFlash: 0,
@@ -1257,6 +1418,13 @@ function spawnCueSupportEnemy(state: SimulationState): void {
 
 function fireQueuedCueShots(state: SimulationState): void {
   if (state.plannedCueShots.length === 0) {
+    return;
+  }
+
+  if (!state.combatConfig.shipWeapons.queuedCueShots) {
+    state.plannedCueShots = state.plannedCueShots.filter(
+      (shot) => shot.fireTimeSeconds > state.simTimeSeconds
+    );
     return;
   }
 
@@ -1292,7 +1460,8 @@ function fireQueuedCueShots(state: SimulationState): void {
       vy: dy / leadSeconds,
       ageSeconds: 0,
       maxLifetimeSeconds: leadSeconds + 0.12,
-      radius: 0.16
+      radius: 0.16,
+      isCueShot: true
     });
   }
 
@@ -1322,7 +1491,7 @@ function resolveDueCueExplosions(state: SimulationState): void {
     if (targetIndex >= 0) {
       const enemy = state.enemies[targetIndex];
       const didCueHit = scheduledEnemyHasCueHit(state, enemy);
-      if (!didCueHit) {
+      if (!didCueHit && state.combatConfig.shipWeapons.cleanupLaser) {
         spawnLaserBeam(state, enemy.x, enemy.y);
       }
       spawnExplosion(state, enemy.x, enemy.y, enemy.z);
@@ -1339,7 +1508,9 @@ function resolveDueCueExplosions(state: SimulationState): void {
     } else {
       const fallbackEnemy = pickFallbackCueEnemy(state);
       if (fallbackEnemy) {
-        spawnLaserBeam(state, fallbackEnemy.x, fallbackEnemy.y);
+        if (state.combatConfig.shipWeapons.cleanupLaser) {
+          spawnLaserBeam(state, fallbackEnemy.x, fallbackEnemy.y);
+        }
         spawnExplosion(state, fallbackEnemy.x, fallbackEnemy.y, fallbackEnemy.z);
       }
       state.cueMissedCount += 1;

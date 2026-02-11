@@ -1,4 +1,5 @@
 import { createSimulation, type SimulationSnapshot } from "./sim";
+import type { CombatConfigPatch } from "./combatConfig";
 
 type IntensitySample = {
   timeSeconds: number;
@@ -24,6 +25,7 @@ type BuildPrecomputedRunParams = {
   durationSeconds: number;
   stepSeconds?: number;
   enemyBulletRatio?: number;
+  combatConfig?: CombatConfigPatch;
 };
 
 export function buildPrecomputedRun(params: BuildPrecomputedRunParams): PrecomputedRun {
@@ -32,6 +34,9 @@ export function buildPrecomputedRun(params: BuildPrecomputedRunParams): Precompu
   const sim = createSimulation();
   sim.setRandomSeed(params.seed);
   sim.setMoodProfile(params.moodProfile);
+  if (params.combatConfig) {
+    sim.setCombatConfig(params.combatConfig);
+  }
   if (typeof params.enemyBulletRatio === "number" && Number.isFinite(params.enemyBulletRatio)) {
     sim.setEnemyBulletRatio(params.enemyBulletRatio);
   }
@@ -63,6 +68,9 @@ export async function buildPrecomputedRunAsync(
   const sim = createSimulation();
   sim.setRandomSeed(params.seed);
   sim.setMoodProfile(params.moodProfile);
+  if (params.combatConfig) {
+    sim.setCombatConfig(params.combatConfig);
+  }
   if (typeof params.enemyBulletRatio === "number" && Number.isFinite(params.enemyBulletRatio)) {
     sim.setEnemyBulletRatio(params.enemyBulletRatio);
   }
@@ -152,7 +160,7 @@ function estimateSnapshotBytes(snapshots: SimulationSnapshot[]): number {
   for (const snapshot of snapshots) {
     bytes += 26 * 8;
     bytes += snapshot.enemies.length * 5 * 8;
-    bytes += snapshot.projectiles.length * 5 * 8;
+    bytes += snapshot.projectiles.length * 6 * 8;
     bytes += snapshot.enemyProjectiles.length * 4 * 8;
     bytes += snapshot.laserBeams.length * 5 * 8;
     bytes += snapshot.explosions.length * 7 * 8;

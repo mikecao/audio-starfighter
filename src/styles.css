@@ -312,6 +312,127 @@ body,
   flex-wrap: wrap;
 }
 
+.audio-controls-bar__right {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.38rem;
+  margin-left: auto;
+}
+
+
+.audio-settings-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 46;
+  background: rgb(0 0 0 / 56%);
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+}
+
+.audio-settings-modal-backdrop--hidden {
+  display: none;
+}
+
+.audio-settings-modal {
+  width: min(520px, 100%);
+  background: rgb(16 31 57 / 96%);
+  border-radius: 0.7rem;
+  box-shadow:
+    0 14px 34px rgb(0 0 0 / 35%),
+    0 0 0 1px rgb(160 188 236 / 18%),
+    inset 0 1px 0 rgb(206 225 255 / 6%);
+  padding: 0.86rem;
+}
+
+.audio-settings-modal__header {
+  margin-bottom: 0.52rem;
+}
+
+.audio-settings-modal__title {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 0.92rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #d8eaff;
+}
+
+.audio-settings-modal__form {
+  display: grid;
+  gap: 0.62rem;
+}
+
+.audio-settings-modal__group {
+  border: 0;
+  margin: 0;
+  padding: 0.5rem 0.55rem;
+  border-radius: 0.48rem;
+  background: rgb(11 23 45 / 85%);
+}
+
+.audio-settings-modal__legend {
+  padding: 0 0.18rem;
+  font-family: var(--font-mono);
+  font-size: 0.74rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #9fb9e4;
+}
+
+.audio-settings-modal__check {
+  display: flex;
+  align-items: center;
+  gap: 0.42rem;
+  color: #d8e8ff;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  margin: 0.22rem 0;
+}
+
+.audio-settings-modal__check-input {
+  margin: 0;
+  width: 0.86rem;
+  height: 0.86rem;
+  accent-color: #60a5fa;
+}
+
+.audio-settings-modal__range {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.38rem;
+}
+
+.audio-settings-modal__range-name,
+.audio-settings-modal__range-value {
+  font-family: var(--font-mono);
+  font-size: 0.76rem;
+}
+
+.audio-settings-modal__range-name {
+  color: #c9defc;
+}
+
+.audio-settings-modal__range-value {
+  color: #d9e9ff;
+  min-width: 3.2ch;
+  text-align: right;
+}
+
+.audio-settings-modal__range-input {
+  width: 100%;
+  accent-color: #60a5fa;
+}
+
+.audio-settings-modal__footer {
+  margin-top: 0.78rem;
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.45rem;
+}
+
 .audio-controls__seed-row {
   display: flex;
   align-items: center;
@@ -352,7 +473,7 @@ body,
 }
 
 .audio-controls-toggle {
-  margin-left: auto;
+  margin-left: 0;
   flex: 0 0 auto;
 }
 

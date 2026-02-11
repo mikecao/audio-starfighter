@@ -1,10 +1,12 @@
 import type { AudioAnalysisResult } from "../audio/types";
+import type { CombatConfigPatch, EnemyArchetypeId } from "../game/combatConfig";
 
 const RUN_SEED_STORAGE_KEY = "audio-starfighter.run-seed";
 
 type AudioPanelHandlers = {
   onAnalyze: (file: File) => Promise<AudioAnalysisResult>;
   onStartRun: (analysis: AudioAnalysisResult, seed: number) => void | Promise<void>;
+  onCombatConfigChange: (config: CombatConfigPatch) => void;
   onToggleUi: () => boolean;
 };
 
@@ -14,6 +16,15 @@ export type AudioPanel = {
   getAudioPlaybackTime: () => number;
   isAudioPlaying: () => boolean;
   loadFile: (file: File) => Promise<void>;
+};
+
+type UiCombatState = {
+  primaryProjectiles: boolean;
+  queuedCueShots: boolean;
+  cleanupLaser: boolean;
+  redCubeEnabled: boolean;
+  spawnScale: number;
+  fireScale: number;
 };
 
 export function createAudioPanel(
@@ -78,14 +89,82 @@ export function createAudioPanel(
 
   controlsMain.appendChild(controlsActions);
 
+  const controlsRight = document.createElement("div");
+  controlsRight.className = "audio-controls-bar__right";
+
+  const settingsButton = document.createElement("button");
+  settingsButton.type = "button";
+  settingsButton.className = "audio-controls__button audio-controls__button--secondary audio-controls-settings";
+  settingsButton.textContent = "Settings";
+  settingsButton.title = "Configure ship and enemy settings";
+  controlsRight.appendChild(settingsButton);
+
   const toggleUiButton = document.createElement("button");
   toggleUiButton.type = "button";
   toggleUiButton.className = "audio-controls-toggle";
   toggleUiButton.textContent = "Hide UI";
   toggleUiButton.title = "Toggle interface visibility";
+  controlsRight.appendChild(toggleUiButton);
 
-  controlsBar.append(controlsMain, toggleUiButton);
+  controlsBar.append(controlsMain, controlsRight);
   container.appendChild(controlsBar);
+
+  const settingsBackdrop = document.createElement("div");
+  settingsBackdrop.className = "audio-settings-modal-backdrop audio-settings-modal-backdrop--hidden";
+  const settingsModal = document.createElement("section");
+  settingsModal.className = "audio-settings-modal";
+
+  const settingsHeader = document.createElement("div");
+  settingsHeader.className = "audio-settings-modal__header";
+  const settingsTitle = document.createElement("h3");
+  settingsTitle.className = "audio-settings-modal__title";
+  settingsTitle.textContent = "Combat Settings";
+  settingsHeader.appendChild(settingsTitle);
+
+  const settingsForm = document.createElement("div");
+  settingsForm.className = "audio-settings-modal__form";
+
+  const shipGroup = document.createElement("fieldset");
+  shipGroup.className = "audio-settings-modal__group";
+  const shipLegend = document.createElement("legend");
+  shipLegend.className = "audio-settings-modal__legend";
+  shipLegend.textContent = "Ship";
+  shipGroup.appendChild(shipLegend);
+
+  const shipPrimaryToggle = createModalToggle("Primary Projectiles", true);
+  const shipCueToggle = createModalToggle("Queued Cue Shots", true);
+  const shipCleanupToggle = createModalToggle("Cleanup Laser", true);
+  shipGroup.append(shipPrimaryToggle.root, shipCueToggle.root, shipCleanupToggle.root);
+
+  const enemyGroup = document.createElement("fieldset");
+  enemyGroup.className = "audio-settings-modal__group";
+  const enemyLegend = document.createElement("legend");
+  enemyLegend.className = "audio-settings-modal__legend";
+  enemyLegend.textContent = "Enemies";
+  enemyGroup.appendChild(enemyLegend);
+
+  const enemyRedCubeToggle = createModalToggle("Red Cube", true);
+  const enemySpawnScale = createModalRange("Spawn Scale", 0.5, 2, 0.05, 1);
+  const enemyFireScale = createModalRange("Fire Scale", 0.5, 2, 0.05, 1);
+  enemyGroup.append(enemyRedCubeToggle.root, enemySpawnScale.root, enemyFireScale.root);
+
+  settingsForm.append(shipGroup, enemyGroup);
+
+  const settingsFooter = document.createElement("div");
+  settingsFooter.className = "audio-settings-modal__footer";
+  const settingsCancelButton = document.createElement("button");
+  settingsCancelButton.type = "button";
+  settingsCancelButton.className = "audio-controls__button audio-controls__button--secondary";
+  settingsCancelButton.textContent = "Cancel";
+  const settingsSaveButton = document.createElement("button");
+  settingsSaveButton.type = "button";
+  settingsSaveButton.className = "audio-controls__button";
+  settingsSaveButton.textContent = "Save";
+  settingsFooter.append(settingsCancelButton, settingsSaveButton);
+
+  settingsModal.append(settingsHeader, settingsForm, settingsFooter);
+  settingsBackdrop.appendChild(settingsModal);
+  container.appendChild(settingsBackdrop);
 
   const waveformPanel = document.createElement("section");
   waveformPanel.className = "waveform-panel";
@@ -113,6 +192,23 @@ export function createAudioPanel(
   let lastTimelineDrawPlaybackTime = -1;
   let placeholderText = "Load a track to view timeline.";
   let runStarting = false;
+  let combatState: UiCombatState = {
+    primaryProjectiles: true,
+    queuedCueShots: true,
+    cleanupLaser: true,
+    redCubeEnabled: true,
+    spawnScale: 1,
+    fireScale: 1
+  };
+
+  const setAnalysisSummary = (analysis: AudioAnalysisResult): void => {
+    summary.textContent = [
+      `BPM ${analysis.beat.bpm.toFixed(1)}`,
+      `Frames ${analysis.frames.length}`,
+      `Mood ${analysis.mood.label}`,
+      `Duration ${analysis.durationSeconds.toFixed(1)}s`
+    ].join(" | ");
+  };
 
   const resizeObserver = new ResizeObserver(() => {
     if (latestAnalysis) {
@@ -160,12 +256,7 @@ export function createAudioPanel(
       trackUrl = URL.createObjectURL(file);
       audio.src = trackUrl;
       audio.load();
-      summary.textContent = [
-        `BPM ${analysis.beat.bpm.toFixed(1)}`,
-        `Frames ${analysis.frames.length}`,
-        `Mood ${analysis.mood.label}`,
-        `Duration ${analysis.durationSeconds.toFixed(1)}s`
-      ].join(" | ");
+      setAnalysisSummary(analysis);
 
       drawTimeline(canvas, analysis, 0);
       lastTimelineDrawPlaybackTime = 0;
@@ -200,6 +291,104 @@ export function createAudioPanel(
     saveSeedToStorage(seedInput.value);
   });
 
+  const isSettingsModalOpen = (): boolean =>
+    !settingsBackdrop.classList.contains("audio-settings-modal-backdrop--hidden");
+
+  const closeSettingsModal = (): void => {
+    settingsBackdrop.classList.add("audio-settings-modal-backdrop--hidden");
+  };
+
+  const applyCombatStateToForm = (state: UiCombatState): void => {
+    shipPrimaryToggle.input.checked = state.primaryProjectiles;
+    shipCueToggle.input.checked = state.queuedCueShots;
+    shipCleanupToggle.input.checked = state.cleanupLaser;
+    enemyRedCubeToggle.input.checked = state.redCubeEnabled;
+    enemySpawnScale.input.value = state.spawnScale.toFixed(2);
+    enemyFireScale.input.value = state.fireScale.toFixed(2);
+    enemySpawnScale.value.textContent = `${state.spawnScale.toFixed(2)}x`;
+    enemyFireScale.value.textContent = `${state.fireScale.toFixed(2)}x`;
+  };
+
+  const readCombatStateFromForm = (): UiCombatState => ({
+    primaryProjectiles: shipPrimaryToggle.input.checked,
+    queuedCueShots: shipCueToggle.input.checked,
+    cleanupLaser: shipCleanupToggle.input.checked,
+    redCubeEnabled: enemyRedCubeToggle.input.checked,
+    spawnScale: Number(enemySpawnScale.input.value),
+    fireScale: Number(enemyFireScale.input.value)
+  });
+
+  const publishCombatState = (state: UiCombatState): void => {
+    const enabledArchetypes: EnemyArchetypeId[] = [];
+    if (state.redCubeEnabled) {
+      enabledArchetypes.push("redCube");
+    }
+    handlers.onCombatConfigChange({
+      shipWeapons: {
+        primaryProjectiles: state.primaryProjectiles,
+        queuedCueShots: state.queuedCueShots,
+        cleanupLaser: state.cleanupLaser
+      },
+      enemyRoster: {
+        enabledArchetypes,
+        spawnScale: state.spawnScale,
+        fireScale: state.fireScale
+      }
+    });
+  };
+
+  settingsButton.addEventListener("click", () => {
+    applyCombatStateToForm(combatState);
+    settingsBackdrop.classList.remove("audio-settings-modal-backdrop--hidden");
+  });
+
+  settingsCancelButton.addEventListener("click", () => {
+    closeSettingsModal();
+  });
+
+  settingsBackdrop.addEventListener("pointerdown", (event) => {
+    if (event.target === settingsBackdrop) {
+      closeSettingsModal();
+    }
+  });
+
+  enemySpawnScale.input.addEventListener("input", () => {
+    enemySpawnScale.value.textContent = `${Number(enemySpawnScale.input.value).toFixed(2)}x`;
+  });
+  enemyFireScale.input.addEventListener("input", () => {
+    enemyFireScale.value.textContent = `${Number(enemyFireScale.input.value).toFixed(2)}x`;
+  });
+
+  settingsSaveButton.addEventListener("click", async () => {
+    combatState = readCombatStateFromForm();
+    publishCombatState(combatState);
+    closeSettingsModal();
+
+    if (!latestAnalysis) {
+      return;
+    }
+
+    const seed = Number(seedInput.value);
+    const normalizedSeed = Number.isFinite(seed) ? seed : 7;
+    summary.textContent = "Applying settings and recomputing...";
+    runButton.disabled = true;
+    restartButton.disabled = true;
+
+    try {
+      await handlers.onStartRun(latestAnalysis, normalizedSeed);
+      setAnalysisSummary(latestAnalysis);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      summary.textContent = `Settings apply failed: ${message}`;
+    } finally {
+      runButton.disabled = latestAnalysis === null;
+      restartButton.disabled = latestAnalysis === null;
+    }
+  });
+
+  applyCombatStateToForm(combatState);
+  publishCombatState(combatState);
+
   window.addEventListener("beforeunload", () => {
     if (trackUrl) {
       URL.revokeObjectURL(trackUrl);
@@ -228,6 +417,12 @@ export function createAudioPanel(
     if (event.code === "KeyR") {
       event.preventDefault();
       void startRun("restart");
+      return;
+    }
+
+    if (event.code === "Escape" && isSettingsModalOpen()) {
+      event.preventDefault();
+      closeSettingsModal();
     }
   });
 
@@ -330,6 +525,71 @@ function loadSeedFromStorage(): string {
   } catch {
     return "7";
   }
+}
+
+type ModalToggleControl = {
+  root: HTMLLabelElement;
+  input: HTMLInputElement;
+};
+
+type ModalRangeControl = {
+  root: HTMLLabelElement;
+  input: HTMLInputElement;
+  value: HTMLSpanElement;
+};
+
+function createModalToggle(label: string, checked: boolean): ModalToggleControl {
+  const wrapper = document.createElement("label");
+  wrapper.className = "audio-settings-modal__check";
+
+  const input = document.createElement("input");
+  input.className = "audio-settings-modal__check-input";
+  input.type = "checkbox";
+  input.checked = checked;
+
+  const text = document.createElement("span");
+  text.className = "audio-settings-modal__check-text";
+  text.textContent = label;
+
+  wrapper.append(input, text);
+  return {
+    root: wrapper,
+    input
+  };
+}
+
+function createModalRange(
+  label: string,
+  min: number,
+  max: number,
+  step: number,
+  value: number
+): ModalRangeControl {
+  const wrapper = document.createElement("label");
+  wrapper.className = "audio-settings-modal__range";
+
+  const name = document.createElement("span");
+  name.className = "audio-settings-modal__range-name";
+  name.textContent = label;
+
+  const input = document.createElement("input");
+  input.className = "audio-settings-modal__range-input";
+  input.type = "range";
+  input.min = String(min);
+  input.max = String(max);
+  input.step = String(step);
+  input.value = String(value);
+
+  const valueEl = document.createElement("span");
+  valueEl.className = "audio-settings-modal__range-value";
+  valueEl.textContent = `${value.toFixed(2)}x`;
+
+  wrapper.append(name, input, valueEl);
+  return {
+    root: wrapper,
+    input,
+    value: valueEl
+  };
 }
 
 function saveSeedToStorage(value: string): void {

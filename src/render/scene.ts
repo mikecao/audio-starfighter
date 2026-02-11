@@ -92,10 +92,14 @@ export function setupScene(container: HTMLElement): RenderScene {
     side: DoubleSide,
     depthWrite: false
   });
-  const enemyBaseColor = new Color("#f87171");
-  const enemyHitColor = new Color("#fef08a");
-  const enemyBaseEmissive = new Color("#7f1d1d");
-  const enemyHitEmissive = new Color("#fde047");
+  const enemyRenderStyles = {
+    redCube: {
+      baseColor: new Color("#f87171"),
+      hitColor: new Color("#fef08a"),
+      baseEmissive: new Color("#7f1d1d"),
+      hitEmissive: new Color("#fde047")
+    }
+  };
   const enemyTintColor = new Color();
   const enemyTintEmissive = new Color();
   const enemyGeometry = new BoxGeometry(0.85, 0.85, 0.85);
@@ -111,6 +115,10 @@ export function setupScene(container: HTMLElement): RenderScene {
     emissive: "#06b6d4",
     emissiveIntensity: 0.7
   });
+  const cueProjectileColor = new Color("#fde047");
+  const cueProjectileEmissive = new Color("#f59e0b");
+  const primaryProjectileColor = new Color("#22d3ee");
+  const primaryProjectileEmissive = new Color("#06b6d4");
   const projectileGroup = new Group();
   scene.add(projectileGroup);
   const projectileMeshes: Mesh[] = [];
@@ -257,10 +265,11 @@ export function setupScene(container: HTMLElement): RenderScene {
           continue;
         }
         const flash = clamp01(enemy.damageFlash);
+        const style = enemyRenderStyles[enemy.archetype] ?? enemyRenderStyles.redCube;
         const material = mesh.material as MeshStandardMaterial;
-        enemyTintColor.lerpColors(enemyBaseColor, enemyHitColor, flash);
+        enemyTintColor.lerpColors(style.baseColor, style.hitColor, flash);
         material.color.copy(enemyTintColor);
-        enemyTintEmissive.lerpColors(enemyBaseEmissive, enemyHitEmissive, flash);
+        enemyTintEmissive.lerpColors(style.baseEmissive, style.hitEmissive, flash);
         material.emissive.copy(enemyTintEmissive);
         material.emissiveIntensity = (0.18 + intensity * 0.6) + flash * (0.45 + intensity * 0.35);
         material.opacity = entryAlpha * ENEMY_BASE_OPACITY;
@@ -277,7 +286,7 @@ export function setupScene(container: HTMLElement): RenderScene {
         snapshot.projectiles.length,
         projectileGroup,
         () => {
-          const mesh = new Mesh(playerProjectileGeometry, projectileMaterial);
+          const mesh = new Mesh(playerProjectileGeometry, projectileMaterial.clone());
           mesh.visible = false;
           return mesh;
         }
@@ -292,6 +301,18 @@ export function setupScene(container: HTMLElement): RenderScene {
         mesh.visible = true;
         mesh.position.set(projectile.x, projectile.y, projectile.z);
         mesh.rotation.z = projectile.rotationZ;
+        const material = mesh.material as MeshStandardMaterial;
+        if (projectile.isCueShot) {
+          material.color.copy(cueProjectileColor);
+          material.emissive.copy(cueProjectileEmissive);
+          material.emissiveIntensity = 1.2;
+          mesh.scale.set(1.6, 1.5, 1.5);
+        } else {
+          material.color.copy(primaryProjectileColor);
+          material.emissive.copy(primaryProjectileEmissive);
+          material.emissiveIntensity = 0.7;
+          mesh.scale.set(1, 1, 1);
+        }
       }
 
       syncMeshPool(

@@ -176,4 +176,89 @@ describe("simulation cue scheduling", () => {
     expect(boostedSnapshot.enemyCount).toBeGreaterThan(0);
     expect(boostedSnapshot.enemyProjectiles.length).toBeGreaterThan(0);
   });
+
+  it("lets primary projectile weapon be toggled independently", () => {
+    const withPrimary = createSimulation();
+    const withoutPrimary = createSimulation();
+    withPrimary.setEnemyBulletRatio(0);
+    withoutPrimary.setEnemyBulletRatio(0);
+    withoutPrimary.setShipWeapons({ primaryProjectiles: false });
+
+    let maxPlayerProjectilesWithPrimary = 0;
+    let maxPlayerProjectilesWithoutPrimary = 0;
+
+    for (let i = 0; i < 60 * 4; i += 1) {
+      withPrimary.step(1 / 60);
+      withoutPrimary.step(1 / 60);
+      maxPlayerProjectilesWithPrimary = Math.max(
+        maxPlayerProjectilesWithPrimary,
+        withPrimary.getSnapshot().projectiles.length
+      );
+      maxPlayerProjectilesWithoutPrimary = Math.max(
+        maxPlayerProjectilesWithoutPrimary,
+        withoutPrimary.getSnapshot().projectiles.length
+      );
+    }
+
+    expect(maxPlayerProjectilesWithPrimary).toBeGreaterThan(0);
+    expect(maxPlayerProjectilesWithoutPrimary).toBe(0);
+  });
+
+  it("keeps simulation stable when cleanup laser weapon is disabled", () => {
+    const sim = createSimulation();
+    sim.setShipWeapons({ cleanupLaser: false });
+    sim.setIntensityTimeline([
+      { timeSeconds: 0, intensity: 0.95 },
+      { timeSeconds: 4, intensity: 0.95 }
+    ]);
+
+    let maxLaserBeams = 0;
+    let maxEnemyCount = 0;
+    for (let i = 0; i < 60 * 8; i += 1) {
+      sim.step(1 / 60);
+      const snapshot = sim.getSnapshot();
+      maxLaserBeams = Math.max(maxLaserBeams, snapshot.laserBeams.length);
+      maxEnemyCount = Math.max(maxEnemyCount, snapshot.enemyCount);
+    }
+
+    const finalSnapshot = sim.getSnapshot();
+    expect(finalSnapshot.enemyCount).toBeGreaterThan(0);
+    expect(maxLaserBeams).toBe(0);
+    expect(maxEnemyCount).toBeLessThan(120);
+  });
+
+  it("surfaces enemy archetype in snapshots for roster-driven rendering", () => {
+    const sim = createSimulation();
+    sim.setEnemyRoster({
+      enabledArchetypes: ["redCube"],
+      spawnScale: 1.1,
+      fireScale: 0.95
+    });
+
+    for (let i = 0; i < 60 * 2; i += 1) {
+      sim.step(1 / 60);
+    }
+
+    const snapshot = sim.getSnapshot();
+    expect(snapshot.enemyCount).toBeGreaterThan(0);
+    expect(snapshot.enemies.every((enemy) => enemy.archetype === "redCube")).toBe(true);
+  });
+
+  it("emits cue-tagged projectiles when queued cue shots are enabled", () => {
+    const sim = createSimulation();
+    sim.setRandomSeed(17);
+    sim.startTrackRun([0.8, 1.2, 1.6, 2.0, 2.4, 2.8]);
+
+    let cueProjectileSeen = false;
+    for (let i = 0; i < 60 * 5; i += 1) {
+      sim.step(1 / 60);
+      const snapshot = sim.getSnapshot();
+      if (snapshot.projectiles.some((projectile) => projectile.isCueShot)) {
+        cueProjectileSeen = true;
+        break;
+      }
+    }
+
+    expect(cueProjectileSeen).toBe(true);
+  });
 });
