@@ -49,6 +49,7 @@ const uiOverlaySelectors = [
 
 function setUiHidden(hidden: boolean): void {
   uiHidden = hidden;
+  app!.classList.toggle("app--ui-hidden", hidden);
   for (const selector of uiOverlaySelectors) {
     const nodes = app!.querySelectorAll<HTMLElement>(selector);
     nodes.forEach((node) => {
