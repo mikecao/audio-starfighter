@@ -22,6 +22,130 @@ body,
   background: #030711;
 }
 
+.loading-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: rgb(2 6 16 / 76%);
+  backdrop-filter: blur(4px);
+}
+
+.loading-overlay--hidden {
+  display: none;
+}
+
+.loading-overlay__card {
+  width: min(460px, 100%);
+  padding: 1rem 1.1rem;
+  border-radius: 0.7rem;
+  border: 1px solid rgb(128 160 215 / 45%);
+  background: linear-gradient(180deg, rgb(8 18 37 / 98%), rgb(5 12 26 / 98%));
+  box-shadow: 0 16px 50px rgb(0 0 0 / 35%);
+}
+
+.loading-overlay__title {
+  margin: 0;
+  font-size: 0.9rem;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: #b8e3ff;
+}
+
+.loading-overlay__phase {
+  display: inline-flex;
+  align-items: center;
+  margin: 0.42rem 0 0;
+  padding: 0.16rem 0.42rem;
+  border-radius: 999px;
+  border: 1px solid rgb(130 156 205 / 55%);
+  font-family: "Consolas", "Courier New", monospace;
+  font-size: 0.63rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #d5e8ff;
+  background: rgb(10 19 37 / 85%);
+}
+
+.loading-overlay__phase--decode {
+  border-color: rgb(125 211 252 / 60%);
+  color: #c8efff;
+  background: rgb(10 31 54 / 78%);
+}
+
+.loading-overlay__phase--features {
+  border-color: rgb(110 231 183 / 62%);
+  color: #cffde4;
+  background: rgb(8 44 37 / 75%);
+}
+
+.loading-overlay__phase--beats {
+  border-color: rgb(253 230 138 / 66%);
+  color: #fff0c2;
+  background: rgb(55 40 7 / 74%);
+}
+
+.loading-overlay__phase--mood {
+  border-color: rgb(196 181 253 / 65%);
+  color: #ede4ff;
+  background: rgb(37 22 63 / 72%);
+}
+
+.loading-overlay__phase--cues {
+  border-color: rgb(251 146 60 / 66%);
+  color: #ffe2c7;
+  background: rgb(59 24 5 / 74%);
+}
+
+.loading-overlay__phase--precompute {
+  border-color: rgb(244 114 182 / 64%);
+  color: #ffd8ed;
+  background: rgb(56 14 40 / 74%);
+}
+
+.loading-overlay__phase--finalize {
+  border-color: rgb(148 163 184 / 64%);
+  color: #dde6f3;
+  background: rgb(26 34 49 / 75%);
+}
+
+.loading-overlay__message,
+.loading-overlay__percent {
+  margin: 0;
+  font-family: "Consolas", "Courier New", monospace;
+  font-size: 0.72rem;
+}
+
+.loading-overlay__message {
+  margin-top: 0.38rem;
+  color: #d9e8ff;
+}
+
+.loading-overlay__track {
+  margin-top: 0.62rem;
+  width: 100%;
+  height: 10px;
+  border-radius: 999px;
+  border: 1px solid rgb(95 132 196 / 52%);
+  background: rgb(8 18 36 / 92%);
+  overflow: hidden;
+}
+
+.loading-overlay__bar {
+  width: 0%;
+  height: 100%;
+  background: linear-gradient(90deg, #67e8f9, #93c5fd);
+  box-shadow: 0 0 12px rgb(103 232 249 / 45%);
+  transition: width 140ms ease-out;
+}
+
+.loading-overlay__percent {
+  margin-top: 0.35rem;
+  color: #9eb4d3;
+}
+
 .scene-host {
   position: relative;
   width: min(100%, 1920px);

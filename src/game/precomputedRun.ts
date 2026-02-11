@@ -16,14 +16,16 @@ export type PrecomputedRun = {
   getSnapshotAtTime: (timeSeconds: number) => SimulationSnapshot;
 };
 
-export function buildPrecomputedRun(params: {
+type BuildPrecomputedRunParams = {
   seed: number;
   moodProfile: MoodProfile;
   intensityTimeline: IntensitySample[];
   cueTimesSeconds: number[];
   durationSeconds: number;
   stepSeconds?: number;
-}): PrecomputedRun {
+};
+
+export function buildPrecomputedRun(params: BuildPrecomputedRunParams): PrecomputedRun {
   const buildStartMs = performance.now();
   const stepSeconds = params.stepSeconds ?? 1 / 180;
   const sim = createSimulation();
@@ -42,6 +44,54 @@ export function buildPrecomputedRun(params: {
     snapshots.push(sim.getSnapshot());
   }
 
+  return finalizePrecomputedRun(buildStartMs, stepSeconds, totalDurationSeconds, snapshots);
+}
+
+export async function buildPrecomputedRunAsync(
+  params: BuildPrecomputedRunParams,
+  options: {
+    onProgress?: (progress: number) => void;
+    chunkSize?: number;
+  } = {}
+): Promise<PrecomputedRun> {
+  const buildStartMs = performance.now();
+  const stepSeconds = params.stepSeconds ?? 1 / 180;
+  const sim = createSimulation();
+  sim.setRandomSeed(params.seed);
+  sim.setMoodProfile(params.moodProfile);
+  sim.setIntensityTimeline(params.intensityTimeline);
+  sim.startTrackRun(params.cueTimesSeconds);
+
+  const snapshots: SimulationSnapshot[] = [];
+  const totalDurationSeconds = Math.max(0, params.durationSeconds) + 3;
+  const totalSteps = Math.max(1, Math.ceil(totalDurationSeconds / stepSeconds));
+  const chunkSize = Math.max(1, Math.floor(options.chunkSize ?? 240));
+
+  options.onProgress?.(0);
+  snapshots.push(sim.getSnapshot());
+
+  for (let start = 0; start < totalSteps; start += chunkSize) {
+    const end = Math.min(totalSteps, start + chunkSize);
+    for (let i = start; i < end; i += 1) {
+      sim.step(stepSeconds);
+      snapshots.push(sim.getSnapshot());
+    }
+    options.onProgress?.(Math.min(1, end / totalSteps));
+    if (end < totalSteps) {
+      await waitForNextFrame();
+    }
+  }
+
+  options.onProgress?.(1);
+  return finalizePrecomputedRun(buildStartMs, stepSeconds, totalDurationSeconds, snapshots);
+}
+
+function finalizePrecomputedRun(
+  buildStartMs: number,
+  stepSeconds: number,
+  totalDurationSeconds: number,
+  snapshots: SimulationSnapshot[]
+): PrecomputedRun {
   const fallbackSnapshot = snapshots[snapshots.length - 1];
   const lookup = buildMillisecondIndexLookup(totalDurationSeconds, stepSeconds, snapshots.length);
 
@@ -64,6 +114,12 @@ export function buildPrecomputedRun(params: {
       return snapshots[index] ?? fallbackSnapshot;
     }
   };
+}
+
+function waitForNextFrame(): Promise<void> {
+  return new Promise((resolve) => {
+    requestAnimationFrame(() => resolve());
+  });
 }
 
 function buildMillisecondIndexLookup(

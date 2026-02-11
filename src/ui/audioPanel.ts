@@ -4,7 +4,7 @@ const RUN_SEED_STORAGE_KEY = "audio-starfighter.run-seed";
 
 type AudioPanelHandlers = {
   onAnalyze: (file: File) => Promise<AudioAnalysisResult>;
-  onStartRun: (analysis: AudioAnalysisResult, seed: number) => void;
+  onStartRun: (analysis: AudioAnalysisResult, seed: number) => void | Promise<void>;
   onExportSummary: (seed: number) => Record<string, unknown> | null;
 };
 
@@ -98,6 +98,7 @@ export function createAudioPanel(
   let playbackTimeSeconds = 0;
   let lastTimelineDrawPlaybackTime = -1;
   let placeholderText = "Load a track to view timeline.";
+  let runStarting = false;
 
   const resizeObserver = new ResizeObserver(() => {
     if (latestAnalysis) {
@@ -150,7 +151,7 @@ export function createAudioPanel(
 
       drawTimeline(canvas, analysis, 0);
       lastTimelineDrawPlaybackTime = 0;
-      startRun("start");
+      void startRun("start");
     } catch (error) {
       if (currentRequestId !== requestId) {
         return;
@@ -166,11 +167,11 @@ export function createAudioPanel(
   });
 
   runButton.addEventListener("click", () => {
-    startRun("start");
+    void startRun("start");
   });
 
   restartButton.addEventListener("click", () => {
-    startRun("restart");
+    void startRun("restart");
   });
 
   exportButton.addEventListener("click", () => {
@@ -224,7 +225,7 @@ export function createAudioPanel(
 
     if (event.code === "KeyR") {
       event.preventDefault();
-      startRun("restart");
+      void startRun("restart");
     }
   });
 
@@ -258,26 +259,44 @@ export function createAudioPanel(
     }
   };
 
-  function startRun(mode: "start" | "restart"): void {
-    if (!latestAnalysis) {
+  async function startRun(mode: "start" | "restart"): Promise<void> {
+    if (!latestAnalysis || runStarting) {
       return;
     }
 
     const seed = Number(seedInput.value);
-    handlers.onStartRun(latestAnalysis, Number.isFinite(seed) ? seed : 7);
-    playbackTimeSeconds = 0;
-    lastTimelineDrawPlaybackTime = -1;
-    audio.currentTime = 0;
-    void audio.play().catch(() => {
-      status.textContent =
-        mode === "start"
-          ? "Press play to start audio playback."
-          : "Press play to restart audio playback.";
-    });
+    runStarting = true;
+    runButton.disabled = true;
+    restartButton.disabled = true;
     status.textContent =
       mode === "start"
-        ? `Synced run started for ${latestAnalysis.fileName}`
-        : `Run restarted for ${latestAnalysis.fileName}`;
+        ? `Preparing synced run for ${latestAnalysis.fileName}...`
+        : `Preparing restart for ${latestAnalysis.fileName}...`;
+
+    try {
+      await handlers.onStartRun(latestAnalysis, Number.isFinite(seed) ? seed : 7);
+      playbackTimeSeconds = 0;
+      lastTimelineDrawPlaybackTime = -1;
+      audio.currentTime = 0;
+      void audio.play().catch(() => {
+        status.textContent =
+          mode === "start"
+            ? "Press play to start audio playback."
+            : "Press play to restart audio playback.";
+      });
+      status.textContent =
+        mode === "start"
+          ? `Synced run started for ${latestAnalysis.fileName}`
+          : `Run restarted for ${latestAnalysis.fileName}`;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      status.textContent = "Run start failed";
+      stats.textContent = message;
+    } finally {
+      runStarting = false;
+      runButton.disabled = latestAnalysis === null;
+      restartButton.disabled = latestAnalysis === null;
+    }
   }
 }
 

@@ -3,10 +3,14 @@ import { analyzeAudioTrack } from "./audio/analyze-track";
 import type { AudioAnalysisResult, FeatureFrame } from "./audio/types";
 import { setupScene } from "./render/scene";
 import { createSimulation, type SimulationSnapshot } from "./game/sim";
-import { buildPrecomputedRun, type PrecomputedRun } from "./game/precomputedRun";
+import {
+  buildPrecomputedRunAsync,
+  type PrecomputedRun
+} from "./game/precomputedRun";
 import { createDebugHud } from "./ui/debugHud";
 import { createAudioPanel } from "./ui/audioPanel";
 import { createEventTimeline } from "./ui/eventTimeline";
+import { createLoadingOverlay, type LoadingPhaseTone } from "./ui/loadingOverlay";
 
 const BEST_SCORE_STORAGE_PREFIX = "audio-starfighter.best-score";
 
@@ -19,6 +23,8 @@ if (!app) {
 const sceneHost = document.createElement("div");
 sceneHost.className = "scene-host";
 app.appendChild(sceneHost);
+
+const loadingOverlay = createLoadingOverlay(app);
 
 const uiHost = document.createElement("div");
 uiHost.className = "ui-host";
@@ -63,9 +69,25 @@ let cachedTimelineCues: Array<{ timeSeconds: number; source: "beat" | "peak" }> 
 let usingCueFallback = false;
 const audioPanel = createAudioPanel(uiHost, {
   onAnalyze(file) {
-    return analyzeAudioTrack(file);
+    loadingOverlay.show("Analyzing Audio", `Decoding ${file.name}...`, 0.02, "Decode", "decode");
+    return analyzeAudioTrack(file, {
+      onProgress(progress, message, stage) {
+        const phase = mapAnalyzeStageToPhase(stage);
+        loadingOverlay.setProgress(progress * 0.74, message, phase.label, phase.tone);
+      }
+    }).catch((error) => {
+      loadingOverlay.hide();
+      throw error;
+    });
   },
-  onStartRun(analysis, seed) {
+  async onStartRun(analysis, seed) {
+    loadingOverlay.show(
+      "Preparing Synced Run",
+      "Configuring simulation...",
+      0.76,
+      "Precompute",
+      "precompute"
+    );
     const runTimeline = buildRunTimelineEvents(analysis);
     const intensityTimeline = buildIntensityTimeline(analysis.frames);
     sim.setRandomSeed(seed);
@@ -73,21 +95,40 @@ const audioPanel = createAudioPanel(uiHost, {
     sim.setIntensityTimeline(intensityTimeline);
     const cueTimesSeconds = runTimeline.events.map((cue) => cue.timeSeconds);
     sim.startTrackRun(cueTimesSeconds);
-    precomputedRun = buildPrecomputedRun({
-      seed,
-      moodProfile: analysis.mood.label,
-      intensityTimeline,
-      cueTimesSeconds,
-      durationSeconds: analysis.durationSeconds
-    });
-    precomputeStatsText = formatPrecomputeStats(precomputedRun);
-    latestSnapshot = precomputedRun.getSnapshotAtTime(0);
-    cachedTimelineAnalysisRef = analysis;
-    cachedTimelineCues = runTimeline.events;
-    usingCueFallback = runTimeline.usingCueFallback;
-    appliedAnalysisRef = analysis;
-    currentRunKey = buildBestScoreKey(analysis.fileName, seed);
-    currentBestScore = loadBestScore(currentRunKey);
+    try {
+      precomputedRun = await buildPrecomputedRunAsync(
+        {
+          seed,
+          moodProfile: analysis.mood.label,
+          intensityTimeline,
+          cueTimesSeconds,
+          durationSeconds: analysis.durationSeconds
+        },
+        {
+          onProgress(progress) {
+            const done = progress >= 1;
+            loadingOverlay.setProgress(
+              0.76 + progress * 0.24,
+              done
+                ? "Finalizing replay cache..."
+                : `Precomputing replay ${(progress * 100).toFixed(0)}%`,
+              done ? "Finalize" : "Precompute",
+              done ? "finalize" : "precompute"
+            );
+          }
+        }
+      );
+      precomputeStatsText = formatPrecomputeStats(precomputedRun);
+      latestSnapshot = precomputedRun.getSnapshotAtTime(0);
+      cachedTimelineAnalysisRef = analysis;
+      cachedTimelineCues = runTimeline.events;
+      usingCueFallback = runTimeline.usingCueFallback;
+      appliedAnalysisRef = analysis;
+      currentRunKey = buildBestScoreKey(analysis.fileName, seed);
+      currentBestScore = loadBestScore(currentRunKey);
+    } finally {
+      loadingOverlay.hide();
+    }
   },
   onExportSummary(seed) {
     const analysis = audioPanel.getLatestAnalysis();
@@ -361,4 +402,22 @@ function saveBestScore(key: string, value: number): void {
 function formatPrecomputeStats(run: PrecomputedRun): string {
   const mb = run.estimatedBytes / (1024 * 1024);
   return `${run.snapshots.length} frames | ${run.buildMs.toFixed(0)}ms | ${mb.toFixed(1)}MB`;
+}
+
+function mapAnalyzeStageToPhase(stage: string): { label: string; tone: LoadingPhaseTone } {
+  switch (stage) {
+    case "features":
+      return { label: "Features", tone: "features" };
+    case "beats":
+      return { label: "Beat Detect", tone: "beats" };
+    case "mood":
+      return { label: "Mood", tone: "mood" };
+    case "cues":
+      return { label: "Cue Build", tone: "cues" };
+    case "finalize":
+      return { label: "Finalize", tone: "finalize" };
+    case "decode":
+    default:
+      return { label: "Decode", tone: "decode" };
+  }
 }
