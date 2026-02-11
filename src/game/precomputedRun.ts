@@ -61,6 +61,7 @@ export async function buildPrecomputedRunAsync(
   options: {
     onProgress?: (progress: number) => void;
     chunkSize?: number;
+    maxChunkMs?: number;
   } = {}
 ): Promise<PrecomputedRun> {
   const buildStartMs = performance.now();
@@ -81,18 +82,29 @@ export async function buildPrecomputedRunAsync(
   const totalDurationSeconds = Math.max(0, params.durationSeconds) + 3;
   const totalSteps = Math.max(1, Math.ceil(totalDurationSeconds / stepSeconds));
   const chunkSize = Math.max(1, Math.floor(options.chunkSize ?? 240));
+  const maxChunkMs = clamp(options.maxChunkMs ?? 8, 2, 40);
 
   options.onProgress?.(0);
   snapshots.push(sim.getSnapshot());
 
-  for (let start = 0; start < totalSteps; start += chunkSize) {
-    const end = Math.min(totalSteps, start + chunkSize);
-    for (let i = start; i < end; i += 1) {
+  let processedSteps = 0;
+  while (processedSteps < totalSteps) {
+    const chunkStartMs = performance.now();
+    let chunkSteps = 0;
+
+    while (processedSteps < totalSteps && chunkSteps < chunkSize) {
       sim.step(stepSeconds);
       snapshots.push(sim.getSnapshot());
+      processedSteps += 1;
+      chunkSteps += 1;
+
+      if (chunkSteps >= 6 && performance.now() - chunkStartMs >= maxChunkMs) {
+        break;
+      }
     }
-    options.onProgress?.(Math.min(1, end / totalSteps));
-    if (end < totalSteps) {
+
+    options.onProgress?.(Math.min(1, processedSteps / totalSteps));
+    if (processedSteps < totalSteps) {
       await waitForNextFrame();
     }
   }
@@ -137,6 +149,10 @@ function waitForNextFrame(): Promise<void> {
   });
 }
 
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
 function buildMillisecondIndexLookup(
   durationSeconds: number,
   stepSeconds: number,
@@ -161,7 +177,7 @@ function estimateSnapshotBytes(snapshots: SimulationSnapshot[]): number {
     bytes += 26 * 8;
     bytes += snapshot.enemies.length * 5 * 8;
     bytes += snapshot.projectiles.length * 6 * 8;
-    bytes += snapshot.missiles.length * 5 * 8;
+    bytes += snapshot.missiles.length * 14 * 8;
     bytes += snapshot.enemyProjectiles.length * 4 * 8;
     bytes += snapshot.laserBeams.length * 5 * 8;
     bytes += snapshot.explosions.length * 7 * 8;

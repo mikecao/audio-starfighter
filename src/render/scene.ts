@@ -17,9 +17,11 @@ import {
   RingGeometry,
   Scene,
   SphereGeometry,
+  Vector2,
   Vector3,
   WebGLRenderer
 } from "three";
+import { MeshLine, MeshLineMaterial } from "three.meshline";
 import type { SimulationSnapshot } from "../game/sim";
 
 export type RenderScene = {
@@ -49,6 +51,7 @@ export function setupScene(container: HTMLElement): RenderScene {
   renderer.setSize(FIXED_RENDER_WIDTH, FIXED_RENDER_HEIGHT, false);
   renderer.domElement.classList.add("main-scene-canvas");
   container.appendChild(renderer.domElement);
+  const meshLineResolution = new Vector2(FIXED_RENDER_WIDTH, FIXED_RENDER_HEIGHT);
 
   const ambientLight = new AmbientLight("#c7ced9", 0.4);
   scene.add(ambientLight);
@@ -122,17 +125,16 @@ export function setupScene(container: HTMLElement): RenderScene {
   const projectileGroup = new Group();
   scene.add(projectileGroup);
   const projectileMeshes: Mesh[] = [];
-  const missileGeometry = new SphereGeometry(0.18, 12, 10);
-  const missileMaterial = new MeshStandardMaterial({
-    color: "#a855f7",
-    roughness: 0.18,
-    metalness: 0.42,
-    emissive: "#7e22ce",
-    emissiveIntensity: 1
-  });
-  const missileGroup = new Group();
-  scene.add(missileGroup);
-  const missileMeshes: Mesh[] = [];
+  const purplePulseGroup = new Group();
+  scene.add(purplePulseGroup);
+  const purplePulses: PurplePulseRenderable[] = [];
+  const purplePulseIndexByMissileId = new Map<number, number>();
+  syncPurplePulsePool(
+    purplePulses,
+    PURPLE_PULSE_MAX_POOL_SIZE,
+    purplePulseGroup,
+    meshLineResolution
+  );
   const enemyProjectileGeometry = new SphereGeometry(0.15, 12, 8);
   const enemyProjectileMaterial = new MeshStandardMaterial({
     color: "#fb7185",
@@ -160,6 +162,7 @@ export function setupScene(container: HTMLElement): RenderScene {
   let previousShipTimeSeconds = 0;
   let hasPreviousShipY = false;
   let shipPitch = 0;
+  let lastMissileTrailSnapshotTime = -1;
 
   const explosionGeometry = new SphereGeometry(0.4, 10, 8);
   const explosionMaterial = new MeshBasicMaterial({
@@ -218,6 +221,11 @@ export function setupScene(container: HTMLElement): RenderScene {
     renderer.domElement.style.height = `${displayHeight}px`;
     renderer.domElement.style.left = `${(width - displayWidth) * 0.5}px`;
     renderer.domElement.style.top = `${(height - displayHeight) * 0.5}px`;
+
+    meshLineResolution.set(displayWidth, displayHeight);
+    for (const pulse of purplePulses) {
+      pulse.material.resolution = meshLineResolution;
+    }
 
     const halfWidth = ORTHO_HALF_HEIGHT * targetAspect;
     camera.left = -halfWidth;
@@ -347,24 +355,74 @@ export function setupScene(container: HTMLElement): RenderScene {
         mesh.position.set(projectile.x, projectile.y, projectile.z);
       }
 
-      syncMeshPool(missileMeshes, snapshot.missiles.length, missileGroup, () => {
-        const mesh = new Mesh(missileGeometry, missileMaterial.clone());
-        mesh.visible = false;
-        return mesh;
-      });
-      for (let i = 0; i < missileMeshes.length; i += 1) {
-        const mesh = missileMeshes[i];
-        const missile = snapshot.missiles[i];
-        if (!missile) {
-          mesh.visible = false;
-          continue;
+      if (snapshot.simTimeSeconds < lastMissileTrailSnapshotTime - 1e-6) {
+        for (const pulse of purplePulses) {
+          clearPurplePulseRenderable(pulse);
+        }
+        purplePulseIndexByMissileId.clear();
+      }
+      lastMissileTrailSnapshotTime = snapshot.simTimeSeconds;
+
+      if (snapshot.purpleMissileEnabled) {
+        const missileById = new Map<number, SimulationSnapshot["missiles"][number]>();
+        for (const missile of snapshot.missiles) {
+          missileById.set(missile.id, missile);
         }
 
-        mesh.visible = true;
-        mesh.position.set(missile.x, missile.y, missile.z + 0.01);
-        mesh.rotation.z = missile.rotationZ;
-        const pulse = 1 + Math.sin(snapshot.simTimeSeconds * 16 + i) * 0.08;
-        mesh.scale.set(1.35, pulse, pulse * 0.95);
+        let bindingsThisFrame = 0;
+        for (const missile of snapshot.missiles) {
+          if (purplePulseIndexByMissileId.has(missile.id)) {
+            continue;
+          }
+          if (bindingsThisFrame >= PURPLE_PULSE_MAX_NEW_BINDINGS_PER_FRAME) {
+            break;
+          }
+
+          const freeIndex = purplePulses.findIndex((pulse) => pulse.missileId === null);
+          if (freeIndex < 0) {
+            break;
+          }
+
+          const pulse = purplePulses[freeIndex];
+          bindPurplePulseRenderable(pulse, missile);
+          purplePulseIndexByMissileId.set(missile.id, freeIndex);
+          bindingsThisFrame += 1;
+        }
+
+        for (let i = 0; i < purplePulses.length; i += 1) {
+          const pulse = purplePulses[i];
+          if (pulse.missileId === null) {
+            continue;
+          }
+
+          const missile = missileById.get(pulse.missileId);
+          if (missile) {
+            pulse.animationDurationSeconds = Math.max(
+              PURPLE_PULSE_MIN_DURATION_SECONDS,
+              missile.maxLifetimeSeconds
+            );
+            pulse.animationStartTimeSeconds = snapshot.simTimeSeconds - missile.ageSeconds;
+          }
+
+          pulse.mesh.visible = true;
+          const elapsed = snapshot.simTimeSeconds - pulse.animationStartTimeSeconds;
+          const progress = clamp01(elapsed / Math.max(1e-4, pulse.animationDurationSeconds));
+          setDashOffset(pulse.material, -lerp(PURPLE_PULSE_DASH_START, PURPLE_PULSE_DASH_END, progress));
+          setDashRatio(pulse.material, PURPLE_PULSE_TRAVEL_DASH_RATIO);
+          pulse.material.opacity = 0.92 * (1 - progress * 0.1);
+
+          if (progress >= 1) {
+            if (pulse.missileId !== null) {
+              purplePulseIndexByMissileId.delete(pulse.missileId);
+            }
+            clearPurplePulseRenderable(pulse);
+          }
+        }
+      } else {
+        for (const pulse of purplePulses) {
+          clearPurplePulseRenderable(pulse);
+        }
+        purplePulseIndexByMissileId.clear();
       }
 
       syncMeshPool(laserMeshes, snapshot.laserBeams.length, laserGroup, () => {
@@ -477,6 +535,186 @@ function syncMeshPool(
   }
 }
 
+function syncPurplePulsePool(
+  pulses: PurplePulseRenderable[],
+  requiredCount: number,
+  parent: Group,
+  resolution: Vector2
+): void {
+  while (pulses.length < requiredCount) {
+    const line = new MeshLine();
+    line.setPoints([0, 0, MISSILE_TRAIL_Z_OFFSET, 0.01, 0, MISSILE_TRAIL_Z_OFFSET]);
+    const material = createPurplePulseMaterial(resolution);
+    const mesh = new Mesh(line, material);
+    mesh.frustumCulled = false;
+    mesh.visible = false;
+    parent.add(mesh);
+    pulses.push({
+      mesh,
+      line,
+      material,
+      missileId: null,
+      animationStartTimeSeconds: -1,
+      animationDurationSeconds: PURPLE_PULSE_MIN_DURATION_SECONDS
+    });
+  }
+}
+
+function createPurplePulseMaterial(resolution: Vector2): MeshLineMaterial {
+  return new MeshLineMaterial({
+    color: "#a855f7",
+    transparent: true,
+    opacity: 0.92,
+    lineWidth: MISSILE_TRAIL_LINE_WIDTH,
+    dashArray: 1,
+    dashRatio: PURPLE_PULSE_TRAVEL_DASH_RATIO,
+    dashOffset: 0,
+    sizeAttenuation: 1,
+    resolution,
+    blending: AdditiveBlending,
+    depthWrite: false,
+    depthTest: true
+  });
+}
+
+function bindPurplePulseRenderable(
+  pulse: PurplePulseRenderable,
+  missile: SimulationSnapshot["missiles"][number]
+): void {
+  pulse.line.setPoints(
+    buildPurplePulsePathPoints(
+      missile.launchX,
+      missile.launchY,
+      missile.targetX,
+      missile.targetY,
+      missile.loopDirection,
+      missile.loopTurns,
+      missile.pathVariant
+    )
+  );
+  pulse.missileId = missile.id;
+  setDashOffset(pulse.material, 0);
+  setDashRatio(pulse.material, PURPLE_PULSE_TRAVEL_DASH_RATIO);
+}
+
+function clearPurplePulseRenderable(pulse: PurplePulseRenderable): void {
+  pulse.missileId = null;
+  pulse.animationStartTimeSeconds = -1;
+  pulse.animationDurationSeconds = PURPLE_PULSE_MIN_DURATION_SECONDS;
+  pulse.mesh.visible = false;
+  setDashOffset(pulse.material, 0);
+  setDashRatio(pulse.material, PURPLE_PULSE_TRAVEL_DASH_RATIO);
+}
+
+function buildPurplePulsePathPoints(
+  startX: number,
+  startY: number,
+  targetX: number,
+  targetY: number,
+  loopDirection: number,
+  loopTurns: number,
+  pathVariant: number
+): Float32Array {
+  const dx = targetX - startX;
+  const dy = targetY - startY;
+  const distance = Math.max(1, Math.hypot(dx, dy));
+  const dirX = dx / distance;
+  const dirY = dy / distance;
+  const perpX = -dirY;
+  const perpY = dirX;
+
+  const variant = clamp(pathVariant, 0, 1);
+  const variantPhase = variant * Math.PI * 2;
+
+  const loopRadius = clamp(distance * (0.58 + variant * 0.22), 3.1, 8.6);
+  const launchBackDrift =
+    PURPLE_PULSE_BACK_DRIFT_MIN +
+    variant * (PURPLE_PULSE_BACK_DRIFT_MAX - PURPLE_PULSE_BACK_DRIFT_MIN);
+  const launchArcStrength =
+    PURPLE_PULSE_LAUNCH_ARC_MIN +
+    Math.abs(Math.sin(variantPhase * 0.73)) *
+      (PURPLE_PULSE_LAUNCH_ARC_MAX - PURPLE_PULSE_LAUNCH_ARC_MIN);
+  const loopSide = loopDirection < 0 ? -1 : 1;
+  const turns = clamp(loopTurns + (variant - 0.5) * 0.28, 1.04, 1.52);
+  const axialSweep = clamp(PURPLE_PULSE_AXIAL_SWEEP_BASE + (variant - 0.5) * 0.18, 0.2, 0.52);
+  const envelopePower = clamp(PURPLE_PULSE_ENVELOPE_POWER_BASE + (0.5 - variant) * 0.2, 0.58, 0.9);
+  const pointCount = PURPLE_PULSE_TOTAL_SAMPLES;
+  const points = new Float32Array(pointCount * 3);
+
+  for (let i = 0; i < pointCount; i += 1) {
+    const t = pointCount > 1 ? i / (pointCount - 1) : 0;
+    const easedT = easeInOutSine(t);
+    const delayedVerticalT = clamp(
+      (t - PURPLE_PULSE_VERTICAL_DELAY_PORTION) /
+        Math.max(1e-4, 1 - PURPLE_PULSE_VERTICAL_DELAY_PORTION),
+      0,
+      1
+    );
+    const easedVerticalT = easeInOutSine(delayedVerticalT);
+    const angle = turns * Math.PI * 2 * t + variantPhase * 0.16;
+    const envelope = Math.pow(Math.sin(Math.PI * t), envelopePower);
+
+    const lateralPrimary = Math.sin(angle) * loopRadius * envelope;
+    const lateralSecondary =
+      Math.sin(angle * (1.62 + variant * 0.46) + variantPhase * 0.9) *
+      loopRadius *
+      (0.08 + variant * 0.08) *
+      envelope;
+    const lateral = (lateralPrimary + lateralSecondary) * loopSide;
+
+    const axialLoop = (Math.cos(angle) - 1) * loopRadius * axialSweep * envelope;
+    const launchBack =
+      -launchBackDrift * t * Math.pow(1 - t, 2) * (1 + PURPLE_PULSE_BACK_DRIFT_BOOST * (1 - t));
+    const launchArc =
+      loopSide *
+      launchArcStrength *
+      t *
+      Math.pow(1 - t, 1.85) *
+      distance *
+      0.24;
+
+    const baseX = startX + dx * easedT;
+    const baseY = startY + dy * easedVerticalT;
+    const verticalOffset = (perpY * lateral + dirY * axialLoop) * easedVerticalT;
+    const offset = i * 3;
+    const x = baseX + perpX * lateral + dirX * axialLoop + launchBack;
+    let y = baseY + verticalOffset + launchArc;
+    if (t <= PURPLE_PULSE_LAUNCH_CLAMP_PORTION) {
+      const dxFromStart = Math.abs(x - startX);
+      const maxDy = dxFromStart * PURPLE_PULSE_MAX_LAUNCH_SLOPE;
+      y = startY + clamp(y - startY, -maxDy, maxDy);
+    }
+
+    points[offset] = x;
+    points[offset + 1] = y;
+    points[offset + 2] = MISSILE_TRAIL_Z_OFFSET;
+  }
+
+  return points;
+}
+
+function easeInOutSine(t: number): number {
+  return 0.5 - 0.5 * Math.cos(Math.PI * t);
+}
+
+function lerp(start: number, end: number, t: number): number {
+  return start + (end - start) * t;
+}
+
+function setDashOffset(material: MeshLineMaterial, value: number): void {
+  const dashOffsetUniform = material.uniforms.dashOffset;
+  if (dashOffsetUniform) {
+    dashOffsetUniform.value = value;
+  }
+}
+
+function setDashRatio(material: MeshLineMaterial, value: number): void {
+  const dashRatioUniform = material.uniforms.dashRatio;
+  if (dashRatioUniform) {
+    dashRatioUniform.value = value;
+  }
+}
+
 type StarLayer = {
   primary: Points;
   wrap: Points;
@@ -484,6 +722,15 @@ type StarLayer = {
   parallaxFactor: number;
   loopWidth: number;
   baseOpacity: number;
+};
+
+type PurplePulseRenderable = {
+  mesh: Mesh;
+  line: MeshLine;
+  material: MeshLineMaterial;
+  missileId: number | null;
+  animationStartTimeSeconds: number;
+  animationDurationSeconds: number;
 };
 
 type ExplosionBurst = {
@@ -503,6 +750,26 @@ type ExplosionPalette = {
 const ARCADE_PARTICLE_COUNT = 40;
 const ARCADE_CORE_SCALE_MULTIPLIER = 2.35;
 const ARCADE_RING_MAX_SCALE = 7.2;
+const MISSILE_TRAIL_LINE_WIDTH = 0.06;
+const MISSILE_TRAIL_Z_OFFSET = 0.018;
+const PURPLE_PULSE_TRAVEL_DASH_RATIO = 0.9;
+const PURPLE_PULSE_MIN_DURATION_SECONDS = 0.72;
+const PURPLE_PULSE_MIN_POOL_SIZE = 4;
+const PURPLE_PULSE_MAX_POOL_SIZE = 20;
+const PURPLE_PULSE_MAX_NEW_BINDINGS_PER_FRAME = 5;
+const PURPLE_PULSE_TOTAL_SAMPLES = 96;
+const PURPLE_PULSE_VERTICAL_DELAY_PORTION = 0.26;
+const PURPLE_PULSE_AXIAL_SWEEP_BASE = 0.28;
+const PURPLE_PULSE_BACK_DRIFT_MIN = 0.72;
+const PURPLE_PULSE_BACK_DRIFT_MAX = 1.48;
+const PURPLE_PULSE_BACK_DRIFT_BOOST = 1.28;
+const PURPLE_PULSE_ENVELOPE_POWER_BASE = 0.72;
+const PURPLE_PULSE_LAUNCH_ARC_MIN = 0.28;
+const PURPLE_PULSE_LAUNCH_ARC_MAX = 0.92;
+const PURPLE_PULSE_LAUNCH_CLAMP_PORTION = 0.32;
+const PURPLE_PULSE_MAX_LAUNCH_SLOPE = 1;
+const PURPLE_PULSE_DASH_START = 1 - PURPLE_PULSE_TRAVEL_DASH_RATIO + 0.001;
+const PURPLE_PULSE_DASH_END = 1;
 const EXPLOSION_PALETTES: ExplosionPalette[] = [
   {
     coreStart: new Color("#f472b6"),
@@ -683,6 +950,10 @@ function hash01(seed: number): number {
 
 function clamp01(value: number): number {
   return Math.max(0, Math.min(1, value));
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
 }
 
 function normalizeExplosionPower(power: number): number {

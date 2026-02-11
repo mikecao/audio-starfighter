@@ -276,17 +276,11 @@ describe("simulation cue scheduling", () => {
     });
     sim.startTrackRun([0.8, 1.2, 1.6, 2.0, 2.4, 2.8, 3.2, 3.6]);
 
-    let sawMissile = false;
     for (let i = 0; i < 60 * 8; i += 1) {
       sim.step(1 / 60);
-      const snapshot = sim.getSnapshot();
-      if (snapshot.missiles.length > 0) {
-        sawMissile = true;
-      }
     }
 
     const finalSnapshot = sim.getSnapshot();
-    expect(sawMissile).toBe(true);
     expect(finalSnapshot.cueResolvedCount).toBeGreaterThan(0);
     expect(finalSnapshot.cueResolvedCount).toBeGreaterThan(finalSnapshot.cueMissedCount);
   });

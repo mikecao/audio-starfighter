@@ -18,6 +18,16 @@ const ANALYSIS_PROGRESS_START = 0.02;
 const ANALYSIS_PROGRESS_END = 0.2;
 const PRECOMPUTE_PROGRESS_START = 0.24;
 const PRECOMPUTE_PROGRESS_SPAN = 0.76;
+const PRECOMPUTE_CHUNK_SIZE_DEFAULT = 120;
+const PRECOMPUTE_CHUNK_SIZE_PURPLE = 48;
+const PRECOMPUTE_MAX_CHUNK_MS_DEFAULT = 10;
+const PRECOMPUTE_MAX_CHUNK_MS_PURPLE = 5;
+const PRECOMPUTE_STEP_SECONDS_DEFAULT = 1 / 180;
+const PRECOMPUTE_STEP_SECONDS_PURPLE = 1 / 96;
+const DEMO_RUN_SEED = 7;
+const DEMO_CUE_START_SECONDS = 0.7;
+const DEMO_CUE_END_SECONDS = 360;
+const DEMO_CUE_INTERVAL_SECONDS = 0.55;
 let currentCombatConfig: CombatConfigPatch = {
   shipWeapons: {
     primaryProjectiles: true,
@@ -121,6 +131,7 @@ const audioPanel = createAudioPanel(uiHost, {
     const cueTimesSeconds = runTimeline.events.map((cue) => cue.timeSeconds);
     sim.startTrackRun(cueTimesSeconds);
     try {
+      const usesPurpleMissile = currentCombatConfig.shipWeapons?.purpleMissile === true;
       precomputedRun = await buildPrecomputedRunAsync(
         {
           seed,
@@ -128,10 +139,17 @@ const audioPanel = createAudioPanel(uiHost, {
           intensityTimeline,
           cueTimesSeconds,
           durationSeconds: analysis.durationSeconds,
+          stepSeconds: usesPurpleMissile
+            ? PRECOMPUTE_STEP_SECONDS_PURPLE
+            : PRECOMPUTE_STEP_SECONDS_DEFAULT,
           enemyBulletRatio: ENEMY_BULLET_RATIO,
           combatConfig: currentCombatConfig
         },
         {
+          chunkSize: usesPurpleMissile ? PRECOMPUTE_CHUNK_SIZE_PURPLE : PRECOMPUTE_CHUNK_SIZE_DEFAULT,
+          maxChunkMs: usesPurpleMissile
+            ? PRECOMPUTE_MAX_CHUNK_MS_PURPLE
+            : PRECOMPUTE_MAX_CHUNK_MS_DEFAULT,
           onProgress(progress) {
             const done = progress >= 1;
             loadingOverlay.setProgress(
@@ -165,6 +183,10 @@ const audioPanel = createAudioPanel(uiHost, {
     return uiHidden;
   }
 });
+
+sim.setRandomSeed(DEMO_RUN_SEED);
+sim.startTrackRun(buildDemoCueTimes());
+latestSnapshot = sim.getSnapshot();
 
 let dragFileDepth = 0;
 
@@ -431,6 +453,19 @@ function buildRunTimelineEvents(analysis: AudioAnalysisResult): {
     events: cueEvents,
     usingCueFallback: true
   };
+}
+
+function buildDemoCueTimes(): number[] {
+  const cues: number[] = [];
+  let t = DEMO_CUE_START_SECONDS;
+  let index = 0;
+  while (t <= DEMO_CUE_END_SECONDS) {
+    cues.push(Number(t.toFixed(3)));
+    const jitter = ((index % 4) - 1.5) * 0.018;
+    t += DEMO_CUE_INTERVAL_SECONDS + jitter;
+    index += 1;
+  }
+  return cues;
 }
 
 function loadBestScore(key: string): number {
