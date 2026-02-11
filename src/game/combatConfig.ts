@@ -1,9 +1,9 @@
 export type EnemyArchetypeId = "redCube";
 
 export type ShipWeaponsConfig = {
-  primaryProjectiles: boolean;
-  queuedCueShots: boolean;
-  cleanupLaser: boolean;
+  blueLaser: boolean;
+  yellowLaser: boolean;
+  greenLaser: boolean;
   purpleMissile: boolean;
 };
 
@@ -43,9 +43,9 @@ export const ENEMY_ARCHETYPE_DEFINITIONS: Record<EnemyArchetypeId, EnemyArchetyp
 
 export const DEFAULT_COMBAT_CONFIG: CombatConfig = {
   shipWeapons: {
-    primaryProjectiles: true,
-    queuedCueShots: true,
-    cleanupLaser: true,
+    blueLaser: true,
+    yellowLaser: true,
+    greenLaser: true,
     purpleMissile: false
   },
   enemyRoster: {
@@ -60,9 +60,9 @@ export function normalizeCombatConfig(
   base: CombatConfig = DEFAULT_COMBAT_CONFIG
 ): CombatConfig {
   const shipWeapons: ShipWeaponsConfig = {
-    primaryProjectiles: patch?.shipWeapons?.primaryProjectiles ?? base.shipWeapons.primaryProjectiles,
-    queuedCueShots: patch?.shipWeapons?.queuedCueShots ?? base.shipWeapons.queuedCueShots,
-    cleanupLaser: patch?.shipWeapons?.cleanupLaser ?? base.shipWeapons.cleanupLaser,
+    blueLaser: patch?.shipWeapons?.blueLaser ?? base.shipWeapons.blueLaser,
+    yellowLaser: patch?.shipWeapons?.yellowLaser ?? base.shipWeapons.yellowLaser,
+    greenLaser: patch?.shipWeapons?.greenLaser ?? base.shipWeapons.greenLaser,
     purpleMissile: patch?.shipWeapons?.purpleMissile ?? base.shipWeapons.purpleMissile
   };
 

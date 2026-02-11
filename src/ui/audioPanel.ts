@@ -19,9 +19,9 @@ export type AudioPanel = {
 };
 
 type UiCombatState = {
-  primaryProjectiles: boolean;
-  queuedCueShots: boolean;
-  cleanupLaser: boolean;
+  blueLaser: boolean;
+  yellowLaser: boolean;
+  greenLaser: boolean;
   purpleMissile: boolean;
   redCubeEnabled: boolean;
   spawnScale: number;
@@ -29,9 +29,9 @@ type UiCombatState = {
 };
 
 const DEFAULT_COMBAT_STATE: UiCombatState = {
-  primaryProjectiles: true,
-  queuedCueShots: true,
-  cleanupLaser: true,
+  blueLaser: true,
+  yellowLaser: true,
+  greenLaser: true,
   purpleMissile: false,
   redCubeEnabled: true,
   spawnScale: 1,
@@ -313,9 +313,9 @@ export function createAudioPanel(
   };
 
   const applyCombatStateToForm = (state: UiCombatState): void => {
-    shipPrimaryToggle.input.checked = state.primaryProjectiles;
-    shipCueToggle.input.checked = state.queuedCueShots;
-    shipCleanupToggle.input.checked = state.cleanupLaser;
+    shipPrimaryToggle.input.checked = state.blueLaser;
+    shipCueToggle.input.checked = state.yellowLaser;
+    shipCleanupToggle.input.checked = state.greenLaser;
     shipPurpleToggle.input.checked = state.purpleMissile;
     enemyRedCubeToggle.input.checked = state.redCubeEnabled;
     enemySpawnScale.input.value = state.spawnScale.toFixed(2);
@@ -325,9 +325,9 @@ export function createAudioPanel(
   };
 
   const readCombatStateFromForm = (): UiCombatState => ({
-    primaryProjectiles: shipPrimaryToggle.input.checked,
-    queuedCueShots: shipCueToggle.input.checked,
-    cleanupLaser: shipCleanupToggle.input.checked,
+    blueLaser: shipPrimaryToggle.input.checked,
+    yellowLaser: shipCueToggle.input.checked,
+    greenLaser: shipCleanupToggle.input.checked,
     purpleMissile: shipPurpleToggle.input.checked,
     redCubeEnabled: enemyRedCubeToggle.input.checked,
     spawnScale: Number(enemySpawnScale.input.value),
@@ -341,9 +341,9 @@ export function createAudioPanel(
     }
     handlers.onCombatConfigChange({
       shipWeapons: {
-        primaryProjectiles: state.primaryProjectiles,
-        queuedCueShots: state.queuedCueShots,
-        cleanupLaser: state.cleanupLaser,
+        blueLaser: state.blueLaser,
+        yellowLaser: state.yellowLaser,
+        greenLaser: state.greenLaser,
         purpleMissile: state.purpleMissile
       },
       enemyRoster: {

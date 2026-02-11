@@ -30,9 +30,9 @@ const DEMO_CUE_END_SECONDS = 360;
 const DEMO_CUE_INTERVAL_SECONDS = 0.55;
 let currentCombatConfig: CombatConfigPatch = {
   shipWeapons: {
-    primaryProjectiles: true,
-    queuedCueShots: true,
-    cleanupLaser: true,
+    blueLaser: true,
+    yellowLaser: true,
+    greenLaser: true,
     purpleMissile: false
   },
   enemyRoster: {

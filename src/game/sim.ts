@@ -723,15 +723,15 @@ function applyCombatConfigPatch(state: SimulationState, patch: CombatConfigPatch
 }
 
 function isPrimaryWeaponEnabled(state: SimulationState): boolean {
-  return state.combatConfig.shipWeapons.primaryProjectiles;
+  return state.combatConfig.shipWeapons.blueLaser;
 }
 
 function isCueShotWeaponEnabled(state: SimulationState): boolean {
-  return state.combatConfig.shipWeapons.queuedCueShots;
+  return state.combatConfig.shipWeapons.yellowLaser;
 }
 
 function isCleanupLaserEnabled(state: SimulationState): boolean {
-  return state.combatConfig.shipWeapons.cleanupLaser;
+  return state.combatConfig.shipWeapons.greenLaser;
 }
 
 function isPurpleMissileEnabled(state: SimulationState): boolean {

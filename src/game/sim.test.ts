@@ -182,7 +182,7 @@ describe("simulation cue scheduling", () => {
     const withoutPrimary = createSimulation();
     withPrimary.setEnemyBulletRatio(0);
     withoutPrimary.setEnemyBulletRatio(0);
-    withoutPrimary.setShipWeapons({ primaryProjectiles: false, queuedCueShots: false });
+    withoutPrimary.setShipWeapons({ blueLaser: false, yellowLaser: false });
 
     let maxPlayerProjectilesWithPrimary = 0;
     let maxPlayerProjectilesWithoutPrimary = 0;
@@ -206,7 +206,7 @@ describe("simulation cue scheduling", () => {
 
   it("supports blue laser as a standalone weapon mode", () => {
     const sim = createSimulation();
-    sim.setShipWeapons({ primaryProjectiles: true, queuedCueShots: false, cleanupLaser: false });
+    sim.setShipWeapons({ blueLaser: true, yellowLaser: false, greenLaser: false });
     sim.startTrackRun([0.8, 1.2, 1.6, 2.0, 2.4, 2.8, 3.2]);
 
     let sawLaserBeam = false;
@@ -226,7 +226,7 @@ describe("simulation cue scheduling", () => {
 
   it("supports queued cue shots as a standalone weapon mode", () => {
     const sim = createSimulation();
-    sim.setShipWeapons({ primaryProjectiles: false, queuedCueShots: true, cleanupLaser: false });
+    sim.setShipWeapons({ blueLaser: false, yellowLaser: true, greenLaser: false });
     sim.startTrackRun([0.8, 1.2, 1.6, 2.0, 2.4, 2.8, 3.2, 3.6]);
 
     let cueProjectileSeen = false;
@@ -248,7 +248,7 @@ describe("simulation cue scheduling", () => {
 
   it("supports cleanup laser as a standalone weapon mode", () => {
     const sim = createSimulation();
-    sim.setShipWeapons({ primaryProjectiles: false, queuedCueShots: false, cleanupLaser: true });
+    sim.setShipWeapons({ blueLaser: false, yellowLaser: false, greenLaser: true });
     sim.startTrackRun([0.75, 1.1, 1.45, 1.8, 2.15, 2.5, 2.85, 3.2]);
 
     let sawLaserBeam = false;
@@ -269,9 +269,9 @@ describe("simulation cue scheduling", () => {
   it("supports purple missile as a standalone weapon mode", () => {
     const sim = createSimulation();
     sim.setShipWeapons({
-      primaryProjectiles: false,
-      queuedCueShots: false,
-      cleanupLaser: false,
+      blueLaser: false,
+      yellowLaser: false,
+      greenLaser: false,
       purpleMissile: true
     });
     sim.startTrackRun([0.8, 1.2, 1.6, 2.0, 2.4, 2.8, 3.2, 3.6]);
@@ -287,7 +287,7 @@ describe("simulation cue scheduling", () => {
 
   it("keeps yellow+green loadout from accumulating surviving enemies", () => {
     const sim = createSimulation();
-    sim.setShipWeapons({ primaryProjectiles: false, queuedCueShots: true, cleanupLaser: true });
+    sim.setShipWeapons({ blueLaser: false, yellowLaser: true, greenLaser: true });
     const cues: number[] = [];
     for (let t = 0.7; t <= 9.4; t += 0.35) {
       cues.push(Number(t.toFixed(3)));
@@ -309,7 +309,7 @@ describe("simulation cue scheduling", () => {
 
   it("keeps simulation stable when cleanup laser weapon is disabled", () => {
     const sim = createSimulation();
-    sim.setShipWeapons({ cleanupLaser: false });
+    sim.setShipWeapons({ greenLaser: false });
     sim.setIntensityTimeline([
       { timeSeconds: 0, intensity: 0.95 },
       { timeSeconds: 4, intensity: 0.95 }
