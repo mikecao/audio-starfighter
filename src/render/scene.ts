@@ -631,6 +631,7 @@ function buildPurplePulsePathPoints(
   const dx = targetX - startX;
   const dy = targetY - startY;
   const distance = Math.max(1, Math.hypot(dx, dy));
+  const effectiveDistance = Math.max(distance, PURPLE_PULSE_MIN_EFFECTIVE_DISTANCE);
   const dirX = dx / distance;
   const dirY = dy / distance;
   const perpX = -dirY;
@@ -639,10 +640,16 @@ function buildPurplePulsePathPoints(
   const variant = clamp(pathVariant, 0, 1);
   const variantPhase = variant * Math.PI * 2;
 
-  const loopRadius = clamp(distance * (0.58 + variant * 0.22), 3.1, 8.6);
-  const launchBackDrift =
+  const loopRadius = clamp(effectiveDistance * (0.58 + variant * 0.22), 3.1, 10.4);
+  const launchBackBase =
     PURPLE_PULSE_BACK_DRIFT_MIN +
     variant * (PURPLE_PULSE_BACK_DRIFT_MAX - PURPLE_PULSE_BACK_DRIFT_MIN);
+  const launchBackDistanceScale = clamp(
+    effectiveDistance / PURPLE_PULSE_BACK_DRIFT_DISTANCE_REFERENCE,
+    0.84,
+    1.38
+  );
+  const launchBackDrift = launchBackBase * launchBackDistanceScale;
   const launchArcStrength =
     PURPLE_PULSE_LAUNCH_ARC_MIN +
     Math.abs(Math.sin(variantPhase * 0.73)) *
@@ -683,7 +690,7 @@ function buildPurplePulsePathPoints(
       launchArcStrength *
       t *
       Math.pow(1 - t, 1.85) *
-      distance *
+      effectiveDistance *
       0.24;
 
     const baseX = startX + dx * easedT;
@@ -703,7 +710,104 @@ function buildPurplePulsePathPoints(
     points[offset + 2] = MISSILE_TRAIL_Z_OFFSET;
   }
 
+  smoothPurplePulseTerminalSegment(points, targetX, targetY, dirX, dirY);
+
   return points;
+}
+
+function smoothPurplePulseTerminalSegment(
+  points: Float32Array,
+  targetX: number,
+  targetY: number,
+  targetDirX: number,
+  targetDirY: number
+): void {
+  const pointCount = points.length / 3;
+  if (pointCount < 4) {
+    return;
+  }
+
+  let terminalStartIndex = clamp(
+    Math.floor((pointCount - 1) * PURPLE_PULSE_TERMINAL_PHASE_START),
+    1,
+    pointCount - 2
+  );
+  while (terminalStartIndex > 1) {
+    const offset = terminalStartIndex * 3;
+    const remaining = Math.hypot(targetX - points[offset], targetY - points[offset + 1]);
+    if (remaining >= PURPLE_PULSE_TERMINAL_MIN_SPAN) {
+      break;
+    }
+    terminalStartIndex -= 1;
+  }
+
+  const startOffset = terminalStartIndex * 3;
+  const prevOffset = (terminalStartIndex - 1) * 3;
+
+  const startX = points[startOffset];
+  const startY = points[startOffset + 1];
+  const prevX = points[prevOffset];
+  const prevY = points[prevOffset + 1];
+
+  const directApproachX = targetX - startX;
+  const directApproachY = targetY - startY;
+  const directApproachLength = Math.hypot(directApproachX, directApproachY);
+  const directApproachDirX =
+    directApproachLength > 1e-4 ? directApproachX / directApproachLength : targetDirX;
+  const directApproachDirY =
+    directApproachLength > 1e-4 ? directApproachY / directApproachLength : targetDirY;
+
+  let entryDirX = startX - prevX;
+  let entryDirY = startY - prevY;
+  const entryDirLength = Math.hypot(entryDirX, entryDirY);
+  if (entryDirLength > 1e-4) {
+    entryDirX /= entryDirLength;
+    entryDirY /= entryDirLength;
+  } else {
+    entryDirX = targetDirX;
+    entryDirY = targetDirY;
+  }
+
+  const remainingDistance = Math.max(0.5, Math.hypot(targetX - startX, targetY - startY));
+  const blendedTargetDirX = targetDirX * 0.28 + directApproachDirX * 0.72;
+  const blendedTargetDirY = targetDirY * 0.28 + directApproachDirY * 0.72;
+  const blendedTargetDirLength = Math.hypot(blendedTargetDirX, blendedTargetDirY);
+  const resolvedTargetDirX =
+    blendedTargetDirLength > 1e-4 ? blendedTargetDirX / blendedTargetDirLength : directApproachDirX;
+  const resolvedTargetDirY =
+    blendedTargetDirLength > 1e-4 ? blendedTargetDirY / blendedTargetDirLength : directApproachDirY;
+
+  const outHandleLength = clamp(
+    remainingDistance * PURPLE_PULSE_TERMINAL_OUT_HANDLE_SCALE,
+    0.24,
+    Math.max(0.4, remainingDistance * 0.88)
+  );
+  const inHandleLength = clamp(
+    remainingDistance * PURPLE_PULSE_TERMINAL_IN_HANDLE_SCALE,
+    0.26,
+    Math.max(0.46, remainingDistance * 0.92)
+  );
+
+  const controlOneX = startX + entryDirX * outHandleLength;
+  const controlOneY = startY + entryDirY * outHandleLength;
+  const controlTwoX = targetX - resolvedTargetDirX * inHandleLength;
+  const controlTwoY = targetY - resolvedTargetDirY * inHandleLength;
+
+  const terminalSampleCount = pointCount - 1 - terminalStartIndex;
+  for (let i = 0; i <= terminalSampleCount; i += 1) {
+    const u = terminalSampleCount > 0 ? i / terminalSampleCount : 1;
+    const invU = 1 - u;
+    const b0 = invU * invU * invU;
+    const b1 = 3 * invU * invU * u;
+    const b2 = 3 * invU * u * u;
+    const b3 = u * u * u;
+    const offset = (terminalStartIndex + i) * 3;
+
+    points[offset] =
+      b0 * startX + b1 * controlOneX + b2 * controlTwoX + b3 * targetX;
+    points[offset + 1] =
+      b0 * startY + b1 * controlOneY + b2 * controlTwoY + b3 * targetY;
+  }
 }
 
 function easeInOutSine(t: number): number {
@@ -771,16 +875,22 @@ const PURPLE_PULSE_MIN_POOL_SIZE = 4;
 const PURPLE_PULSE_MAX_POOL_SIZE = 20;
 const PURPLE_PULSE_MAX_NEW_BINDINGS_PER_FRAME = 5;
 const PURPLE_PULSE_TOTAL_SAMPLES = 96;
+const PURPLE_PULSE_MIN_EFFECTIVE_DISTANCE = 11.5;
 const PURPLE_PULSE_VERTICAL_DELAY_PORTION = 0.26;
 const PURPLE_PULSE_AXIAL_SWEEP_BASE = 0.28;
-const PURPLE_PULSE_BACK_DRIFT_MIN = 1.18;
-const PURPLE_PULSE_BACK_DRIFT_MAX = 2.24;
+const PURPLE_PULSE_BACK_DRIFT_MIN = 1.9;
+const PURPLE_PULSE_BACK_DRIFT_MAX = 3.25;
+const PURPLE_PULSE_BACK_DRIFT_DISTANCE_REFERENCE = 9.2;
 const PURPLE_PULSE_BACK_DRIFT_BOOST = 1.42;
 const PURPLE_PULSE_ENVELOPE_POWER_BASE = 0.72;
 const PURPLE_PULSE_LAUNCH_ARC_MIN = 0.28;
 const PURPLE_PULSE_LAUNCH_ARC_MAX = 0.92;
 const PURPLE_PULSE_LAUNCH_CLAMP_PORTION = 0.32;
 const PURPLE_PULSE_MAX_LAUNCH_SLOPE = 1;
+const PURPLE_PULSE_TERMINAL_PHASE_START = 0.54;
+const PURPLE_PULSE_TERMINAL_MIN_SPAN = 6.2;
+const PURPLE_PULSE_TERMINAL_OUT_HANDLE_SCALE = 0.5;
+const PURPLE_PULSE_TERMINAL_IN_HANDLE_SCALE = 0.64;
 const PURPLE_PULSE_DASH_START = 1 - PURPLE_PULSE_TRAVEL_DASH_RATIO + 0.001;
 const PURPLE_PULSE_DASH_END = 1;
 const EXPLOSION_PALETTES: ExplosionPalette[] = [
