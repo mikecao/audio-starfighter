@@ -7,10 +7,13 @@ export type ShipWeaponsConfig = {
   purpleMissile: boolean;
 };
 
+export type EnemyProjectileStyle = "balls" | "lasers";
+
 export type EnemyRosterConfig = {
   enabledArchetypes: EnemyArchetypeId[];
   spawnScale: number;
   fireScale: number;
+  enemyProjectileStyle: EnemyProjectileStyle;
 };
 
 export type CombatConfig = {
@@ -51,7 +54,8 @@ export const DEFAULT_COMBAT_CONFIG: CombatConfig = {
   enemyRoster: {
     enabledArchetypes: ["redCube"],
     spawnScale: 1,
-    fireScale: 1
+    fireScale: 1,
+    enemyProjectileStyle: "balls"
   }
 };
 
@@ -73,13 +77,17 @@ export function normalizeCombatConfig(
 
   const spawnScale = clamp(patch?.enemyRoster?.spawnScale ?? base.enemyRoster.spawnScale, 0.45, 2.4);
   const fireScale = clamp(patch?.enemyRoster?.fireScale ?? base.enemyRoster.fireScale, 0.45, 2.4);
+  const enemyProjectileStyle = normalizeEnemyProjectileStyle(
+    patch?.enemyRoster?.enemyProjectileStyle ?? base.enemyRoster.enemyProjectileStyle
+  );
 
   return {
     shipWeapons,
     enemyRoster: {
       enabledArchetypes: normalizedArchetypes,
       spawnScale,
-      fireScale
+      fireScale,
+      enemyProjectileStyle
     }
   };
 }
@@ -104,4 +112,11 @@ export function sanitizeEnabledArchetypes(input: readonly EnemyArchetypeId[]): E
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
+}
+
+function normalizeEnemyProjectileStyle(style: EnemyProjectileStyle): EnemyProjectileStyle {
+  if (style === "lasers") {
+    return "lasers";
+  }
+  return "balls";
 }

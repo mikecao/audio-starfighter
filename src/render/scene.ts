@@ -146,6 +146,17 @@ export function setupScene(container: HTMLElement): RenderScene {
   const enemyProjectileGroup = new Group();
   scene.add(enemyProjectileGroup);
   const enemyProjectileMeshes: Mesh[] = [];
+  const enemyProjectileLaserGeometry = new BoxGeometry(1.15, 0.055, 0.055);
+  const enemyProjectileLaserMaterial = new MeshStandardMaterial({
+    color: "#fde047",
+    roughness: 0.16,
+    metalness: 0.38,
+    emissive: "#f59e0b",
+    emissiveIntensity: 0.95
+  });
+  const enemyProjectileLaserGroup = new Group();
+  scene.add(enemyProjectileLaserGroup);
+  const enemyProjectileLaserMeshes: Mesh[] = [];
 
   const laserGeometry = new BoxGeometry(1, 0.05, 0.04);
   const laserMaterial = new MeshBasicMaterial({
@@ -334,25 +345,57 @@ export function setupScene(container: HTMLElement): RenderScene {
         }
       }
 
-      syncMeshPool(
-        enemyProjectileMeshes,
-        snapshot.enemyProjectiles.length,
-        enemyProjectileGroup,
-        () => {
-          const mesh = new Mesh(enemyProjectileGeometry, enemyProjectileMaterial);
+      if (snapshot.enemyProjectileStyle === "lasers") {
+        for (const mesh of enemyProjectileMeshes) {
           mesh.visible = false;
-          return mesh;
         }
-      );
-      for (let i = 0; i < enemyProjectileMeshes.length; i += 1) {
-        const mesh = enemyProjectileMeshes[i];
-        const projectile = snapshot.enemyProjectiles[i];
-        if (!projectile) {
+
+        syncMeshPool(
+          enemyProjectileLaserMeshes,
+          snapshot.enemyProjectiles.length,
+          enemyProjectileLaserGroup,
+          () => {
+            const mesh = new Mesh(enemyProjectileLaserGeometry, enemyProjectileLaserMaterial);
+            mesh.visible = false;
+            return mesh;
+          }
+        );
+        for (let i = 0; i < enemyProjectileLaserMeshes.length; i += 1) {
+          const mesh = enemyProjectileLaserMeshes[i];
+          const projectile = snapshot.enemyProjectiles[i];
+          if (!projectile) {
+            mesh.visible = false;
+            continue;
+          }
+          mesh.visible = true;
+          mesh.position.set(projectile.x, projectile.y, projectile.z);
+          mesh.rotation.z = projectile.rotationZ;
+        }
+      } else {
+        for (const mesh of enemyProjectileLaserMeshes) {
           mesh.visible = false;
-          continue;
         }
-        mesh.visible = true;
-        mesh.position.set(projectile.x, projectile.y, projectile.z);
+
+        syncMeshPool(
+          enemyProjectileMeshes,
+          snapshot.enemyProjectiles.length,
+          enemyProjectileGroup,
+          () => {
+            const mesh = new Mesh(enemyProjectileGeometry, enemyProjectileMaterial);
+            mesh.visible = false;
+            return mesh;
+          }
+        );
+        for (let i = 0; i < enemyProjectileMeshes.length; i += 1) {
+          const mesh = enemyProjectileMeshes[i];
+          const projectile = snapshot.enemyProjectiles[i];
+          if (!projectile) {
+            mesh.visible = false;
+            continue;
+          }
+          mesh.visible = true;
+          mesh.position.set(projectile.x, projectile.y, projectile.z);
+        }
       }
 
       if (snapshot.simTimeSeconds < lastMissileTrailSnapshotTime - 1e-6) {

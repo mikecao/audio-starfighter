@@ -1,5 +1,9 @@
 import type { AudioAnalysisResult } from "../audio/types";
-import type { CombatConfigPatch, EnemyArchetypeId } from "../game/combatConfig";
+import type {
+  CombatConfigPatch,
+  EnemyArchetypeId,
+  EnemyProjectileStyle
+} from "../game/combatConfig";
 
 const RUN_SEED_STORAGE_KEY = "audio-starfighter.run-seed";
 
@@ -26,6 +30,7 @@ type UiCombatState = {
   redCubeEnabled: boolean;
   spawnScale: number;
   fireScale: number;
+  enemyProjectileStyle: EnemyProjectileStyle;
 };
 
 const DEFAULT_COMBAT_STATE: UiCombatState = {
@@ -35,7 +40,8 @@ const DEFAULT_COMBAT_STATE: UiCombatState = {
   purpleMissile: false,
   redCubeEnabled: true,
   spawnScale: 1,
-  fireScale: 1
+  fireScale: 1,
+  enemyProjectileStyle: "balls"
 };
 
 export function createAudioPanel(
@@ -161,9 +167,15 @@ export function createAudioPanel(
   enemyGroup.appendChild(enemyLegend);
 
   const enemyRedCubeToggle = createModalToggle("Red Cube", true);
+  const enemyProjectileLaserToggle = createModalToggle("Projectile Lasers", false);
   const enemySpawnScale = createModalRange("Spawn Scale", 0.5, 2, 0.05, 1);
   const enemyFireScale = createModalRange("Fire Scale", 0.5, 2, 0.05, 1);
-  enemyGroup.append(enemyRedCubeToggle.root, enemySpawnScale.root, enemyFireScale.root);
+  enemyGroup.append(
+    enemyRedCubeToggle.root,
+    enemyProjectileLaserToggle.root,
+    enemySpawnScale.root,
+    enemyFireScale.root
+  );
 
   settingsForm.append(shipGroup, enemyGroup);
 
@@ -318,6 +330,7 @@ export function createAudioPanel(
     shipCleanupToggle.input.checked = state.greenLaser;
     shipPurpleToggle.input.checked = state.purpleMissile;
     enemyRedCubeToggle.input.checked = state.redCubeEnabled;
+    enemyProjectileLaserToggle.input.checked = state.enemyProjectileStyle === "lasers";
     enemySpawnScale.input.value = state.spawnScale.toFixed(2);
     enemyFireScale.input.value = state.fireScale.toFixed(2);
     enemySpawnScale.value.textContent = `${state.spawnScale.toFixed(2)}x`;
@@ -331,7 +344,8 @@ export function createAudioPanel(
     purpleMissile: shipPurpleToggle.input.checked,
     redCubeEnabled: enemyRedCubeToggle.input.checked,
     spawnScale: Number(enemySpawnScale.input.value),
-    fireScale: Number(enemyFireScale.input.value)
+    fireScale: Number(enemyFireScale.input.value),
+    enemyProjectileStyle: enemyProjectileLaserToggle.input.checked ? "lasers" : "balls"
   });
 
   const publishCombatState = (state: UiCombatState): void => {
@@ -349,7 +363,8 @@ export function createAudioPanel(
       enemyRoster: {
         enabledArchetypes,
         spawnScale: state.spawnScale,
-        fireScale: state.fireScale
+        fireScale: state.fireScale,
+        enemyProjectileStyle: state.enemyProjectileStyle
       }
     });
   };

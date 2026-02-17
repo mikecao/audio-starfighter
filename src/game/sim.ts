@@ -7,6 +7,7 @@ import {
   type CombatConfigPatch,
   type EnemyArchetypeDefinition,
   type EnemyArchetypeId,
+  type EnemyProjectileStyle,
   type EnemyRosterConfig,
   type ShipWeaponsConfig
 } from "./combatConfig";
@@ -59,6 +60,7 @@ export type SimulationSnapshot = {
     x: number;
     y: number;
     z: number;
+    rotationZ: number;
   }>;
   laserBeams: Array<{
     fromX: number;
@@ -90,6 +92,7 @@ export type SimulationSnapshot = {
   availableCueTargetCount: number;
   moodProfile: "calm" | "driving" | "aggressive";
   purpleMissileEnabled: boolean;
+  enemyProjectileStyle: EnemyProjectileStyle;
 };
 
 type EnemyPattern = "straight" | "sine" | "arc" | "zigzag" | "weave";
@@ -537,7 +540,8 @@ export function createSimulation(): Simulation {
           id: projectile.id,
           x: projectile.x,
           y: projectile.y,
-          z: projectile.z
+          z: projectile.z,
+          rotationZ: Math.atan2(projectile.vy, projectile.vx)
         })),
         laserBeams: state.laserBeams.map((beam) => ({
           fromX: beam.fromX,
@@ -575,7 +579,8 @@ export function createSimulation(): Simulation {
         upcomingCueWindowCount: countUpcomingCueWindow(state),
         availableCueTargetCount: countAvailableCueTargets(state),
         moodProfile: state.moodProfile,
-        purpleMissileEnabled: isPurpleMissileEnabled(state)
+        purpleMissileEnabled: isPurpleMissileEnabled(state),
+        enemyProjectileStyle: state.combatConfig.enemyRoster.enemyProjectileStyle
       };
     },
     setCueTimeline(cueTimesSeconds) {

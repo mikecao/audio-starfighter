@@ -347,6 +347,56 @@ describe("simulation cue scheduling", () => {
     expect(snapshot.enemies.every((enemy) => enemy.archetype === "redCube")).toBe(true);
   });
 
+  it("exposes and switches enemy projectile visual style in snapshots", () => {
+    const sim = createSimulation();
+
+    expect(sim.getSnapshot().enemyProjectileStyle).toBe("balls");
+
+    sim.setEnemyRoster({ enemyProjectileStyle: "lasers" });
+    expect(sim.getSnapshot().enemyProjectileStyle).toBe("lasers");
+
+    sim.setCombatConfig({
+      enemyRoster: {
+        enemyProjectileStyle: "balls"
+      }
+    });
+    expect(sim.getSnapshot().enemyProjectileStyle).toBe("balls");
+  });
+
+  it("keeps enemy projectile gameplay outcomes unchanged across visual styles", () => {
+    const balls = createSimulation();
+    const lasers = createSimulation();
+    const seed = 1234;
+    const cueTimes = [0.8, 1.2, 1.6, 2.1, 2.5, 2.9, 3.3, 3.7];
+
+    balls.setRandomSeed(seed);
+    lasers.setRandomSeed(seed);
+    balls.setMoodProfile("aggressive");
+    lasers.setMoodProfile("aggressive");
+    balls.setEnemyRoster({ enemyProjectileStyle: "balls" });
+    lasers.setEnemyRoster({ enemyProjectileStyle: "lasers" });
+    balls.startTrackRun(cueTimes);
+    lasers.startTrackRun(cueTimes);
+
+    for (let i = 0; i < 60 * 8; i += 1) {
+      balls.step(1 / 60);
+      lasers.step(1 / 60);
+    }
+
+    const snapshotBalls = balls.getSnapshot();
+    const snapshotLasers = lasers.getSnapshot();
+    expect(snapshotBalls.enemyProjectileStyle).toBe("balls");
+    expect(snapshotLasers.enemyProjectileStyle).toBe("lasers");
+    expect(snapshotBalls.enemyProjectiles.length).toBe(snapshotLasers.enemyProjectiles.length);
+    expect(snapshotBalls.enemyCount).toBe(snapshotLasers.enemyCount);
+    expect(snapshotBalls.projectileCount).toBe(snapshotLasers.projectileCount);
+    expect(snapshotBalls.shieldAlpha).toBe(snapshotLasers.shieldAlpha);
+    expect(snapshotBalls.score).toBe(snapshotLasers.score);
+    expect(snapshotBalls.combo).toBe(snapshotLasers.combo);
+    expect(snapshotBalls.cueResolvedCount).toBe(snapshotLasers.cueResolvedCount);
+    expect(snapshotBalls.cueMissedCount).toBe(snapshotLasers.cueMissedCount);
+  });
+
   it("emits cue-tagged projectiles when queued cue shots are enabled", () => {
     const sim = createSimulation();
     sim.setRandomSeed(17);

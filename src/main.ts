@@ -38,7 +38,8 @@ let currentCombatConfig: CombatConfigPatch = {
   enemyRoster: {
     enabledArchetypes: ["redCube"],
     spawnScale: 1,
-    fireScale: 1
+    fireScale: 1,
+    enemyProjectileStyle: "balls"
   }
 };
 
