@@ -17,6 +17,7 @@ import {
   RingGeometry,
   Scene,
   SphereGeometry,
+  TetrahedronGeometry,
   Vector2,
   Vector3,
   WebGLRenderer
@@ -95,17 +96,30 @@ export function setupScene(container: HTMLElement): RenderScene {
     side: DoubleSide,
     depthWrite: false
   });
-  const enemyRenderStyles = {
+  type EnemyRenderStyle = {
+    baseColor: Color;
+    hitColor: Color;
+    baseEmissive: Color;
+    hitEmissive: Color;
+  };
+  const enemyRenderStyles: Record<SimulationSnapshot["enemies"][number]["archetype"], EnemyRenderStyle> = {
     redCube: {
       baseColor: new Color("#f87171"),
       hitColor: new Color("#fef08a"),
       baseEmissive: new Color("#7f1d1d"),
       hitEmissive: new Color("#fde047")
+    },
+    greenTriangle: {
+      baseColor: new Color("#4ade80"),
+      hitColor: new Color("#fef08a"),
+      baseEmissive: new Color("#166534"),
+      hitEmissive: new Color("#bef264")
     }
   };
   const enemyTintColor = new Color();
   const enemyTintEmissive = new Color();
-  const enemyGeometry = new BoxGeometry(0.85, 0.85, 0.85);
+  const redCubeGeometry = new BoxGeometry(0.85, 0.85, 0.85);
+  const greenTriangleGeometry = new TetrahedronGeometry(0.62, 0);
   const enemyGroup = new Group();
   scene.add(enemyGroup);
   const enemyMeshes: Mesh[] = [];
@@ -278,7 +292,7 @@ export function setupScene(container: HTMLElement): RenderScene {
       updateStarLayer(closeStars, starTimeSeconds, snapshot.ship.y);
 
       syncMeshPool(enemyMeshes, snapshot.enemies.length, enemyGroup, () => {
-        const mesh = new Mesh(enemyGeometry, enemyMaterial.clone());
+        const mesh = new Mesh(redCubeGeometry, enemyMaterial.clone());
         mesh.visible = false;
         return mesh;
       });
@@ -297,6 +311,11 @@ export function setupScene(container: HTMLElement): RenderScene {
         const flash = clamp01(enemy.damageFlash);
         const style = enemyRenderStyles[enemy.archetype] ?? enemyRenderStyles.redCube;
         const material = mesh.material as MeshStandardMaterial;
+        const expectedGeometry =
+          enemy.archetype === "greenTriangle" ? greenTriangleGeometry : redCubeGeometry;
+        if (mesh.geometry !== expectedGeometry) {
+          mesh.geometry = expectedGeometry;
+        }
         enemyTintColor.lerpColors(style.baseColor, style.hitColor, flash);
         material.color.copy(enemyTintColor);
         enemyTintEmissive.lerpColors(style.baseEmissive, style.hitEmissive, flash);
@@ -304,9 +323,16 @@ export function setupScene(container: HTMLElement): RenderScene {
         material.emissiveIntensity = (0.18 + intensity * 0.6) + flash * (0.45 + intensity * 0.35);
         material.opacity = entryAlpha * ENEMY_BASE_OPACITY;
         mesh.position.set(enemy.x, enemy.y, enemy.z);
-        mesh.rotation.x = 0.48;
-        mesh.rotation.y = 0.58;
-        mesh.rotation.z = enemy.rotationZ;
+        if (enemy.archetype === "greenTriangle") {
+          const tumble = enemy.rotationZ;
+          mesh.rotation.x = 0.92 + Math.sin(tumble * 1.34) * 0.58;
+          mesh.rotation.y = 0.78 + Math.cos(tumble * 1.12) * 0.52;
+          mesh.rotation.z = tumble * 1.42;
+        } else {
+          mesh.rotation.x = 0.48;
+          mesh.rotation.y = 0.58;
+          mesh.rotation.z = enemy.rotationZ;
+        }
         const flashScale = 1 + enemy.damageFlash * 0.14;
         mesh.scale.setScalar(flashScale);
       }

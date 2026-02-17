@@ -1,4 +1,4 @@
-export type EnemyArchetypeId = "redCube";
+export type EnemyArchetypeId = "redCube" | "greenTriangle";
 
 export type ShipWeaponsConfig = {
   blueLaser: boolean;
@@ -32,6 +32,7 @@ export type EnemyArchetypeDefinition = {
   speedScale: number;
   fireCooldownScale: number;
   radiusScale: number;
+  canShoot: boolean;
 };
 
 export const ENEMY_ARCHETYPE_DEFINITIONS: Record<EnemyArchetypeId, EnemyArchetypeDefinition> = {
@@ -40,7 +41,16 @@ export const ENEMY_ARCHETYPE_DEFINITIONS: Record<EnemyArchetypeId, EnemyArchetyp
     spawnWeight: 1,
     speedScale: 1,
     fireCooldownScale: 1,
-    radiusScale: 1
+    radiusScale: 1,
+    canShoot: true
+  },
+  greenTriangle: {
+    id: "greenTriangle",
+    spawnWeight: 0.46,
+    speedScale: 1.06,
+    fireCooldownScale: 1,
+    radiusScale: 0.96,
+    canShoot: false
   }
 };
 

@@ -28,6 +28,7 @@ type UiCombatState = {
   greenLaser: boolean;
   purpleMissile: boolean;
   redCubeEnabled: boolean;
+  greenTriangleEnabled: boolean;
   spawnScale: number;
   fireScale: number;
   enemyProjectileStyle: EnemyProjectileStyle;
@@ -39,6 +40,7 @@ const DEFAULT_COMBAT_STATE: UiCombatState = {
   greenLaser: true,
   purpleMissile: false,
   redCubeEnabled: true,
+  greenTriangleEnabled: false,
   spawnScale: 1,
   fireScale: 1,
   enemyProjectileStyle: "balls"
@@ -167,11 +169,13 @@ export function createAudioPanel(
   enemyGroup.appendChild(enemyLegend);
 
   const enemyRedCubeToggle = createModalToggle("Red Cube", true);
+  const enemyGreenTriangleToggle = createModalToggle("Green Triangle", false);
   const enemyProjectileLaserToggle = createModalToggle("Projectile Lasers", false);
   const enemySpawnScale = createModalRange("Spawn Scale", 0.5, 2, 0.05, 1);
   const enemyFireScale = createModalRange("Fire Scale", 0.5, 2, 0.05, 1);
   enemyGroup.append(
     enemyRedCubeToggle.root,
+    enemyGreenTriangleToggle.root,
     enemyProjectileLaserToggle.root,
     enemySpawnScale.root,
     enemyFireScale.root
@@ -330,6 +334,7 @@ export function createAudioPanel(
     shipCleanupToggle.input.checked = state.greenLaser;
     shipPurpleToggle.input.checked = state.purpleMissile;
     enemyRedCubeToggle.input.checked = state.redCubeEnabled;
+    enemyGreenTriangleToggle.input.checked = state.greenTriangleEnabled;
     enemyProjectileLaserToggle.input.checked = state.enemyProjectileStyle === "lasers";
     enemySpawnScale.input.value = state.spawnScale.toFixed(2);
     enemyFireScale.input.value = state.fireScale.toFixed(2);
@@ -343,6 +348,7 @@ export function createAudioPanel(
     greenLaser: shipCleanupToggle.input.checked,
     purpleMissile: shipPurpleToggle.input.checked,
     redCubeEnabled: enemyRedCubeToggle.input.checked,
+    greenTriangleEnabled: enemyGreenTriangleToggle.input.checked,
     spawnScale: Number(enemySpawnScale.input.value),
     fireScale: Number(enemyFireScale.input.value),
     enemyProjectileStyle: enemyProjectileLaserToggle.input.checked ? "lasers" : "balls"
@@ -352,6 +358,9 @@ export function createAudioPanel(
     const enabledArchetypes: EnemyArchetypeId[] = [];
     if (state.redCubeEnabled) {
       enabledArchetypes.push("redCube");
+    }
+    if (state.greenTriangleEnabled) {
+      enabledArchetypes.push("greenTriangle");
     }
     handlers.onCombatConfigChange({
       shipWeapons: {

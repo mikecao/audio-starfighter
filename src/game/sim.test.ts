@@ -347,6 +347,54 @@ describe("simulation cue scheduling", () => {
     expect(snapshot.enemies.every((enemy) => enemy.archetype === "redCube")).toBe(true);
   });
 
+  it("spawns green triangles in formation waves of at least three", () => {
+    const sim = createSimulation();
+    sim.setRandomSeed(123);
+    sim.setEnemyRoster({
+      enabledArchetypes: ["greenTriangle"],
+      spawnScale: 1,
+      fireScale: 1
+    });
+
+    let sawFormationWave = false;
+    for (let i = 0; i < 60 * 8; i += 1) {
+      sim.step(1 / 60);
+      const snapshot = sim.getSnapshot();
+      if (
+        snapshot.enemyCount >= 3 &&
+        snapshot.enemies.every((enemy) => enemy.archetype === "greenTriangle")
+      ) {
+        sawFormationWave = true;
+        break;
+      }
+    }
+
+    expect(sawFormationWave).toBe(true);
+  });
+
+  it("keeps green triangles from firing enemy projectiles", () => {
+    const sim = createSimulation();
+    sim.setRandomSeed(99);
+    sim.setEnemyBulletRatio(4);
+    sim.setEnemyRoster({
+      enabledArchetypes: ["greenTriangle"],
+      spawnScale: 1.2,
+      fireScale: 1.2
+    });
+
+    let maxEnemyCount = 0;
+    let maxEnemyProjectiles = 0;
+    for (let i = 0; i < 60 * 8; i += 1) {
+      sim.step(1 / 60);
+      const snapshot = sim.getSnapshot();
+      maxEnemyCount = Math.max(maxEnemyCount, snapshot.enemyCount);
+      maxEnemyProjectiles = Math.max(maxEnemyProjectiles, snapshot.enemyProjectiles.length);
+    }
+
+    expect(maxEnemyCount).toBeGreaterThan(0);
+    expect(maxEnemyProjectiles).toBe(0);
+  });
+
   it("exposes and switches enemy projectile visual style in snapshots", () => {
     const sim = createSimulation();
 

@@ -95,7 +95,16 @@ export type SimulationSnapshot = {
   enemyProjectileStyle: EnemyProjectileStyle;
 };
 
-type EnemyPattern = "straight" | "sine" | "arc" | "zigzag" | "weave";
+type EnemyPattern =
+  | "straight"
+  | "sine"
+  | "arc"
+  | "zigzag"
+  | "weave"
+  | "triangleRibbon"
+  | "triangleBankedZig"
+  | "triangleDiveRecover"
+  | "triangleCorkscrew";
 type CueWeaponId = "blue" | "yellow" | "green" | "purple";
 
 type Enemy = {
@@ -111,6 +120,7 @@ type Enemy = {
   phase: number;
   amplitude: number;
   frequency: number;
+  pathAgeOffsetSeconds: number;
   radius: number;
   fireCooldownSeconds: number;
   scheduledCueTime: number | null;
@@ -311,6 +321,13 @@ const ENEMY_BULLET_RATE_BASE = 2.05;
 const ENEMY_BULLET_RATE_INTENSITY_GAIN = 3.15;
 const ENEMY_BULLET_RATE_MAX = 10.9;
 const ENEMY_BULLET_BUDGET_WINDOW_SECONDS = 0.68;
+const TRIANGLE_FORMATION_MIN_SIZE = 3;
+const TRIANGLE_FORMATION_MAX_SIZE = 5;
+const TRIANGLE_FORMATION_CATERPILLAR_DELAY_MIN_SECONDS = 0.16;
+const TRIANGLE_FORMATION_CATERPILLAR_DELAY_MAX_SECONDS = 0.24;
+const TRIANGLE_FORMATION_SPEED_BASE = 4.65;
+const TRIANGLE_FORMATION_SPEED_INTENSITY_GAIN = 2.9;
+const TRIANGLE_FORMATION_SPEED_RANDOM_GAIN = 1.45;
 const ENEMY_SPAWN_INTERVAL_MULTIPLIER = 0.9;
 const ENEMY_FIRE_INTERVAL_MULTIPLIER = 1.15;
 const ENEMY_FIRE_COOLDOWN_MULTIPLIER = 1.25;
@@ -506,7 +523,8 @@ export function createSimulation(): Simulation {
           x: enemy.x,
           y: enemy.y,
           z: enemy.z,
-          rotationZ: enemy.phase + enemy.ageSeconds * 2,
+          rotationZ:
+            enemy.phase + enemy.ageSeconds * (enemy.archetype === "greenTriangle" ? 5.2 : 2),
           damageFlash: enemy.damageFlash,
           archetype: enemy.archetype
         })),
@@ -863,8 +881,12 @@ function getLoadoutKillScale(state: SimulationState): number {
   return clamp(capacity / 4.45, 0.38, 1.05);
 }
 
-function pickEnemyArchetype(state: SimulationState): EnemyArchetypeId {
-  const enabled = state.activeEnemyArchetypes;
+function pickEnemyArchetype(
+  state: SimulationState,
+  filter: ((archetypeId: EnemyArchetypeId) => boolean) | null = null
+): EnemyArchetypeId {
+  const filtered = filter ? state.activeEnemyArchetypes.filter(filter) : state.activeEnemyArchetypes;
+  const enabled = filtered.length > 0 ? filtered : state.activeEnemyArchetypes;
   if (enabled.length === 0) {
     return "redCube";
   }
@@ -888,28 +910,48 @@ function pickEnemyArchetype(state: SimulationState): EnemyArchetypeId {
   return enabled[enabled.length - 1];
 }
 
+function pickShootCapableEnemyArchetype(state: SimulationState): EnemyArchetypeId {
+  const hasShootCapableArchetype = state.activeEnemyArchetypes.some(
+    (archetypeId) => getEnemyArchetypeDefinition(archetypeId).canShoot
+  );
+  if (!hasShootCapableArchetype) {
+    return "redCube";
+  }
+  return pickEnemyArchetype(state, (archetypeId) => getEnemyArchetypeDefinition(archetypeId).canShoot);
+}
+
 function getEnemyArchetypeDefinition(archetypeId: EnemyArchetypeId): EnemyArchetypeDefinition {
   return ENEMY_ARCHETYPE_DEFINITIONS[archetypeId];
 }
 
 function spawnEnemies(state: SimulationState): void {
   while (state.simTimeSeconds >= state.nextEnemySpawnTime) {
-    spawnAmbientEnemy(state);
-
-    state.spawnIndex += 1;
+    const spawnedCount = spawnAmbientEnemyWave(state);
+    state.spawnIndex += spawnedCount;
     const intensity = getIntensityAtTime(state, state.simTimeSeconds);
     const mood = moodParameters(state.moodProfile);
     const combatTuning = getCombatPressureTuning(state);
     const cadence = (0.9 - intensity * 0.5) * mood.spawnIntervalScale;
     const intensitySpawnMultiplier = 1 - intensity * ENEMY_INTENSITY_SPAWN_BOOST;
+    const formationCadenceMultiplier = 1 + Math.max(0, spawnedCount - 1) * 0.4;
     state.nextEnemySpawnTime += clamp(
-      ((cadence + state.rng() * 0.35) * intensitySpawnMultiplier) / combatTuning.spawnScale,
+      (((cadence + state.rng() * 0.35) * intensitySpawnMultiplier) / combatTuning.spawnScale) *
+        formationCadenceMultiplier,
       0.22,
-      0.95
+      1.45
     );
   }
 
   ensureCueSupportEnemies(state);
+}
+
+function spawnAmbientEnemyWave(state: SimulationState): number {
+  const archetype = pickEnemyArchetype(state);
+  if (archetype === "greenTriangle") {
+    return spawnGreenTriangleFormation(state);
+  }
+  spawnAmbientEnemy(state, archetype);
+  return 1;
 }
 
 function fireProjectiles(state: SimulationState): void {
@@ -1095,35 +1137,17 @@ function updateEnemies(state: SimulationState, deltaSeconds: number): void {
   for (const enemy of state.enemies) {
     enemy.ageSeconds += deltaSeconds;
     enemy.x += enemy.vx * deltaSeconds;
-
-    if (enemy.pattern === "straight") {
-      enemy.y = enemy.baseY;
-    } else if (enemy.pattern === "sine") {
-      enemy.y =
-        enemy.baseY +
-        Math.sin(enemy.phase + enemy.ageSeconds * enemy.frequency) * enemy.amplitude;
-    } else if (enemy.pattern === "zigzag") {
-      const wave = Math.asin(Math.sin(enemy.phase + enemy.ageSeconds * enemy.frequency * 1.8));
-      enemy.y = enemy.baseY + wave * enemy.amplitude * 0.85;
-    } else if (enemy.pattern === "weave") {
-      enemy.y =
-        enemy.baseY +
-        Math.sin(enemy.phase + enemy.ageSeconds * enemy.frequency * 0.75) * (enemy.amplitude * 0.55) +
-        Math.cos(enemy.phase * 1.4 + enemy.ageSeconds * enemy.frequency * 1.9) *
-          (enemy.amplitude * 0.35);
-    } else {
-      enemy.y =
-        enemy.baseY +
-        Math.sin(enemy.phase + enemy.ageSeconds * enemy.frequency * 1.2) *
-          (enemy.amplitude * 0.55) +
-        Math.sin(enemy.ageSeconds * 0.9) * 0.45;
-    }
+    enemy.y = resolveEnemyPatternY(enemy, enemy.ageSeconds);
 
     enemy.damageFlash = Math.max(0, enemy.damageFlash - deltaSeconds * 8);
     if (!enemy.hasEnteredView && enemy.x <= LASER_MAX_TARGET_X) {
       enemy.hasEnteredView = true;
     }
     enemy.fireCooldownSeconds -= deltaSeconds;
+    const archetypeDef = getEnemyArchetypeDefinition(enemy.archetype);
+    if (!archetypeDef.canShoot) {
+      continue;
+    }
     if (enemy.fireCooldownSeconds <= 0 && enemy.x > state.shipX + 2.5) {
       readyToFire.push(enemy);
     }
@@ -1665,7 +1689,7 @@ function spawnReservedCueEnemy(state: SimulationState, cueTimeSeconds: number): 
   const intensity = getIntensityAtTime(state, state.simTimeSeconds);
   const mood = moodParameters(state.moodProfile);
   const combatTuning = getCombatPressureTuning(state);
-  const archetype = pickEnemyArchetype(state);
+  const archetype = pickShootCapableEnemyArchetype(state);
   const archetypeDef = getEnemyArchetypeDefinition(archetype);
   const leadSeconds = Math.max(0.2, cueTimeSeconds - state.simTimeSeconds);
   const shipAtCue = predictShipPosition(state, leadSeconds);
@@ -1690,6 +1714,7 @@ function spawnReservedCueEnemy(state: SimulationState, cueTimeSeconds: number): 
     phase: state.rng() * Math.PI * 2,
     amplitude: 0.25 + state.rng() * (0.7 + intensity * 0.6),
     frequency: 0.8 + state.rng() * 1.15,
+    pathAgeOffsetSeconds: 0,
     radius: 0.44 * archetypeDef.radiusScale,
     fireCooldownSeconds:
       (0.9 + state.rng() * 0.9) *
@@ -1708,11 +1733,10 @@ function spawnReservedCueEnemy(state: SimulationState, cueTimeSeconds: number): 
   return enemy;
 }
 
-function spawnAmbientEnemy(state: SimulationState): void {
+function spawnAmbientEnemy(state: SimulationState, archetype: EnemyArchetypeId): void {
   const intensity = getIntensityAtTime(state, state.simTimeSeconds);
   const mood = moodParameters(state.moodProfile);
   const combatTuning = getCombatPressureTuning(state);
-  const archetype = pickEnemyArchetype(state);
   const archetypeDef = getEnemyArchetypeDefinition(archetype);
   const lane = (state.spawnIndex % 5) - 2;
   const patternSelector = state.spawnIndex % 5;
@@ -1743,6 +1767,7 @@ function spawnAmbientEnemy(state: SimulationState): void {
     phase: state.rng() * Math.PI * 2,
     amplitude: 0.35 + state.rng() * 1.25,
     frequency: 1 + state.rng() * 1.4,
+    pathAgeOffsetSeconds: 0,
     radius: 0.44 * archetypeDef.radiusScale,
     fireCooldownSeconds:
       (0.5 + (1 - intensity) * 0.8 + state.rng() * 0.5) *
@@ -1756,6 +1781,82 @@ function spawnAmbientEnemy(state: SimulationState): void {
     damageFlash: 0,
     hasEnteredView: false
   });
+}
+
+function spawnGreenTriangleFormation(state: SimulationState): number {
+  const intensity = getIntensityAtTime(state, state.simTimeSeconds);
+  const mood = moodParameters(state.moodProfile);
+  const combatTuning = getCombatPressureTuning(state);
+  const archetypeDef = getEnemyArchetypeDefinition("greenTriangle");
+  const formationSize =
+    TRIANGLE_FORMATION_MIN_SIZE +
+    Math.floor(state.rng() * (TRIANGLE_FORMATION_MAX_SIZE - TRIANGLE_FORMATION_MIN_SIZE + 1));
+  const lane = (state.spawnIndex % 5) - 2;
+  const anchorY = clamp(lane * 1.35 + (state.rng() - 0.5) * 0.45, -3.8, 3.8);
+  const leaderSpawnX = 21.6 + state.rng() * 1.8;
+  const pattern = pickTriangleFormationPattern(state.spawnIndex);
+  const sharedPhase = state.rng() * Math.PI * 2;
+  const sharedFrequency = 0.9 + state.rng() * 1.25;
+  const sharedAmplitude = 0.95 + state.rng() * (0.9 + intensity * 0.9);
+  const sharedVx =
+    (-TRIANGLE_FORMATION_SPEED_BASE -
+      intensity * TRIANGLE_FORMATION_SPEED_INTENSITY_GAIN -
+      state.rng() * TRIANGLE_FORMATION_SPEED_RANDOM_GAIN) *
+    mood.enemySpeedScale *
+    archetypeDef.speedScale;
+  const caterpillarDelaySeconds =
+    TRIANGLE_FORMATION_CATERPILLAR_DELAY_MIN_SECONDS +
+    state.rng() *
+      (TRIANGLE_FORMATION_CATERPILLAR_DELAY_MAX_SECONDS -
+        TRIANGLE_FORMATION_CATERPILLAR_DELAY_MIN_SECONDS);
+
+  for (let i = 0; i < formationSize; i += 1) {
+    const pathAgeOffsetSeconds = i * caterpillarDelaySeconds;
+    const spawnX = leaderSpawnX + (-sharedVx) * pathAgeOffsetSeconds;
+    state.enemies.push({
+      id: state.nextEnemyId++,
+      archetype: "greenTriangle",
+      x: spawnX,
+      y: anchorY,
+      z: 0,
+      vx: sharedVx,
+      ageSeconds: 0,
+      pattern,
+      baseY: anchorY,
+      phase: sharedPhase,
+      amplitude: sharedAmplitude * (0.96 + state.rng() * 0.08),
+      frequency: sharedFrequency * (0.96 + state.rng() * 0.08),
+      pathAgeOffsetSeconds,
+      radius: 0.44 * archetypeDef.radiusScale,
+      fireCooldownSeconds:
+        (0.8 + (1 - intensity) * 0.7 + state.rng() * 0.5) *
+        mood.enemyFireIntervalScale *
+        ENEMY_FIRE_COOLDOWN_MULTIPLIER *
+        enemyFireIntensityMultiplier(intensity) *
+        archetypeDef.fireCooldownScale /
+        combatTuning.enemyFireScale,
+      scheduledCueTime: null,
+      cuePrimed: false,
+      damageFlash: 0,
+      hasEnteredView: false
+    });
+  }
+
+  return formationSize;
+}
+
+function pickTriangleFormationPattern(spawnIndex: number): EnemyPattern {
+  const selector = spawnIndex % 4;
+  if (selector === 0) {
+    return "triangleRibbon";
+  }
+  if (selector === 1) {
+    return "triangleBankedZig";
+  }
+  if (selector === 2) {
+    return "triangleDiveRecover";
+  }
+  return "triangleCorkscrew";
 }
 
 function ensureCueSupportEnemies(state: SimulationState): void {
@@ -1812,7 +1913,7 @@ function spawnCueSupportEnemy(state: SimulationState): void {
   const intensity = getIntensityAtTime(state, state.simTimeSeconds);
   const mood = moodParameters(state.moodProfile);
   const combatTuning = getCombatPressureTuning(state);
-  const archetype = pickEnemyArchetype(state);
+  const archetype = pickShootCapableEnemyArchetype(state);
   const archetypeDef = getEnemyArchetypeDefinition(archetype);
   const lane = ((state.spawnIndex + 1) % 5) - 2;
   const baseY = lane * 1.6 + (state.rng() - 0.5) * 0.35;
@@ -1840,6 +1941,7 @@ function spawnCueSupportEnemy(state: SimulationState): void {
     phase: state.rng() * Math.PI * 2,
     amplitude: 0.2 + state.rng() * 0.65,
     frequency: 0.8 + state.rng() * 0.8,
+    pathAgeOffsetSeconds: 0,
     radius: 0.44 * archetypeDef.radiusScale,
     fireCooldownSeconds:
       (0.9 + state.rng() * 0.7) *
@@ -2185,29 +2287,86 @@ function countAvailableCueTargets(state: SimulationState): number {
   return count;
 }
 
+function resolveEnemyPatternY(enemy: Enemy, ageSeconds: number): number {
+  const effectiveAge = Math.max(0, ageSeconds - enemy.pathAgeOffsetSeconds);
+  if (enemy.pattern === "straight") {
+    return enemy.baseY;
+  }
+
+  if (enemy.pattern === "sine") {
+    return enemy.baseY + Math.sin(enemy.phase + effectiveAge * enemy.frequency) * enemy.amplitude;
+  }
+
+  if (enemy.pattern === "zigzag") {
+    const wave = Math.asin(Math.sin(enemy.phase + effectiveAge * enemy.frequency * 1.8));
+    return enemy.baseY + wave * enemy.amplitude * 0.85;
+  }
+
+  if (enemy.pattern === "weave") {
+    return (
+      enemy.baseY +
+      Math.sin(enemy.phase + effectiveAge * enemy.frequency * 0.75) * (enemy.amplitude * 0.55) +
+      Math.cos(enemy.phase * 1.4 + effectiveAge * enemy.frequency * 1.9) *
+        (enemy.amplitude * 0.35)
+    );
+  }
+
+  if (enemy.pattern === "arc") {
+    return (
+      enemy.baseY +
+      Math.sin(enemy.phase + effectiveAge * enemy.frequency * 1.2) * (enemy.amplitude * 0.55) +
+      Math.sin(effectiveAge * 0.9) * 0.45
+    );
+  }
+
+  if (enemy.pattern === "triangleRibbon") {
+    return (
+      enemy.baseY +
+      Math.sin(enemy.phase + effectiveAge * enemy.frequency * 0.95) * (enemy.amplitude * 1.05) +
+      Math.sin(enemy.phase * 0.7 + effectiveAge * enemy.frequency * 0.42) * (enemy.amplitude * 0.48)
+    );
+  }
+
+  if (enemy.pattern === "triangleBankedZig") {
+    const wave = Math.asin(Math.sin(enemy.phase + effectiveAge * enemy.frequency * 2.4));
+    return (
+      enemy.baseY +
+      wave * enemy.amplitude * 0.98 +
+      Math.sin(enemy.phase * 0.5 + effectiveAge * enemy.frequency * 0.82) * (enemy.amplitude * 0.36)
+    );
+  }
+
+  if (enemy.pattern === "triangleDiveRecover") {
+    const wave = Math.sin(enemy.phase + effectiveAge * enemy.frequency * 1.3);
+    const shapedWave = wave < 0 ? wave * 1.22 : wave * 0.6;
+    return (
+      enemy.baseY +
+      shapedWave * enemy.amplitude * 1.12 +
+      Math.sin(effectiveAge * enemy.frequency * 0.44 + enemy.phase * 0.42) *
+        (enemy.amplitude * 0.42)
+    );
+  }
+
+  if (enemy.pattern === "triangleCorkscrew") {
+    return (
+      enemy.baseY +
+      Math.sin(enemy.phase + effectiveAge * enemy.frequency * 1.05) * (enemy.amplitude * 0.86) +
+      Math.cos(enemy.phase * 0.82 + effectiveAge * enemy.frequency * 2.05) *
+        (enemy.amplitude * 0.74)
+    );
+  }
+
+  return (
+    enemy.baseY +
+    Math.sin(enemy.phase + effectiveAge * enemy.frequency * 1.05) * (enemy.amplitude * 0.52) +
+    Math.cos(enemy.phase * 0.82 + effectiveAge * enemy.frequency * 2.05) * (enemy.amplitude * 0.48)
+  );
+}
+
 function predictEnemyPosition(enemy: Enemy, dt: number): { x: number; y: number } {
   const age = enemy.ageSeconds + dt;
   const x = enemy.x + enemy.vx * dt;
-  let y = enemy.baseY;
-
-  if (enemy.pattern === "sine") {
-    y = enemy.baseY + Math.sin(enemy.phase + age * enemy.frequency) * enemy.amplitude;
-  } else if (enemy.pattern === "zigzag") {
-    const wave = Math.asin(Math.sin(enemy.phase + age * enemy.frequency * 1.8));
-    y = enemy.baseY + wave * enemy.amplitude * 0.85;
-  } else if (enemy.pattern === "weave") {
-    y =
-      enemy.baseY +
-      Math.sin(enemy.phase + age * enemy.frequency * 0.75) * (enemy.amplitude * 0.55) +
-      Math.cos(enemy.phase * 1.4 + age * enemy.frequency * 1.9) * (enemy.amplitude * 0.35);
-  } else if (enemy.pattern === "arc") {
-    y =
-      enemy.baseY +
-      Math.sin(enemy.phase + age * enemy.frequency * 1.2) * (enemy.amplitude * 0.55) +
-      Math.sin(age * 0.9) * 0.45;
-  }
-
-  return { x, y };
+  return { x, y: resolveEnemyPatternY(enemy, age) };
 }
 
 function updateShipMotion(state: SimulationState, deltaSeconds: number): void {
