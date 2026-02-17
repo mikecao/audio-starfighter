@@ -411,7 +411,11 @@ export function setupScene(container: HTMLElement): RenderScene {
           pulse.mesh.visible = true;
           const elapsed = snapshot.simTimeSeconds - pulse.animationStartTimeSeconds;
           const progress = clamp01(elapsed / Math.max(1e-4, pulse.animationDurationSeconds));
-          setDashOffset(pulse.material, -lerp(PURPLE_PULSE_DASH_START, PURPLE_PULSE_DASH_END, progress));
+          const shapedProgress = Math.pow(progress, PURPLE_PULSE_TERMINAL_ACCELERATION_POWER);
+          setDashOffset(
+            pulse.material,
+            -lerp(PURPLE_PULSE_DASH_START, PURPLE_PULSE_DASH_END, shapedProgress)
+          );
           setDashRatio(pulse.material, PURPLE_PULSE_TRAVEL_DASH_RATIO);
           pulse.material.opacity = 0.92 * (1 - progress * 0.1);
 
@@ -1000,10 +1004,11 @@ const ARCADE_RING_MAX_SCALE = 7.2;
 const MISSILE_TRAIL_LINE_WIDTH = 0.06;
 const MISSILE_TRAIL_Z_OFFSET = 0.018;
 const PURPLE_PULSE_TRAVEL_DASH_RATIO = 0.9;
-const PURPLE_PULSE_MIN_DURATION_SECONDS = 0.72;
+const PURPLE_PULSE_MIN_DURATION_SECONDS = 0.5;
 const PURPLE_PULSE_MIN_POOL_SIZE = 4;
 const PURPLE_PULSE_MAX_POOL_SIZE = 20;
 const PURPLE_PULSE_MAX_NEW_BINDINGS_PER_FRAME = 5;
+const PURPLE_PULSE_TERMINAL_ACCELERATION_POWER = 1.65;
 const PURPLE_PULSE_TOTAL_SAMPLES = 128;
 const PURPLE_PULSE_MIN_EFFECTIVE_DISTANCE = 15.5;
 const PURPLE_PULSE_VERTICAL_DELAY_PORTION = 0.26;

@@ -221,7 +221,7 @@ const PLAYER_TARGET_LOCK_MAX_SECONDS = 0.5;
 const PLAYER_AIM_LOCKED_JITTER = 0.06;
 const PLAYER_AIM_UNLOCKED_JITTER = 0.14;
 const BLUE_LASER_FIRE_INTERVAL_MULTIPLIER = 0.5;
-const PURPLE_MISSILE_BASE_SPEED = 9.8;
+const PURPLE_MISSILE_BASE_SPEED = 11.4;
 const PURPLE_MISSILE_LAUNCH_OFFSET_X = -0.62;
 const PURPLE_MISSILE_MAX_SPEED = 14.2;
 const PURPLE_MISSILE_TURN_RATE = 7.2;
@@ -237,9 +237,9 @@ const PURPLE_MISSILE_LOOP_SIDE_OFFSET_MIN = 3.4;
 const PURPLE_MISSILE_LOOP_SIDE_OFFSET_MAX = 5.8;
 const PURPLE_MISSILE_POST_LOOP_SWERVE_DECAY = 1.7;
 const PURPLE_MISSILE_COLLISION_RADIUS = 0.44;
-const PURPLE_MISSILE_LEAD_SCALE = 2.65;
-const PURPLE_MISSILE_MIN_LEAD_SECONDS = 0.24;
-const PURPLE_MISSILE_MAX_LEAD_SECONDS = 2.45;
+const PURPLE_MISSILE_LEAD_SCALE = 1.95;
+const PURPLE_MISSILE_MIN_LEAD_SECONDS = 0.18;
+const PURPLE_MISSILE_MAX_LEAD_SECONDS = 1.45;
 const PURPLE_MISSILE_FIRING_WINDOW_PADDING = 0.06;
 const PURPLE_MISSILE_SIM_BUFFER_SECONDS = 0.14;
 const PURPLE_WEAPON_ASSIGNMENT_WEIGHT = 3;
@@ -1473,7 +1473,7 @@ function queuePurpleMissileForEnemy(
   let fireTimeSeconds = solvePurpleMissileFireTime(state, enemy, cueTimeSeconds);
   if (fireTimeSeconds === null) {
     const leadSeconds = cueTimeSeconds - state.simTimeSeconds;
-    fireTimeSeconds = cueTimeSeconds - clamp(leadSeconds * 0.5, 0.2, 0.85);
+    fireTimeSeconds = cueTimeSeconds - clamp(leadSeconds * 0.4, 0.14, 0.58);
   }
 
   fireTimeSeconds = Math.max(fireTimeSeconds, state.simTimeSeconds + 0.02);
