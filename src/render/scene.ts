@@ -148,10 +148,10 @@ export function setupScene(container: HTMLElement): RenderScene {
   const enemyProjectileMeshes: Mesh[] = [];
   const enemyProjectileLaserGeometry = new BoxGeometry(1.15, 0.055, 0.055);
   const enemyProjectileLaserMaterial = new MeshStandardMaterial({
-    color: "#fde047",
+    color: "#fb7185",
     roughness: 0.16,
     metalness: 0.38,
-    emissive: "#f59e0b",
+    emissive: "#f43f5e",
     emissiveIntensity: 0.95
   });
   const enemyProjectileLaserGroup = new Group();

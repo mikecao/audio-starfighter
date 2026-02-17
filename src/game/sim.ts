@@ -224,6 +224,7 @@ const PLAYER_TARGET_LOCK_MAX_SECONDS = 0.5;
 const PLAYER_AIM_LOCKED_JITTER = 0.06;
 const PLAYER_AIM_UNLOCKED_JITTER = 0.14;
 const BLUE_LASER_FIRE_INTERVAL_MULTIPLIER = 0.5;
+const ENEMY_PROJECTILE_LASER_SPEED_MULTIPLIER = 2.2;
 const PURPLE_MISSILE_BASE_SPEED = 11.4;
 const PURPLE_MISSILE_LAUNCH_OFFSET_X = -0.62;
 const PURPLE_MISSILE_MAX_SPEED = 14.2;
@@ -2778,7 +2779,12 @@ function findBestTarget(
 }
 
 function spawnEnemyProjectile(state: SimulationState, enemy: Enemy, spreadRadians = 0): void {
-  const speed = 6.8 + state.rng() * 2;
+  const baseSpeed = 6.8 + state.rng() * 2;
+  const speedMultiplier =
+    state.combatConfig.enemyRoster.enemyProjectileStyle === "lasers"
+      ? ENEMY_PROJECTILE_LASER_SPEED_MULTIPLIER
+      : 1;
+  const speed = baseSpeed * speedMultiplier;
   const edgeDistanceY = Math.min(state.shipY - SHIP_MIN_Y, SHIP_MAX_Y - state.shipY);
   const edgeProximity = clamp(
     (ENEMY_EDGE_AIM_RELAX_DISTANCE_Y - edgeDistanceY) / ENEMY_EDGE_AIM_RELAX_DISTANCE_Y,

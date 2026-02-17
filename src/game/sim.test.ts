@@ -363,38 +363,58 @@ describe("simulation cue scheduling", () => {
     expect(sim.getSnapshot().enemyProjectileStyle).toBe("balls");
   });
 
-  it("keeps enemy projectile gameplay outcomes unchanged across visual styles", () => {
+  it("moves laser-style enemy projectiles substantially faster than balls", () => {
     const balls = createSimulation();
     const lasers = createSimulation();
     const seed = 1234;
-    const cueTimes = [0.8, 1.2, 1.6, 2.1, 2.5, 2.9, 3.3, 3.7];
 
     balls.setRandomSeed(seed);
     lasers.setRandomSeed(seed);
-    balls.setMoodProfile("aggressive");
-    lasers.setMoodProfile("aggressive");
+    balls.setEnemyBulletRatio(2);
+    lasers.setEnemyBulletRatio(2);
     balls.setEnemyRoster({ enemyProjectileStyle: "balls" });
     lasers.setEnemyRoster({ enemyProjectileStyle: "lasers" });
-    balls.startTrackRun(cueTimes);
-    lasers.startTrackRun(cueTimes);
+    balls.startTrackRun([]);
+    lasers.startTrackRun([]);
 
-    for (let i = 0; i < 60 * 8; i += 1) {
+    let previousBallsById = new Map<number, { x: number; y: number }>();
+    let previousLasersById = new Map<number, { x: number; y: number }>();
+    let maxBallsStepDistance = 0;
+    let maxLasersStepDistance = 0;
+
+    for (let i = 0; i < 60 * 10; i += 1) {
       balls.step(1 / 60);
       lasers.step(1 / 60);
+
+      const ballsProjectiles = balls.getSnapshot().enemyProjectiles;
+      const lasersProjectiles = lasers.getSnapshot().enemyProjectiles;
+
+      const nextBallsById = new Map<number, { x: number; y: number }>();
+      for (const projectile of ballsProjectiles) {
+        const previous = previousBallsById.get(projectile.id);
+        if (previous) {
+          const stepDistance = Math.hypot(projectile.x - previous.x, projectile.y - previous.y);
+          maxBallsStepDistance = Math.max(maxBallsStepDistance, stepDistance);
+        }
+        nextBallsById.set(projectile.id, { x: projectile.x, y: projectile.y });
+      }
+
+      const nextLasersById = new Map<number, { x: number; y: number }>();
+      for (const projectile of lasersProjectiles) {
+        const previous = previousLasersById.get(projectile.id);
+        if (previous) {
+          const stepDistance = Math.hypot(projectile.x - previous.x, projectile.y - previous.y);
+          maxLasersStepDistance = Math.max(maxLasersStepDistance, stepDistance);
+        }
+        nextLasersById.set(projectile.id, { x: projectile.x, y: projectile.y });
+      }
+
+      previousBallsById = nextBallsById;
+      previousLasersById = nextLasersById;
     }
 
-    const snapshotBalls = balls.getSnapshot();
-    const snapshotLasers = lasers.getSnapshot();
-    expect(snapshotBalls.enemyProjectileStyle).toBe("balls");
-    expect(snapshotLasers.enemyProjectileStyle).toBe("lasers");
-    expect(snapshotBalls.enemyProjectiles.length).toBe(snapshotLasers.enemyProjectiles.length);
-    expect(snapshotBalls.enemyCount).toBe(snapshotLasers.enemyCount);
-    expect(snapshotBalls.projectileCount).toBe(snapshotLasers.projectileCount);
-    expect(snapshotBalls.shieldAlpha).toBe(snapshotLasers.shieldAlpha);
-    expect(snapshotBalls.score).toBe(snapshotLasers.score);
-    expect(snapshotBalls.combo).toBe(snapshotLasers.combo);
-    expect(snapshotBalls.cueResolvedCount).toBe(snapshotLasers.cueResolvedCount);
-    expect(snapshotBalls.cueMissedCount).toBe(snapshotLasers.cueMissedCount);
+    expect(maxBallsStepDistance).toBeGreaterThan(0);
+    expect(maxLasersStepDistance).toBeGreaterThan(maxBallsStepDistance * 1.9);
   });
 
   it("emits cue-tagged projectiles when queued cue shots are enabled", () => {
