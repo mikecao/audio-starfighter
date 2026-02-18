@@ -298,6 +298,7 @@ function animate(frameTimeMs: number): void {
   lastSimTimeSeconds = snapshot.simTimeSeconds;
   const audioPlaybackTimeSeconds = audioPanel.getAudioPlaybackTime();
   scene.setWaveformPlaneTime(snapshot.simTimeSeconds);
+  scene.setWaveformPlaneSpectrum(audioPanel.getAudioSpectrumBins());
   if (analysis && analysis !== appliedAnalysisRef) {
     scene.setWaveformPlaneSpectrumTimeline(analysis.spectrum);
     const runTimeline = buildRunTimelineEvents(analysis);

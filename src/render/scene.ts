@@ -4,10 +4,12 @@ import {
   BufferGeometry,
   BoxGeometry,
   Color,
+  DataTexture,
   DirectionalLight,
   DoubleSide,
   Float32BufferAttribute,
   Group,
+  LinearFilter,
   MeshBasicMaterial,
   Mesh,
   MeshStandardMaterial,
@@ -15,6 +17,7 @@ import {
   PlaneGeometry,
   Points,
   PointsMaterial,
+  RGBAFormat,
   RingGeometry,
   Scene,
   ShaderMaterial,
@@ -33,6 +36,7 @@ export type RenderScene = {
   render: () => void;
   resize: () => void;
   setWaveformPlaneEnabled: (enabled: boolean) => void;
+  setWaveformPlaneSpectrum: (spectrumBins: Float32Array | null) => void;
   setWaveformPlaneSpectrumTimeline: (timeline: SpectrumTimeline | null) => void;
   setWaveformPlaneData: (waveformLeft: Float32Array, waveformRight: Float32Array) => void;
   clearWaveformPlaneData: () => void;
@@ -231,57 +235,105 @@ export function setupScene(container: HTMLElement): RenderScene {
   scene.add(closeStars.primary);
   scene.add(closeStars.wrap);
 
+  const waveformSpectrumTextureData = new Uint8Array(WAVEFORM_PLANE_SPECTRUM_BIN_COUNT * 4);
+  for (let i = 0; i < waveformSpectrumTextureData.length; i += 4) {
+    waveformSpectrumTextureData[i] = 0;
+    waveformSpectrumTextureData[i + 1] = 0;
+    waveformSpectrumTextureData[i + 2] = 0;
+    waveformSpectrumTextureData[i + 3] = 255;
+  }
+  const waveformSpectrumTexture = new DataTexture(
+    waveformSpectrumTextureData,
+    WAVEFORM_PLANE_SPECTRUM_BIN_COUNT,
+    1,
+    RGBAFormat
+  );
+  waveformSpectrumTexture.magFilter = LinearFilter;
+  waveformSpectrumTexture.minFilter = LinearFilter;
+  waveformSpectrumTexture.needsUpdate = true;
+  const waveformSpectrumSmoothed = new Float32Array(WAVEFORM_PLANE_SPECTRUM_BIN_COUNT);
+
   const waveformPlaneMaterial = new ShaderMaterial({
     uniforms: {
       uTimeSeconds: { value: 0 },
       uHeightScale: { value: WAVEFORM_PLANE_HEIGHT_SCALE },
-      uIntensity: { value: 0.5 }
+      uBaseColor: { value: new Color("#0d3c4a") },
+      uAccentColor: { value: new Color("#22d3ee") },
+      uSkyColor: { value: new Color("#67e8f9") },
+      uSpectrumTex: { value: waveformSpectrumTexture }
     },
     vertexShader: `
-      varying vec2 vUv;
-      varying float vHeight;
+      varying vec3 vViewPos;
       uniform float uTimeSeconds;
       uniform float uHeightScale;
+      uniform sampler2D uSpectrumTex;
+
+      float sampleSpectrum(float binNorm) {
+        float u = clamp(binNorm, 0.0, 1.0);
+        float stepSize = ${Math.max(1 / (WAVEFORM_PLANE_SPECTRUM_BIN_COUNT - 1), 1e-5).toFixed(6)};
+        float c = texture2D(uSpectrumTex, vec2(u, 0.5)).r;
+        float l = texture2D(uSpectrumTex, vec2(max(0.0, u - stepSize), 0.5)).r;
+        float r = texture2D(uSpectrumTex, vec2(min(1.0, u + stepSize), 0.5)).r;
+        return c * 0.52 + (l + r) * 0.24;
+      }
 
       float computeHeight(vec2 uvPoint) {
-        vec2 p = uvPoint * vec2(4.9, 9.8);
-        p.x += uTimeSeconds * 0.72;
-        float baseA = sin(p.x * 1.2 + p.y * 0.31) * 0.42;
-        float baseB = sin(p.x * 0.67 - p.y * 1.08 + 1.2) * 0.31;
-        float baseC = sin((p.x + p.y) * 1.54 - 0.62) * 0.22;
+        vec2 p = uvPoint * vec2(5.8, 8.9);
+        p.x += uTimeSeconds * 1.84;
+        float baseA = sin(p.x * 1.33 + p.y * 0.29) * 0.58;
+        float baseB = sin(p.x * 0.79 - p.y * 1.14 + 1.12) * 0.37;
+        float baseC = sin((p.x + p.y) * 1.47 - 0.46) * 0.25;
         float raw = abs(baseA + baseB + baseC);
-        float ridge = pow(clamp(raw * 1.2, 0.0, 1.0), 1.24);
-        float depthScale = pow(max(0.0, 1.0 - uvPoint.y), 0.48);
-        float lateral = 1.0 - smoothstep(0.22, 0.88, abs(uvPoint.x - 0.5));
-        return ridge * uHeightScale * (0.16 + depthScale * 1.18) * (0.82 + lateral * 0.34);
+        float ridge = pow(clamp(raw * 1.1, 0.0, 1.0), 1.08);
+        float depthScale = pow(max(0.0, 1.0 - uvPoint.y), 0.54);
+        float lateral = 1.0 - smoothstep(0.18, 0.86, abs(uvPoint.x - 0.5));
+        float spectrumBin = pow(clamp(1.0 - uvPoint.y, 0.0, 1.0), 1.04);
+        float spectrum = sampleSpectrum(spectrumBin);
+        float spectrumAccent = pow(max(0.0, spectrum), 1.05);
+        float spectralShape = 0.56 + spectrum * 1.74 + spectrumAccent * 1.12;
+        return ridge * uHeightScale * (0.14 + depthScale * 1.22) * (0.74 + lateral * 0.46) * spectralShape;
       }
 
       void main() {
-        vUv = uv;
         float height = computeHeight(uv);
-        vHeight = clamp(height / max(0.0001, uHeightScale), 0.0, 1.0);
+        float steppedHeight = floor(height * 3.2 + 0.5) / 3.2;
 
         vec3 transformed = position;
-        transformed.z += height;
-        gl_Position = projectionMatrix * modelViewMatrix * vec4(transformed, 1.0);
+        transformed.z += steppedHeight;
+        vec4 mvPosition = modelViewMatrix * vec4(transformed, 1.0);
+        vViewPos = mvPosition.xyz;
+        gl_Position = projectionMatrix * mvPosition;
       }
     `,
     fragmentShader: `
-      varying float vHeight;
-      uniform float uIntensity;
+      varying vec3 vViewPos;
+      uniform float uTimeSeconds;
+      uniform vec3 uBaseColor;
+      uniform vec3 uAccentColor;
+      uniform vec3 uSkyColor;
 
       void main() {
-        vec3 base = vec3(0.43, 0.95, 0.83);
-        vec3 accent = vec3(0.84, 1.0, 0.94);
-        vec3 color = mix(base, accent, smoothstep(0.25, 1.0, vHeight));
-        color *= 0.74 + uIntensity * 0.24;
+        vec3 dpdx = dFdx(vViewPos);
+        vec3 dpdy = dFdy(vViewPos);
+        vec3 n = normalize(cross(dpdx, dpdy));
+        if (!gl_FrontFacing) {
+          n = -n;
+        }
+        vec3 l = normalize(vec3(-0.34, 0.58, 0.74));
+        float diffuse = max(dot(n, l), 0.0);
+        float pulse = 0.78 + 0.22 * sin(uTimeSeconds * 4.2);
+        float shade = 0.16 + diffuse * 0.84;
+        float accent = clamp(0.12 + diffuse * 0.82, 0.0, 1.0);
+        vec3 terrainColor = mix(uBaseColor, uAccentColor, accent);
+        vec3 color = terrainColor * shade * pulse;
+        color += uSkyColor * pow(max(n.z, 0.0), 1.3) * 0.22 * pulse;
         gl_FragColor = vec4(color, 1.0);
       }
     `,
-    wireframe: true,
+    wireframe: false,
     transparent: false,
     side: DoubleSide,
-    depthWrite: false,
+    depthWrite: true,
     depthTest: true
   });
   const waveformPlaneGeometry = new PlaneGeometry(
@@ -292,7 +344,7 @@ export function setupScene(container: HTMLElement): RenderScene {
   );
   const waveformPlaneMesh = new Mesh(waveformPlaneGeometry, waveformPlaneMaterial);
   waveformPlaneMesh.position.set(0, -11.2, -9.5);
-  waveformPlaneMesh.rotation.x = -1.14;
+  waveformPlaneMesh.rotation.x = -1.21;
   waveformPlaneMesh.rotation.y = 0;
   waveformPlaneMesh.rotation.z = 0;
   waveformPlaneMesh.renderOrder = -1;
@@ -374,7 +426,6 @@ export function setupScene(container: HTMLElement): RenderScene {
       waveformPlaneMesh.visible = waveformPlaneVisible;
       if (waveformPlaneVisible) {
         waveformPlaneMaterial.uniforms.uTimeSeconds.value = waveformPlaneTimeSeconds;
-        waveformPlaneMaterial.uniforms.uIntensity.value = intensity;
       }
 
       syncMeshPool(enemyMeshes, snapshot.enemies.length, enemyGroup, () => {
@@ -686,6 +737,44 @@ export function setupScene(container: HTMLElement): RenderScene {
       waveformPlaneEnabled = enabled;
       const visible = waveformPlaneEnabled && waveformPlaneHasData;
       waveformPlaneMesh.visible = visible;
+    },
+    setWaveformPlaneSpectrum(spectrumBins) {
+      if (!spectrumBins || spectrumBins.length === 0) {
+        for (let i = 0; i < WAVEFORM_PLANE_SPECTRUM_BIN_COUNT; i += 1) {
+          waveformSpectrumSmoothed[i] = (waveformSpectrumSmoothed[i] ?? 0) * 0.94;
+          const encoded = Math.round(clamp(waveformSpectrumSmoothed[i], 0, 1) * 255);
+          const offset = i * 4;
+          waveformSpectrumTextureData[offset] = encoded;
+          waveformSpectrumTextureData[offset + 1] = encoded;
+          waveformSpectrumTextureData[offset + 2] = encoded;
+          waveformSpectrumTextureData[offset + 3] = 255;
+        }
+        waveformSpectrumTexture.needsUpdate = true;
+        return;
+      }
+
+      const maxSourceIndex = Math.max(0, spectrumBins.length - 1);
+      for (let i = 0; i < WAVEFORM_PLANE_SPECTRUM_BIN_COUNT; i += 1) {
+        const t =
+          WAVEFORM_PLANE_SPECTRUM_BIN_COUNT <= 1
+            ? 0
+            : i / (WAVEFORM_PLANE_SPECTRUM_BIN_COUNT - 1);
+        const sourcePos = Math.pow(t, 1.18) * maxSourceIndex;
+        const target = clamp(sampleWaveformLinear(spectrumBins, sourcePos), 0, 1);
+        const boostedTarget = clamp(Math.pow(target, 0.72) * 1.26, 0, 1);
+        const previous = waveformSpectrumSmoothed[i] ?? 0;
+        const blend = boostedTarget > previous ? 0.58 : 0.22;
+        const smoothed = previous + (boostedTarget - previous) * blend;
+        waveformSpectrumSmoothed[i] = smoothed;
+        const encoded = Math.round(clamp(smoothed, 0, 1) * 255);
+        const offset = i * 4;
+        waveformSpectrumTextureData[offset] = encoded;
+        waveformSpectrumTextureData[offset + 1] = encoded;
+        waveformSpectrumTextureData[offset + 2] = encoded;
+        waveformSpectrumTextureData[offset + 3] = 255;
+      }
+
+      waveformSpectrumTexture.needsUpdate = true;
     },
     setWaveformPlaneSpectrumTimeline(timeline) {
       void timeline;
@@ -1183,13 +1272,14 @@ const ARCADE_CORE_SCALE_MULTIPLIER = 2.35;
 const ARCADE_RING_MAX_SCALE = 7.2;
 const MISSILE_TRAIL_LINE_WIDTH = 0.06;
 const MISSILE_TRAIL_Z_OFFSET = 0.018;
+const WAVEFORM_PLANE_SPECTRUM_BIN_COUNT = 192;
 const WAVEFORM_PLANE_TIMELINE_SAMPLES = 4096;
 const WAVEFORM_PLANE_TEXTURE_BINS = 64;
 const WAVEFORM_PLANE_WIDTH = 62;
 const WAVEFORM_PLANE_HEIGHT = 34;
-const WAVEFORM_PLANE_SEGMENTS_X = 72;
-const WAVEFORM_PLANE_SEGMENTS_Y = 36;
-const WAVEFORM_PLANE_HEIGHT_SCALE = 5.4;
+const WAVEFORM_PLANE_SEGMENTS_X = 30;
+const WAVEFORM_PLANE_SEGMENTS_Y = 16;
+const WAVEFORM_PLANE_HEIGHT_SCALE = 4.1;
 const WAVEFORM_PLANE_TIME_WINDOW_SECONDS = 2.4;
 const PURPLE_PULSE_TRAVEL_DASH_RATIO = 0.9;
 const PURPLE_PULSE_MIN_DURATION_SECONDS = 0.5;
