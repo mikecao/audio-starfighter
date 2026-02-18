@@ -16,12 +16,12 @@ import {
   MeshStandardMaterial,
   OrthographicCamera,
   PlaneGeometry,
+  PointLight,
   Points,
   PointsMaterial,
   RGBAFormat,
   RingGeometry,
   Scene,
-  ShaderMaterial,
   SphereGeometry,
   TetrahedronGeometry,
   Vector2,
@@ -73,6 +73,9 @@ export function setupScene(container: HTMLElement): RenderScene {
   const directionalLight = new DirectionalLight("#fef2c2", 1.1);
   directionalLight.position.set(2, 4, 8);
   scene.add(directionalLight);
+  const waveformTopLight = new PointLight("#b7ffd9", 2.2, 90, 2);
+  waveformTopLight.position.set(0, 10, -14);
+  scene.add(waveformTopLight);
 
   const shipGeometry = new BoxGeometry(1.2, 0.6, 0.9);
   const shipMaterial = new MeshStandardMaterial({
@@ -254,23 +257,16 @@ export function setupScene(container: HTMLElement): RenderScene {
   waveformSpectrumTexture.needsUpdate = true;
   const waveformSpectrumSmoothed = new Float32Array(WAVEFORM_PLANE_SPECTRUM_BIN_COUNT);
 
-  const waveformPlaneMaterial = new ShaderMaterial({
-    uniforms: {
-      uTimeSeconds: { value: 0 },
-      uHeightScale: { value: WAVEFORM_PLANE_HEIGHT_SCALE },
-      uBaseColor: { value: new Color("#f2fff8") },
-      uAccentColor: { value: new Color("#f4feff") },
-      uSkyColor: { value: new Color("#6bff8f") },
-      uHorizonColor: { value: new Color("#06090d") },
-      uSpectrumTex: { value: waveformSpectrumTexture }
-    },
-    vertexShader: `
-      varying vec3 vViewPos;
-      varying vec3 vViewNormal;
-      varying float vDepth;
-      varying float vAltitude;
+  const waveformPlaneDisplacementUniforms = {
+    uTimeSeconds: { value: 0 },
+    uHeightScale: { value: WAVEFORM_PLANE_HEIGHT_SCALE },
+    uAmplitudeDrive: { value: 0 },
+    uSpectrumTex: { value: waveformSpectrumTexture }
+  };
+  const waveformPlaneDisplacementHeader = `
       uniform float uTimeSeconds;
       uniform float uHeightScale;
+      uniform float uAmplitudeDrive;
       uniform sampler2D uSpectrumTex;
 
       float sampleSpectrum(float binNorm) {
@@ -293,102 +289,78 @@ export function setupScene(container: HTMLElement): RenderScene {
         float ridge = pow(ridgeSource, 1.04);
         float depthScale = pow(max(0.0, 1.0 - uvPoint.y), 0.54);
         float lateral = 1.0 - smoothstep(0.18, 0.86, abs(uvPoint.x - 0.5));
-        float spectrumBin = pow(clamp(1.0 - uvPoint.y, 0.0, 1.0), 1.04);
+        float spectrumBin = pow(clamp(1.0 - uvPoint.y, 0.0, 1.0), 1.55);
         float spectrum = sampleSpectrum(spectrumBin);
         float spectrumAccent = pow(max(0.0, spectrum), 1.05);
         float spectralShape = 0.56 + spectrum * 1.74 + spectrumAccent * 1.12;
-        return ridge * uHeightScale * (0.14 + depthScale * 1.22) * (0.74 + lateral * 0.46) * spectralShape;
+        float amplitudeBoost = 0.76 + uAmplitudeDrive * 1.52;
+        return ridge * uHeightScale * (0.14 + depthScale * 1.22) * (0.74 + lateral * 0.46) * spectralShape * amplitudeBoost;
       }
-
-      void main() {
-        float height = computeHeight(uv);
-        float steppedHeight = floor(height * 8.0 + 0.5) / 8.0;
-        float depthCurve = pow(clamp(uv.y, 0.0, 1.0), 1.95);
-        float depthMapped = pow(clamp(uv.y, 0.0, 1.0), 1.55);
-        float widthScale = mix(1.0, 0.44, depthCurve);
-        float heightAttenuation = 1.0 - depthCurve * 0.58;
-
-        float baseX = mix(-${(WAVEFORM_PLANE_WIDTH * 0.5).toFixed(6)}, ${(WAVEFORM_PLANE_WIDTH * 0.5).toFixed(6)}, uv.x);
-        float baseY = mix(-${(WAVEFORM_PLANE_HEIGHT * 0.5).toFixed(6)}, ${(WAVEFORM_PLANE_HEIGHT * 0.5).toFixed(6)}, depthMapped);
-        float baseZ = steppedHeight * heightAttenuation;
-
-        float uvStepX = ${Math.max(1 / Math.max(WAVEFORM_PLANE_SEGMENTS_X, 1), 1e-5).toFixed(6)};
-        float uvStepY = ${Math.max(1 / Math.max(WAVEFORM_PLANE_SEGMENTS_Y, 1), 1e-5).toFixed(6)};
-        vec2 uvX = vec2(min(1.0, uv.x + uvStepX), uv.y);
-        vec2 uvY = vec2(uv.x, min(1.0, uv.y + uvStepY));
-        float hX = floor(computeHeight(uvX) * 8.0 + 0.5) / 8.0;
-        float hY = floor(computeHeight(uvY) * 8.0 + 0.5) / 8.0;
-        float depthCurveY = pow(clamp(uvY.y, 0.0, 1.0), 1.95);
-        float depthMappedY = pow(clamp(uvY.y, 0.0, 1.0), 1.55);
-        float widthScaleY = mix(1.0, 0.44, depthCurveY);
-        float heightAttenuationY = 1.0 - depthCurveY * 0.58;
-
-        float xX = mix(-${(WAVEFORM_PLANE_WIDTH * 0.5).toFixed(6)}, ${(WAVEFORM_PLANE_WIDTH * 0.5).toFixed(6)}, uvX.x) * widthScale;
-        float yX = baseY;
-        float zX = hX * heightAttenuation;
-
-        float xY = baseX * widthScaleY;
-        float yY = mix(-${(WAVEFORM_PLANE_HEIGHT * 0.5).toFixed(6)}, ${(WAVEFORM_PLANE_HEIGHT * 0.5).toFixed(6)}, depthMappedY);
-        float zY = hY * heightAttenuationY;
-
-        vec3 tangentX = vec3(xX - baseX * widthScale, yX - baseY, zX - baseZ);
-        vec3 tangentY = vec3(xY - baseX * widthScale, yY - baseY, zY - baseZ);
-        vec3 modelNormal = normalize(cross(tangentX, tangentY));
-
-        vec3 transformed = vec3(baseX * widthScale, baseY, position.z + baseZ);
-        vec4 mvPosition = modelViewMatrix * vec4(transformed, 1.0);
-        vViewPos = mvPosition.xyz;
-        vViewNormal = normalize(normalMatrix * modelNormal);
-        vDepth = depthCurve;
-        vAltitude = clamp(steppedHeight / max(0.0001, uHeightScale * 3.0), 0.0, 1.0);
-        gl_Position = projectionMatrix * mvPosition;
-      }
-    `,
-    fragmentShader: `
-      varying vec3 vViewPos;
-      varying vec3 vViewNormal;
-      varying float vDepth;
-      varying float vAltitude;
-      uniform vec3 uBaseColor;
-      uniform vec3 uAccentColor;
-      uniform vec3 uSkyColor;
-      uniform vec3 uHorizonColor;
-
-      void main() {
-        vec3 n = normalize(vViewNormal);
-        if (!gl_FrontFacing) {
-          n = -n;
-        }
-        vec3 v = normalize(-vViewPos);
-        vec3 lA = normalize(vec3(-0.36, 0.64, 0.68));
-        vec3 lB = normalize(vec3(0.52, 0.28, 0.80));
-        float diffuseA = max(dot(n, lA), 0.0);
-        float diffuseB = max(dot(n, lB), 0.0);
-        vec3 hA = normalize(lA + v);
-        vec3 hB = normalize(lB + v);
-        float specularA = pow(max(dot(n, hA), 0.0), 22.0) * 0.58;
-        float specularB = pow(max(dot(n, hB), 0.0), 18.0) * 0.34;
-        float shade = 0.38 + diffuseA * 0.58 + diffuseB * 0.26;
-        float accent = clamp(0.24 + diffuseA * 0.72 + diffuseB * 0.24, 0.0, 1.0);
-        float altitudeGlow = smoothstep(0.12, 0.96, vAltitude);
-        vec3 terrainColor = mix(uBaseColor, uAccentColor, accent);
-        vec3 color = terrainColor * shade * (0.32 + altitudeGlow * 0.62);
-        color += uSkyColor * pow(max(n.z, 0.0), 1.2) * (0.1 + altitudeGlow * 0.24);
-        color += uSkyColor * (specularA + specularB) * (0.35 + altitudeGlow * 1.28);
-        color += uSkyColor * altitudeGlow * 0.24;
-        color = max(color, terrainColor * (0.14 + altitudeGlow * 0.22));
-        float horizonFog = smoothstep(0.76, 0.996, vDepth);
-        color = mix(color, uHorizonColor, horizonFog);
-        float alpha = (0.36 + altitudeGlow * 0.62) * (1.0 - horizonFog * 0.86);
-        gl_FragColor = vec4(color, alpha);
-      }
-    `,
+  `;
+  const waveformPlaneBeginNormal = `
+      float heightN = computeHeight(uv);
+      float steppedHeightN = floor(heightN * 8.0 + 0.5) / 8.0;
+      float depthCurveN = pow(clamp(uv.y, 0.0, 1.0), 1.95);
+      float depthMappedN = pow(clamp(uv.y, 0.0, 1.0), 1.55);
+      float widthScaleN = mix(1.0, 0.44, depthCurveN);
+      float heightAttenuationN = 1.0 - depthCurveN * 0.58;
+      float baseXN = mix(-${(WAVEFORM_PLANE_WIDTH * 0.5).toFixed(6)}, ${(WAVEFORM_PLANE_WIDTH * 0.5).toFixed(6)}, uv.x);
+      float baseYN = mix(-${(WAVEFORM_PLANE_HEIGHT * 0.5).toFixed(6)}, ${(WAVEFORM_PLANE_HEIGHT * 0.5).toFixed(6)}, depthMappedN);
+      float baseZN = steppedHeightN * heightAttenuationN;
+      float uvStepXN = ${Math.max(1 / Math.max(WAVEFORM_PLANE_SEGMENTS_X, 1), 1e-5).toFixed(6)};
+      float uvStepYN = ${Math.max(1 / Math.max(WAVEFORM_PLANE_SEGMENTS_Y, 1), 1e-5).toFixed(6)};
+      vec2 uvXN = vec2(min(1.0, uv.x + uvStepXN), uv.y);
+      vec2 uvYN = vec2(uv.x, min(1.0, uv.y + uvStepYN));
+      float hXN = floor(computeHeight(uvXN) * 8.0 + 0.5) / 8.0;
+      float hYN = floor(computeHeight(uvYN) * 8.0 + 0.5) / 8.0;
+      float depthCurveYN = pow(clamp(uvYN.y, 0.0, 1.0), 1.95);
+      float depthMappedYN = pow(clamp(uvYN.y, 0.0, 1.0), 1.55);
+      float widthScaleYN = mix(1.0, 0.44, depthCurveYN);
+      float heightAttenuationYN = 1.0 - depthCurveYN * 0.58;
+      float xXN = mix(-${(WAVEFORM_PLANE_WIDTH * 0.5).toFixed(6)}, ${(WAVEFORM_PLANE_WIDTH * 0.5).toFixed(6)}, uvXN.x) * widthScaleN;
+      float yXN = baseYN;
+      float zXN = hXN * heightAttenuationN;
+      float xYN = baseXN * widthScaleYN;
+      float yYN = mix(-${(WAVEFORM_PLANE_HEIGHT * 0.5).toFixed(6)}, ${(WAVEFORM_PLANE_HEIGHT * 0.5).toFixed(6)}, depthMappedYN);
+      float zYN = hYN * heightAttenuationYN;
+      vec3 tangentXN = vec3(xXN - baseXN * widthScaleN, yXN - baseYN, zXN - baseZN);
+      vec3 tangentYN = vec3(xYN - baseXN * widthScaleN, yYN - baseYN, zYN - baseZN);
+      vec3 objectNormal = normalize(cross(tangentXN, tangentYN));
+  `;
+  const waveformPlaneBeginVertex = `
+      float heightV = computeHeight(uv);
+      float steppedHeightV = floor(heightV * 8.0 + 0.5) / 8.0;
+      float depthCurveV = pow(clamp(uv.y, 0.0, 1.0), 1.95);
+      float depthMappedV = pow(clamp(uv.y, 0.0, 1.0), 1.55);
+      float widthScaleV = mix(1.0, 0.44, depthCurveV);
+      float heightAttenuationV = 1.0 - depthCurveV * 0.58;
+      float baseXV = mix(-${(WAVEFORM_PLANE_WIDTH * 0.5).toFixed(6)}, ${(WAVEFORM_PLANE_WIDTH * 0.5).toFixed(6)}, uv.x);
+      float baseYV = mix(-${(WAVEFORM_PLANE_HEIGHT * 0.5).toFixed(6)}, ${(WAVEFORM_PLANE_HEIGHT * 0.5).toFixed(6)}, depthMappedV);
+      float baseZV = steppedHeightV * heightAttenuationV;
+      vec3 transformed = vec3(baseXV * widthScaleV, baseYV, position.z + baseZV);
+  `;
+  const applyWaveformPlaneDisplacement = (material: MeshStandardMaterial): void => {
+    material.onBeforeCompile = (shader) => {
+      Object.assign(shader.uniforms, waveformPlaneDisplacementUniforms);
+      shader.vertexShader = `${waveformPlaneDisplacementHeader}\n${shader.vertexShader}`;
+      shader.vertexShader = shader.vertexShader.replace("#include <beginnormal_vertex>", waveformPlaneBeginNormal);
+      shader.vertexShader = shader.vertexShader.replace("#include <begin_vertex>", waveformPlaneBeginVertex);
+    };
+    material.customProgramCacheKey = () => "waveform-plane-displacement-v1";
+  };
+  const waveformPlaneMaterial = new MeshStandardMaterial({
+    color: "#f2fff8",
+    emissive: "#0d2f22",
+    emissiveIntensity: 0.14,
+    roughness: 0.9,
+    metalness: 0,
     wireframe: true,
-    transparent: true,
+    transparent: false,
     side: FrontSide,
     depthWrite: false,
     depthTest: true
   });
+  applyWaveformPlaneDisplacement(waveformPlaneMaterial);
   const waveformPlaneDepthMaterial = waveformPlaneMaterial.clone();
   waveformPlaneDepthMaterial.wireframe = false;
   waveformPlaneDepthMaterial.colorWrite = false;
@@ -396,6 +368,7 @@ export function setupScene(container: HTMLElement): RenderScene {
   waveformPlaneDepthMaterial.side = FrontSide;
   waveformPlaneDepthMaterial.depthWrite = true;
   waveformPlaneDepthMaterial.depthTest = true;
+  applyWaveformPlaneDisplacement(waveformPlaneDepthMaterial);
   const waveformPlaneGeometry = new PlaneGeometry(
     WAVEFORM_PLANE_WIDTH,
     WAVEFORM_PLANE_HEIGHT,
@@ -420,6 +393,7 @@ export function setupScene(container: HTMLElement): RenderScene {
   let waveformPlaneEnabled = true;
   let waveformPlaneHasData = true;
   let waveformPlaneTimeSeconds = 0;
+  let waveformPlaneAmplitudeDrive = 0;
 
   function resize(): void {
     const width = container.clientWidth;
@@ -493,8 +467,8 @@ export function setupScene(container: HTMLElement): RenderScene {
       waveformPlaneDepthMesh.visible = waveformPlaneVisible;
       waveformPlaneMesh.visible = waveformPlaneVisible;
       if (waveformPlaneVisible) {
-        waveformPlaneDepthMaterial.uniforms.uTimeSeconds.value = waveformPlaneTimeSeconds;
-        waveformPlaneMaterial.uniforms.uTimeSeconds.value = waveformPlaneTimeSeconds;
+        waveformPlaneDisplacementUniforms.uTimeSeconds.value = waveformPlaneTimeSeconds;
+        waveformPlaneDisplacementUniforms.uAmplitudeDrive.value = waveformPlaneAmplitudeDrive;
       }
 
       syncMeshPool(enemyMeshes, snapshot.enemies.length, enemyGroup, () => {
@@ -810,6 +784,7 @@ export function setupScene(container: HTMLElement): RenderScene {
     },
     setWaveformPlaneSpectrum(spectrumBins) {
       if (!spectrumBins || spectrumBins.length === 0) {
+        waveformPlaneAmplitudeDrive *= 0.9;
         for (let i = 0; i < WAVEFORM_PLANE_SPECTRUM_BIN_COUNT; i += 1) {
           waveformSpectrumSmoothed[i] = (waveformSpectrumSmoothed[i] ?? 0) * 0.94;
           const encoded = Math.round(clamp(waveformSpectrumSmoothed[i], 0, 1) * 255);
@@ -824,14 +799,58 @@ export function setupScene(container: HTMLElement): RenderScene {
       }
 
       const maxSourceIndex = Math.max(0, spectrumBins.length - 1);
+      const lowBandCount = Math.max(1, Math.min(spectrumBins.length, Math.floor(spectrumBins.length * 0.12)));
+      let lowBandWeightedSum = 0;
+      let lowBandWeightTotal = 0;
+      for (let i = 0; i < lowBandCount; i += 1) {
+        const normalized = lowBandCount <= 1 ? 0 : i / (lowBandCount - 1);
+        const weight = 1.0 - normalized * 0.75;
+        lowBandWeightedSum += clamp(spectrumBins[i] ?? 0, 0, 1) * weight;
+        lowBandWeightTotal += weight;
+      }
+      const lowBandDrive = lowBandWeightTotal > 0 ? lowBandWeightedSum / lowBandWeightTotal : 0;
+      const lowMidBandCount = Math.max(
+        1,
+        Math.min(spectrumBins.length, Math.floor(spectrumBins.length * 0.3))
+      );
+      let lowMidBandWeightedSum = 0;
+      let lowMidBandWeightTotal = 0;
+      for (let i = 0; i < lowMidBandCount; i += 1) {
+        const normalized = lowMidBandCount <= 1 ? 0 : i / (lowMidBandCount - 1);
+        const weight = 1.0 - normalized * 0.6;
+        lowMidBandWeightedSum += clamp(spectrumBins[i] ?? 0, 0, 1) * weight;
+        lowMidBandWeightTotal += weight;
+      }
+      const lowMidBandDrive = lowMidBandWeightTotal > 0 ? lowMidBandWeightedSum / lowMidBandWeightTotal : 0;
+      const rawAmplitudeTarget = clamp(
+        Math.pow(lowBandDrive, 0.78) * 0.92 + Math.pow(lowMidBandDrive, 0.86) * 0.44,
+        0,
+        1
+      );
+      const amplitudeNoiseGate = 0.12;
+      const amplitudeTarget =
+        rawAmplitudeTarget <= amplitudeNoiseGate
+          ? 0
+          : clamp(
+              (rawAmplitudeTarget - amplitudeNoiseGate) / (1 - amplitudeNoiseGate),
+              0,
+              1
+            );
+      waveformPlaneAmplitudeDrive +=
+        (amplitudeTarget - waveformPlaneAmplitudeDrive) *
+        (amplitudeTarget > waveformPlaneAmplitudeDrive ? 0.24 : 0.08);
+
       for (let i = 0; i < WAVEFORM_PLANE_SPECTRUM_BIN_COUNT; i += 1) {
         const t =
           WAVEFORM_PLANE_SPECTRUM_BIN_COUNT <= 1
             ? 0
             : i / (WAVEFORM_PLANE_SPECTRUM_BIN_COUNT - 1);
-        const sourcePos = Math.pow(t, 1.18) * maxSourceIndex;
+        const sourcePos = Math.pow(t, 1.36) * maxSourceIndex;
         const target = clamp(sampleWaveformLinear(spectrumBins, sourcePos), 0, 1);
-        const boostedTarget = clamp(Math.pow(target, 0.72) * 1.26, 0, 1);
+        const lowBinWeight = Math.pow(1 - t, 0.8);
+        const lowLift = lowBandDrive * (0.24 + lowBinWeight * 0.42);
+        const lowWeightedTarget = clamp(target * (1 + lowBinWeight * 0.36) + lowLift, 0, 1);
+        const boostedTarget = clamp(Math.pow(lowWeightedTarget, 0.68) * 1.28, 0, 1);
         const previous = waveformSpectrumSmoothed[i] ?? 0;
         const blend = boostedTarget > previous ? 0.58 : 0.22;
         const smoothed = previous + (boostedTarget - previous) * blend;
