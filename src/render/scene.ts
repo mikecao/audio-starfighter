@@ -7,6 +7,7 @@ import {
   DataTexture,
   DirectionalLight,
   DoubleSide,
+  Fog,
   Float32BufferAttribute,
   FrontSide,
   Group,
@@ -55,6 +56,8 @@ export function setupScene(container: HTMLElement): RenderScene {
   const highEnergyBg = new Color("#141414");
   const currentBg = lowEnergyBg.clone();
   scene.background = currentBg;
+  const sceneFog = new Fog(currentBg.clone(), WAVEFORM_SCENE_FOG_NEAR, WAVEFORM_SCENE_FOG_FAR);
+  scene.fog = sceneFog;
 
   const camera = new OrthographicCamera(-1, 1, 1, -1, 0.1, 200);
   camera.position.set(0, 0, 20);
@@ -294,7 +297,10 @@ export function setupScene(container: HTMLElement): RenderScene {
         float spectrumAccent = pow(max(0.0, spectrum), 1.05);
         float spectralShape = 0.56 + spectrum * 1.74 + spectrumAccent * 1.12;
         float amplitudeBoost = 0.76 + uAmplitudeDrive * 1.52;
-        return ridge * uHeightScale * (0.14 + depthScale * 1.22) * (0.74 + lateral * 0.46) * spectralShape * amplitudeBoost;
+        float nearEdgeFade = smoothstep(0.12, 0.42, uvPoint.y);
+        float nearSafetyScale = 0.08 + nearEdgeFade * 0.92;
+        float nearAmplitudeScale = 0.28 + nearEdgeFade * 0.72;
+        return ridge * uHeightScale * (0.1 + depthScale * 0.88) * (0.74 + lateral * 0.46) * spectralShape * amplitudeBoost * nearSafetyScale * nearAmplitudeScale;
       }
   `;
   const waveformPlaneBeginNormal = `
@@ -346,7 +352,7 @@ export function setupScene(container: HTMLElement): RenderScene {
       shader.vertexShader = shader.vertexShader.replace("#include <beginnormal_vertex>", waveformPlaneBeginNormal);
       shader.vertexShader = shader.vertexShader.replace("#include <begin_vertex>", waveformPlaneBeginVertex);
     };
-    material.customProgramCacheKey = () => "waveform-plane-displacement-v1";
+    material.customProgramCacheKey = () => "waveform-plane-displacement-v4";
   };
   const waveformPlaneMaterial = new MeshStandardMaterial({
     color: "#f2fff8",
@@ -366,6 +372,7 @@ export function setupScene(container: HTMLElement): RenderScene {
   waveformPlaneDepthMaterial.colorWrite = false;
   waveformPlaneDepthMaterial.transparent = false;
   waveformPlaneDepthMaterial.side = FrontSide;
+  waveformPlaneDepthMaterial.fog = false;
   waveformPlaneDepthMaterial.depthWrite = true;
   waveformPlaneDepthMaterial.depthTest = true;
   applyWaveformPlaneDisplacement(waveformPlaneDepthMaterial);
@@ -376,13 +383,13 @@ export function setupScene(container: HTMLElement): RenderScene {
     WAVEFORM_PLANE_SEGMENTS_Y
   );
   const waveformPlaneDepthMesh = new Mesh(waveformPlaneGeometry, waveformPlaneDepthMaterial);
-  waveformPlaneDepthMesh.position.set(0, -16, -20);
+  waveformPlaneDepthMesh.position.set(0, -15.8, -28);
   waveformPlaneDepthMesh.rotation.x = -1.21;
   waveformPlaneDepthMesh.rotation.y = 0;
   waveformPlaneDepthMesh.rotation.z = 0;
   waveformPlaneDepthMesh.renderOrder = -2;
   const waveformPlaneMesh = new Mesh(waveformPlaneGeometry, waveformPlaneMaterial);
-  waveformPlaneMesh.position.set(0, -16, -20);
+  waveformPlaneMesh.position.set(0, -15.8, -28);
   waveformPlaneMesh.rotation.x = -1.21;
   waveformPlaneMesh.rotation.y = 0;
   waveformPlaneMesh.rotation.z = 0;
@@ -394,6 +401,8 @@ export function setupScene(container: HTMLElement): RenderScene {
   let waveformPlaneHasData = true;
   let waveformPlaneTimeSeconds = 0;
   let waveformPlaneAmplitudeDrive = 0;
+  let waveformPlaneAmplitudePeak = 0.35;
+  let waveformPlaneSpectrumPeak = 0.35;
 
   function resize(): void {
     const width = container.clientWidth;
@@ -457,6 +466,7 @@ export function setupScene(container: HTMLElement): RenderScene {
 
       const intensity = snapshot.currentIntensity;
       currentBg.copy(lowEnergyBg).lerp(highEnergyBg, intensity);
+      sceneFog.color.copy(currentBg);
       shipMaterial.emissive.set("#0e7490");
       shipMaterial.emissiveIntensity = 0.08 + intensity * 0.3;
       updateStarLayer(farStars, starTimeSeconds, snapshot.ship.y);
@@ -784,7 +794,9 @@ export function setupScene(container: HTMLElement): RenderScene {
     },
     setWaveformPlaneSpectrum(spectrumBins) {
       if (!spectrumBins || spectrumBins.length === 0) {
-        waveformPlaneAmplitudeDrive *= 0.9;
+        waveformPlaneAmplitudeDrive *= 0.92;
+        waveformPlaneAmplitudePeak = Math.max(0.22, waveformPlaneAmplitudePeak * 0.9992);
+        waveformPlaneSpectrumPeak = Math.max(0.22, waveformPlaneSpectrumPeak * 0.9988);
         for (let i = 0; i < WAVEFORM_PLANE_SPECTRUM_BIN_COUNT; i += 1) {
           waveformSpectrumSmoothed[i] = (waveformSpectrumSmoothed[i] ?? 0) * 0.94;
           const encoded = Math.round(clamp(waveformSpectrumSmoothed[i], 0, 1) * 255);
@@ -799,6 +811,14 @@ export function setupScene(container: HTMLElement): RenderScene {
       }
 
       const maxSourceIndex = Math.max(0, spectrumBins.length - 1);
+      let frameSpectrumPeak = 0;
+      for (let i = 0; i < spectrumBins.length; i += 1) {
+        frameSpectrumPeak = Math.max(frameSpectrumPeak, clamp(spectrumBins[i] ?? 0, 0, 1));
+      }
+      waveformPlaneSpectrumPeak +=
+        (frameSpectrumPeak - waveformPlaneSpectrumPeak) *
+        (frameSpectrumPeak > waveformPlaneSpectrumPeak ? 0.34 : 0.02);
+      waveformPlaneSpectrumPeak = clamp(waveformPlaneSpectrumPeak, 0.22, 1.4);
       const lowBandCount = Math.max(1, Math.min(spectrumBins.length, Math.floor(spectrumBins.length * 0.12)));
       let lowBandWeightedSum = 0;
       let lowBandWeightTotal = 0;
@@ -827,18 +847,27 @@ export function setupScene(container: HTMLElement): RenderScene {
         0,
         1
       );
-      const amplitudeNoiseGate = 0.12;
+      waveformPlaneAmplitudePeak +=
+        (rawAmplitudeTarget - waveformPlaneAmplitudePeak) *
+        (rawAmplitudeTarget > waveformPlaneAmplitudePeak ? 0.22 : 0.008);
+      waveformPlaneAmplitudePeak = clamp(waveformPlaneAmplitudePeak, 0.22, 1.2);
+      const normalizedAmplitudeTarget = clamp(
+        rawAmplitudeTarget / Math.max(0.22, waveformPlaneAmplitudePeak),
+        0,
+        1.4
+      );
+      const amplitudeNoiseGate = 0.04;
       const amplitudeTarget =
-        rawAmplitudeTarget <= amplitudeNoiseGate
+        normalizedAmplitudeTarget <= amplitudeNoiseGate
           ? 0
           : clamp(
-              (rawAmplitudeTarget - amplitudeNoiseGate) / (1 - amplitudeNoiseGate),
+              (normalizedAmplitudeTarget - amplitudeNoiseGate) / (1 - amplitudeNoiseGate),
               0,
               1
             );
       waveformPlaneAmplitudeDrive +=
         (amplitudeTarget - waveformPlaneAmplitudeDrive) *
-        (amplitudeTarget > waveformPlaneAmplitudeDrive ? 0.24 : 0.08);
+        (amplitudeTarget > waveformPlaneAmplitudeDrive ? 0.28 : 0.12);
 
       for (let i = 0; i < WAVEFORM_PLANE_SPECTRUM_BIN_COUNT; i += 1) {
         const t =
@@ -847,12 +876,23 @@ export function setupScene(container: HTMLElement): RenderScene {
             : i / (WAVEFORM_PLANE_SPECTRUM_BIN_COUNT - 1);
         const sourcePos = Math.pow(t, 1.36) * maxSourceIndex;
         const target = clamp(sampleWaveformLinear(spectrumBins, sourcePos), 0, 1);
+        const normalizedTarget = target / Math.max(0.18, waveformPlaneSpectrumPeak);
+        const compressedTarget = normalizedTarget / (1 + normalizedTarget * 0.72);
         const lowBinWeight = Math.pow(1 - t, 0.8);
-        const lowLift = lowBandDrive * (0.24 + lowBinWeight * 0.42);
-        const lowWeightedTarget = clamp(target * (1 + lowBinWeight * 0.36) + lowLift, 0, 1);
-        const boostedTarget = clamp(Math.pow(lowWeightedTarget, 0.68) * 1.28, 0, 1);
+        const normalizedLowBand = clamp(
+          lowBandDrive / Math.max(0.18, waveformPlaneAmplitudePeak),
+          0,
+          1.5
+        );
+        const lowLift = normalizedLowBand * (0.09 + lowBinWeight * 0.18);
+        const lowWeightedTarget = clamp(
+          compressedTarget * (1 + lowBinWeight * 0.22) + lowLift,
+          0,
+          1
+        );
+        const boostedTarget = clamp(Math.pow(lowWeightedTarget, 0.84) * 0.96, 0, 1);
         const previous = waveformSpectrumSmoothed[i] ?? 0;
-        const blend = boostedTarget > previous ? 0.58 : 0.22;
+        const blend = boostedTarget > previous ? 0.46 : 0.2;
         const smoothed = previous + (boostedTarget - previous) * blend;
         waveformSpectrumSmoothed[i] = smoothed;
         const encoded = Math.round(clamp(smoothed, 0, 1) * 255);
@@ -1372,6 +1412,8 @@ const WAVEFORM_PLANE_HEIGHT = 90;
 const WAVEFORM_PLANE_SEGMENTS_X = 56;
 const WAVEFORM_PLANE_SEGMENTS_Y = 42;
 const WAVEFORM_PLANE_HEIGHT_SCALE = 4.1;
+const WAVEFORM_SCENE_FOG_NEAR = 52;
+const WAVEFORM_SCENE_FOG_FAR = 92;
 const WAVEFORM_PLANE_TIME_WINDOW_SECONDS = 2.4;
 const PURPLE_PULSE_TRAVEL_DASH_RATIO = 0.9;
 const PURPLE_PULSE_MIN_DURATION_SECONDS = 0.5;
