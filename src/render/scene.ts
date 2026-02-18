@@ -258,7 +258,7 @@ export function setupScene(container: HTMLElement): RenderScene {
     uniforms: {
       uTimeSeconds: { value: 0 },
       uHeightScale: { value: WAVEFORM_PLANE_HEIGHT_SCALE },
-      uBaseColor: { value: new Color("#46dfff") },
+      uBaseColor: { value: new Color("#2a7f63") },
       uAccentColor: { value: new Color("#f4feff") },
       uSkyColor: { value: new Color("#6bff8f") },
       uHorizonColor: { value: new Color("#06090d") },
@@ -268,6 +268,7 @@ export function setupScene(container: HTMLElement): RenderScene {
       varying vec3 vViewPos;
       varying vec3 vViewNormal;
       varying float vDepth;
+      varying float vAltitude;
       uniform float uTimeSeconds;
       uniform float uHeightScale;
       uniform sampler2D uSpectrumTex;
@@ -288,7 +289,7 @@ export function setupScene(container: HTMLElement): RenderScene {
         float baseB = sin(p.x * 0.79 - p.y * 1.14 + 1.12) * 0.37;
         float baseC = sin((p.x + p.y) * 1.47 - 0.46) * 0.25;
         float raw = abs(baseA + baseB + baseC);
-        float ridge = pow(clamp(raw * 1.1, 0.0, 1.0), 1.08);
+        float ridge = pow(1.0 - exp(-raw * 1.18), 1.08);
         float depthScale = pow(max(0.0, 1.0 - uvPoint.y), 0.54);
         float lateral = 1.0 - smoothstep(0.18, 0.86, abs(uvPoint.x - 0.5));
         float spectrumBin = pow(clamp(1.0 - uvPoint.y, 0.0, 1.0), 1.04);
@@ -300,7 +301,7 @@ export function setupScene(container: HTMLElement): RenderScene {
 
       void main() {
         float height = computeHeight(uv);
-        float steppedHeight = floor(height * 3.2 + 0.5) / 3.2;
+        float steppedHeight = floor(height * 12.0 + 0.5) / 12.0;
         float depthCurve = pow(clamp(uv.y, 0.0, 1.0), 1.95);
         float depthMapped = pow(clamp(uv.y, 0.0, 1.0), 1.55);
         float widthScale = mix(1.0, 0.44, depthCurve);
@@ -314,8 +315,8 @@ export function setupScene(container: HTMLElement): RenderScene {
         float uvStepY = ${Math.max(1 / Math.max(WAVEFORM_PLANE_SEGMENTS_Y, 1), 1e-5).toFixed(6)};
         vec2 uvX = vec2(min(1.0, uv.x + uvStepX), uv.y);
         vec2 uvY = vec2(uv.x, min(1.0, uv.y + uvStepY));
-        float hX = floor(computeHeight(uvX) * 3.2 + 0.5) / 3.2;
-        float hY = floor(computeHeight(uvY) * 3.2 + 0.5) / 3.2;
+        float hX = floor(computeHeight(uvX) * 12.0 + 0.5) / 12.0;
+        float hY = floor(computeHeight(uvY) * 12.0 + 0.5) / 12.0;
         float depthCurveY = pow(clamp(uvY.y, 0.0, 1.0), 1.95);
         float depthMappedY = pow(clamp(uvY.y, 0.0, 1.0), 1.55);
         float widthScaleY = mix(1.0, 0.44, depthCurveY);
@@ -338,6 +339,7 @@ export function setupScene(container: HTMLElement): RenderScene {
         vViewPos = mvPosition.xyz;
         vViewNormal = normalize(normalMatrix * modelNormal);
         vDepth = depthCurve;
+        vAltitude = clamp(steppedHeight / max(0.0001, uHeightScale * 3.0), 0.0, 1.0);
         gl_Position = projectionMatrix * mvPosition;
       }
     `,
@@ -345,6 +347,7 @@ export function setupScene(container: HTMLElement): RenderScene {
       varying vec3 vViewPos;
       varying vec3 vViewNormal;
       varying float vDepth;
+      varying float vAltitude;
       uniform vec3 uBaseColor;
       uniform vec3 uAccentColor;
       uniform vec3 uSkyColor;
@@ -364,16 +367,18 @@ export function setupScene(container: HTMLElement): RenderScene {
         vec3 hB = normalize(lB + v);
         float specularA = pow(max(dot(n, hA), 0.0), 22.0) * 0.58;
         float specularB = pow(max(dot(n, hB), 0.0), 18.0) * 0.34;
-        float shade = 0.44 + diffuseA * 0.74 + diffuseB * 0.32;
+        float shade = 0.38 + diffuseA * 0.58 + diffuseB * 0.26;
         float accent = clamp(0.24 + diffuseA * 0.72 + diffuseB * 0.24, 0.0, 1.0);
+        float altitudeGlow = smoothstep(0.12, 0.96, vAltitude);
         vec3 terrainColor = mix(uBaseColor, uAccentColor, accent);
-        vec3 color = terrainColor * shade;
-        color += uSkyColor * pow(max(n.z, 0.0), 1.2) * 0.24;
-        color += uSkyColor * (specularA + specularB) * 1.28;
-        color = max(color, terrainColor * 0.52);
+        vec3 color = terrainColor * shade * (0.32 + altitudeGlow * 0.62);
+        color += uSkyColor * pow(max(n.z, 0.0), 1.2) * (0.1 + altitudeGlow * 0.24);
+        color += uSkyColor * (specularA + specularB) * (0.35 + altitudeGlow * 1.28);
+        color += uSkyColor * altitudeGlow * 0.24;
+        color = max(color, terrainColor * (0.14 + altitudeGlow * 0.22));
         float horizonFog = smoothstep(0.76, 0.996, vDepth);
         color = mix(color, uHorizonColor, horizonFog);
-        float alpha = 1.0 - horizonFog * 0.86;
+        float alpha = (0.36 + altitudeGlow * 0.62) * (1.0 - horizonFog * 0.86);
         gl_FragColor = vec4(color, alpha);
       }
     `,
