@@ -258,7 +258,7 @@ export function setupScene(container: HTMLElement): RenderScene {
     uniforms: {
       uTimeSeconds: { value: 0 },
       uHeightScale: { value: WAVEFORM_PLANE_HEIGHT_SCALE },
-      uBaseColor: { value: new Color("#2a7f63") },
+      uBaseColor: { value: new Color("#f2fff8") },
       uAccentColor: { value: new Color("#f4feff") },
       uSkyColor: { value: new Color("#6bff8f") },
       uHorizonColor: { value: new Color("#06090d") },
@@ -289,7 +289,8 @@ export function setupScene(container: HTMLElement): RenderScene {
         float baseB = sin(p.x * 0.79 - p.y * 1.14 + 1.12) * 0.37;
         float baseC = sin((p.x + p.y) * 1.47 - 0.46) * 0.25;
         float raw = abs(baseA + baseB + baseC);
-        float ridge = pow(1.0 - exp(-raw * 1.18), 1.08);
+        float ridgeSource = (raw * 1.24) / (1.0 + raw * 0.34);
+        float ridge = pow(ridgeSource, 1.04);
         float depthScale = pow(max(0.0, 1.0 - uvPoint.y), 0.54);
         float lateral = 1.0 - smoothstep(0.18, 0.86, abs(uvPoint.x - 0.5));
         float spectrumBin = pow(clamp(1.0 - uvPoint.y, 0.0, 1.0), 1.04);
@@ -301,7 +302,7 @@ export function setupScene(container: HTMLElement): RenderScene {
 
       void main() {
         float height = computeHeight(uv);
-        float steppedHeight = floor(height * 12.0 + 0.5) / 12.0;
+        float steppedHeight = floor(height * 8.0 + 0.5) / 8.0;
         float depthCurve = pow(clamp(uv.y, 0.0, 1.0), 1.95);
         float depthMapped = pow(clamp(uv.y, 0.0, 1.0), 1.55);
         float widthScale = mix(1.0, 0.44, depthCurve);
@@ -315,8 +316,8 @@ export function setupScene(container: HTMLElement): RenderScene {
         float uvStepY = ${Math.max(1 / Math.max(WAVEFORM_PLANE_SEGMENTS_Y, 1), 1e-5).toFixed(6)};
         vec2 uvX = vec2(min(1.0, uv.x + uvStepX), uv.y);
         vec2 uvY = vec2(uv.x, min(1.0, uv.y + uvStepY));
-        float hX = floor(computeHeight(uvX) * 12.0 + 0.5) / 12.0;
-        float hY = floor(computeHeight(uvY) * 12.0 + 0.5) / 12.0;
+        float hX = floor(computeHeight(uvX) * 8.0 + 0.5) / 8.0;
+        float hY = floor(computeHeight(uvY) * 8.0 + 0.5) / 8.0;
         float depthCurveY = pow(clamp(uvY.y, 0.0, 1.0), 1.95);
         float depthMappedY = pow(clamp(uvY.y, 0.0, 1.0), 1.55);
         float widthScaleY = mix(1.0, 0.44, depthCurveY);
