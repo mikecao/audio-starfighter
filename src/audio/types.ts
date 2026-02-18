@@ -35,6 +35,14 @@ export type CuePoint = {
   source: "beat" | "peak";
 };
 
+export type SpectrumTimeline = {
+  frameHopSeconds: number;
+  frameCount: number;
+  binCount: number;
+  bins: Float32Array;
+  beatEnvelope: Float32Array;
+};
+
 export type AudioAnalysisResult = {
   fileName: string;
   durationSeconds: number;
@@ -42,6 +50,7 @@ export type AudioAnalysisResult = {
   waveformLeft: Float32Array;
   waveformRight: Float32Array;
   frames: FeatureFrame[];
+  spectrum: SpectrumTimeline;
   beat: BeatAnalysis;
   mood: MoodAnalysis;
   cues: CuePoint[];

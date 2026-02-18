@@ -11,6 +11,7 @@ type AudioPanelHandlers = {
   onAnalyze: (file: File) => Promise<AudioAnalysisResult>;
   onStartRun: (analysis: AudioAnalysisResult, seed: number) => void | Promise<void>;
   onCombatConfigChange: (config: CombatConfigPatch) => void;
+  onWaveformPlaneChange: (enabled: boolean) => void;
   onToggleUi: () => boolean;
 };
 
@@ -19,6 +20,7 @@ export type AudioPanel = {
   setPlaybackTime: (timeSeconds: number) => void;
   getAudioPlaybackTime: () => number;
   isAudioPlaying: () => boolean;
+  getAudioSpectrumBins: () => Float32Array | null;
   loadFile: (file: File) => Promise<void>;
 };
 
@@ -32,6 +34,7 @@ type UiCombatState = {
   spawnScale: number;
   fireScale: number;
   enemyProjectileStyle: EnemyProjectileStyle;
+  waveformPlaneEnabled: boolean;
 };
 
 const DEFAULT_COMBAT_STATE: UiCombatState = {
@@ -43,8 +46,12 @@ const DEFAULT_COMBAT_STATE: UiCombatState = {
   greenTriangleEnabled: false,
   spawnScale: 1,
   fireScale: 1,
-  enemyProjectileStyle: "balls"
+  enemyProjectileStyle: "balls",
+  waveformPlaneEnabled: true
 };
+
+const SPECTRUM_ANALYZER_FFT_SIZE = 2048;
+const SPECTRUM_ANALYZER_OUTPUT_BINS = 192;
 
 export function createAudioPanel(
   container: HTMLElement,
@@ -181,7 +188,17 @@ export function createAudioPanel(
     enemyFireScale.root
   );
 
-  settingsForm.append(shipGroup, enemyGroup);
+  const visualsGroup = document.createElement("fieldset");
+  visualsGroup.className = "audio-settings-modal__group";
+  const visualsLegend = document.createElement("legend");
+  visualsLegend.className = "audio-settings-modal__legend";
+  visualsLegend.textContent = "Visuals";
+  visualsGroup.appendChild(visualsLegend);
+
+  const waveformPlaneToggle = createModalToggle("Waveform Plane", true);
+  visualsGroup.append(waveformPlaneToggle.root);
+
+  settingsForm.append(shipGroup, enemyGroup, visualsGroup);
 
   const settingsFooter = document.createElement("div");
   settingsFooter.className = "audio-settings-modal__footer";
@@ -230,6 +247,39 @@ export function createAudioPanel(
   let placeholderText = "Load a track to view timeline.";
   let runStarting = false;
   let combatState: UiCombatState = { ...DEFAULT_COMBAT_STATE };
+  let audioContext: AudioContext | null = null;
+  let audioSourceNode: MediaElementAudioSourceNode | null = null;
+  let audioAnalyserNode: AnalyserNode | null = null;
+  let analyserByteData: Uint8Array<ArrayBuffer> | null = null;
+  const spectrumOutputBins = new Float32Array(SPECTRUM_ANALYZER_OUTPUT_BINS);
+  const spectrumSmoothedBins = new Float32Array(SPECTRUM_ANALYZER_OUTPUT_BINS);
+
+  const ensureAudioAnalyser = (): void => {
+    if (audioContext && audioSourceNode && audioAnalyserNode && analyserByteData) {
+      return;
+    }
+    audioContext = new AudioContext();
+    audioSourceNode = audioContext.createMediaElementSource(audio);
+    audioAnalyserNode = audioContext.createAnalyser();
+    audioAnalyserNode.fftSize = SPECTRUM_ANALYZER_FFT_SIZE;
+    audioAnalyserNode.smoothingTimeConstant = 0.62;
+    audioAnalyserNode.minDecibels = -96;
+    audioAnalyserNode.maxDecibels = -12;
+    analyserByteData = new Uint8Array(new ArrayBuffer(audioAnalyserNode.frequencyBinCount));
+    audioSourceNode.connect(audioAnalyserNode);
+    audioAnalyserNode.connect(audioContext.destination);
+  };
+
+  const resumeAudioAnalyser = (): void => {
+    ensureAudioAnalyser();
+    if (audioContext && audioContext.state === "suspended") {
+      void audioContext.resume();
+    }
+  };
+
+  audio.addEventListener("play", () => {
+    resumeAudioAnalyser();
+  });
 
   const setAnalysisSummary = (analysis: AudioAnalysisResult): void => {
     summary.textContent = [
@@ -336,6 +386,7 @@ export function createAudioPanel(
     enemyRedCubeToggle.input.checked = state.redCubeEnabled;
     enemyGreenTriangleToggle.input.checked = state.greenTriangleEnabled;
     enemyProjectileLaserToggle.input.checked = state.enemyProjectileStyle === "lasers";
+    waveformPlaneToggle.input.checked = state.waveformPlaneEnabled;
     enemySpawnScale.input.value = state.spawnScale.toFixed(2);
     enemyFireScale.input.value = state.fireScale.toFixed(2);
     enemySpawnScale.value.textContent = `${state.spawnScale.toFixed(2)}x`;
@@ -351,7 +402,8 @@ export function createAudioPanel(
     greenTriangleEnabled: enemyGreenTriangleToggle.input.checked,
     spawnScale: Number(enemySpawnScale.input.value),
     fireScale: Number(enemyFireScale.input.value),
-    enemyProjectileStyle: enemyProjectileLaserToggle.input.checked ? "lasers" : "balls"
+    enemyProjectileStyle: enemyProjectileLaserToggle.input.checked ? "lasers" : "balls",
+    waveformPlaneEnabled: waveformPlaneToggle.input.checked
   });
 
   const publishCombatState = (state: UiCombatState): void => {
@@ -376,6 +428,7 @@ export function createAudioPanel(
         enemyProjectileStyle: state.enemyProjectileStyle
       }
     });
+    handlers.onWaveformPlaneChange(state.waveformPlaneEnabled);
   };
 
   settingsButton.addEventListener("click", () => {
@@ -438,6 +491,10 @@ export function createAudioPanel(
     if (trackUrl) {
       URL.revokeObjectURL(trackUrl);
       trackUrl = null;
+    }
+    if (audioContext) {
+      void audioContext.close();
+      audioContext = null;
     }
   });
 
@@ -515,6 +572,24 @@ export function createAudioPanel(
     isAudioPlaying() {
       return !audio.paused && !audio.ended;
     },
+    getAudioSpectrumBins() {
+      if (!audioAnalyserNode || !analyserByteData || !audioContext) {
+        return null;
+      }
+      if (audioContext.state === "suspended") {
+        return null;
+      }
+      audioAnalyserNode.getByteFrequencyData(analyserByteData);
+      remapFrequencyBins(analyserByteData, spectrumOutputBins);
+      for (let i = 0; i < spectrumOutputBins.length; i += 1) {
+        const incoming = spectrumOutputBins[i];
+        const previous = spectrumSmoothedBins[i] ?? 0;
+        const blend = incoming > previous ? 0.56 : 0.2;
+        spectrumSmoothedBins[i] = previous + (incoming - previous) * blend;
+        spectrumOutputBins[i] = spectrumSmoothedBins[i];
+      }
+      return spectrumOutputBins;
+    },
     async loadFile(file) {
       await analyzeAndLoadFile(file);
     }
@@ -539,6 +614,7 @@ export function createAudioPanel(
       playbackTimeSeconds = 0;
       lastTimelineDrawPlaybackTime = -1;
       audio.currentTime = 0;
+      resumeAudioAnalyser();
       void audio.play().catch(() => {
         summary.textContent =
           mode === "start"
@@ -774,6 +850,37 @@ function sampleWaveform(envelope: Float32Array, x: number, width: number): numbe
   const normalized = width <= 1 ? 0 : x / (width - 1);
   const index = Math.min(envelope.length - 1, Math.floor(normalized * (envelope.length - 1)));
   return envelope[index] ?? 0;
+}
+
+function remapFrequencyBins(source: ArrayLike<number>, target: Float32Array): void {
+  if (target.length === 0) {
+    return;
+  }
+  if (source.length === 0) {
+    target.fill(0);
+    return;
+  }
+  const minIndex = 1;
+  const maxIndex = source.length - 1;
+  const range = Math.max(1, maxIndex - minIndex);
+  for (let i = 0; i < target.length; i += 1) {
+    const startT = i / target.length;
+    const endT = (i + 1) / target.length;
+    const start = minIndex + Math.floor(Math.pow(startT, 1.82) * range);
+    const end = minIndex + Math.floor(Math.pow(endT, 1.82) * range);
+    const from = clamp(start, minIndex, maxIndex);
+    const to = clamp(Math.max(from + 1, end), minIndex + 1, maxIndex + 1);
+    let sum = 0;
+    let count = 0;
+    for (let j = from; j < to; j += 1) {
+      sum += (source[j] ?? 0) / 255;
+      count += 1;
+    }
+    const averaged = count > 0 ? sum / count : 0;
+    const normalizedIndex = i / Math.max(1, target.length - 1);
+    const lowBoost = 1 - normalizedIndex * 0.72;
+    target[i] = clamp(Math.pow(averaged, 1.08) * (0.86 + lowBoost * 0.34), 0, 1);
+  }
 }
 
 function drawPlaceholder(canvas: HTMLCanvasElement, text: string): void {

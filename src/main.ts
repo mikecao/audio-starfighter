@@ -1,6 +1,6 @@
 import "./styles.css";
 import { analyzeAudioTrack } from "./audio/analyze-track";
-import type { AudioAnalysisResult, FeatureFrame } from "./audio/types";
+import type { AudioAnalysisResult, FeatureFrame, SpectrumTimeline } from "./audio/types";
 import { setupScene } from "./render/scene";
 import { createSimulation, type SimulationSnapshot } from "./game/sim";
 import {
@@ -28,6 +28,8 @@ const DEMO_RUN_SEED = 7;
 const DEMO_CUE_START_SECONDS = 0.7;
 const DEMO_CUE_END_SECONDS = 360;
 const DEMO_CUE_INTERVAL_SECONDS = 0.55;
+const DEMO_SPECTRUM_BIN_COUNT = 28;
+const DEMO_SPECTRUM_HOP_SECONDS = 1 / 45;
 let currentCombatConfig: CombatConfigPatch = {
   shipWeapons: {
     blueLaser: true,
@@ -60,6 +62,9 @@ uiHost.className = "ui-host";
 app.appendChild(uiHost);
 
 const scene = setupScene(sceneHost);
+scene.setWaveformPlaneEnabled(true);
+const demoSpectrumTimeline = createDemoSpectrumTimeline();
+scene.setWaveformPlaneSpectrumTimeline(demoSpectrumTimeline);
 const sim = createSimulation();
 sim.setCombatConfig(currentCombatConfig);
 sim.setEnemyBulletRatio(ENEMY_BULLET_RATIO);
@@ -117,6 +122,7 @@ const audioPanel = createAudioPanel(uiHost, {
     });
   },
   async onStartRun(analysis, seed) {
+    scene.setWaveformPlaneSpectrumTimeline(analysis.spectrum);
     loadingOverlay.show(
       "Preparing Synced Run",
       "Configuring simulation...",
@@ -178,6 +184,9 @@ const audioPanel = createAudioPanel(uiHost, {
   onCombatConfigChange(config) {
     currentCombatConfig = config;
     sim.setCombatConfig(currentCombatConfig);
+  },
+  onWaveformPlaneChange(enabled) {
+    scene.setWaveformPlaneEnabled(enabled);
   },
   onToggleUi() {
     setUiHidden(!uiHidden);
@@ -288,11 +297,9 @@ function animate(frameTimeMs: number): void {
   latestSnapshot = snapshot;
   lastSimTimeSeconds = snapshot.simTimeSeconds;
   const audioPlaybackTimeSeconds = audioPanel.getAudioPlaybackTime();
-  const playbackDriftMs =
-    analysis && audioPlaybackTimeSeconds > 0
-      ? (snapshot.simTimeSeconds - audioPlaybackTimeSeconds) * 1000
-      : null;
+  scene.setWaveformPlaneTime(snapshot.simTimeSeconds);
   if (analysis && analysis !== appliedAnalysisRef) {
+    scene.setWaveformPlaneSpectrumTimeline(analysis.spectrum);
     const runTimeline = buildRunTimelineEvents(analysis);
     sim.setMoodProfile(analysis.mood.label);
     sim.setCombatConfig(currentCombatConfig);
@@ -305,6 +312,9 @@ function animate(frameTimeMs: number): void {
     appliedAnalysisRef = analysis;
     currentRunKey = buildBestScoreKey(analysis.fileName, 7);
     currentBestScore = loadBestScore(currentRunKey);
+  } else if (!analysis && appliedAnalysisRef !== null) {
+    scene.setWaveformPlaneSpectrumTimeline(demoSpectrumTimeline);
+    appliedAnalysisRef = null;
   }
 
   if (currentRunKey && snapshot.score > currentBestScore) {
@@ -506,4 +516,63 @@ function mapAnalyzeStageToPhase(stage: string): { label: string; tone: LoadingPh
     default:
       return { label: "Decode", tone: "decode" };
   }
+}
+
+function createDemoSpectrumTimeline(): SpectrumTimeline {
+  const durationSeconds = DEMO_CUE_END_SECONDS + 4;
+  const frameCount = Math.max(2, Math.floor(durationSeconds / DEMO_SPECTRUM_HOP_SECONDS) + 1);
+  const binCount = DEMO_SPECTRUM_BIN_COUNT;
+  const bins = new Float32Array(frameCount * binCount);
+  const beatEnvelope = new Float32Array(frameCount);
+  const beatSigma = 0.07;
+  const beatDenominator = 2 * beatSigma * beatSigma;
+  const beatTimes = buildDemoCueTimes();
+  let beatIndex = 0;
+
+  for (let frameIndex = 0; frameIndex < frameCount; frameIndex += 1) {
+    const timeSeconds = frameIndex * DEMO_SPECTRUM_HOP_SECONDS;
+
+    while (
+      beatIndex < beatTimes.length - 1 &&
+      (beatTimes[beatIndex + 1] ?? Number.POSITIVE_INFINITY) < timeSeconds
+    ) {
+      beatIndex += 1;
+    }
+    const prevBeat = beatTimes[Math.max(0, beatIndex)] ?? Number.POSITIVE_INFINITY;
+    const nextBeat = beatTimes[Math.min(beatTimes.length - 1, beatIndex + 1)] ?? prevBeat;
+    const prevDelta = timeSeconds - prevBeat;
+    const nextDelta = timeSeconds - nextBeat;
+    const beatPulse = Math.max(
+      Math.exp(-(prevDelta * prevDelta) / beatDenominator),
+      Math.exp(-(nextDelta * nextDelta) / beatDenominator)
+    );
+    beatEnvelope[frameIndex] = clamp01(beatPulse);
+
+    const sweep = timeSeconds * 0.36;
+    for (let binIndex = 0; binIndex < binCount; binIndex += 1) {
+      const binT = binCount <= 1 ? 0 : binIndex / (binCount - 1);
+      const lowEnvelope = Math.pow(1 - binT, 1.34);
+      const ridgeA = Math.max(0, Math.sin((binT * 2.4 + sweep) * Math.PI * 2));
+      const ridgeB = Math.max(0, Math.sin((binT * 7.3 - sweep * 1.4) * Math.PI * 2));
+      const ridgeC = Math.max(0, Math.sin((binT * 15.5 + sweep * 0.92) * Math.PI * 2));
+      const value =
+        lowEnvelope * (0.2 + beatPulse * 0.58) +
+        ridgeA * 0.2 +
+        ridgeB * 0.14 +
+        ridgeC * 0.08;
+      bins[frameIndex * binCount + binIndex] = clamp01(value);
+    }
+  }
+
+  return {
+    frameHopSeconds: DEMO_SPECTRUM_HOP_SECONDS,
+    frameCount,
+    binCount,
+    bins,
+    beatEnvelope
+  };
+}
+
+function clamp01(value: number): number {
+  return Math.max(0, Math.min(1, value));
 }

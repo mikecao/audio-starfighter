@@ -12,10 +12,12 @@ import {
   Mesh,
   MeshStandardMaterial,
   OrthographicCamera,
+  PlaneGeometry,
   Points,
   PointsMaterial,
   RingGeometry,
   Scene,
+  ShaderMaterial,
   SphereGeometry,
   TetrahedronGeometry,
   Vector2,
@@ -24,11 +26,17 @@ import {
 } from "three";
 import { MeshLine, MeshLineMaterial } from "three.meshline";
 import type { SimulationSnapshot } from "../game/sim";
+import type { SpectrumTimeline } from "../audio/types";
 
 export type RenderScene = {
   update: (snapshot: SimulationSnapshot, alpha: number) => void;
   render: () => void;
   resize: () => void;
+  setWaveformPlaneEnabled: (enabled: boolean) => void;
+  setWaveformPlaneSpectrumTimeline: (timeline: SpectrumTimeline | null) => void;
+  setWaveformPlaneData: (waveformLeft: Float32Array, waveformRight: Float32Array) => void;
+  clearWaveformPlaneData: () => void;
+  setWaveformPlaneTime: (timeSeconds: number) => void;
 };
 
 export function setupScene(container: HTMLElement): RenderScene {
@@ -223,6 +231,77 @@ export function setupScene(container: HTMLElement): RenderScene {
   scene.add(closeStars.primary);
   scene.add(closeStars.wrap);
 
+  const waveformPlaneMaterial = new ShaderMaterial({
+    uniforms: {
+      uTimeSeconds: { value: 0 },
+      uHeightScale: { value: WAVEFORM_PLANE_HEIGHT_SCALE },
+      uIntensity: { value: 0.5 }
+    },
+    vertexShader: `
+      varying vec2 vUv;
+      varying float vHeight;
+      uniform float uTimeSeconds;
+      uniform float uHeightScale;
+
+      float computeHeight(vec2 uvPoint) {
+        vec2 p = uvPoint * vec2(4.9, 9.8);
+        p.x += uTimeSeconds * 0.72;
+        float baseA = sin(p.x * 1.2 + p.y * 0.31) * 0.42;
+        float baseB = sin(p.x * 0.67 - p.y * 1.08 + 1.2) * 0.31;
+        float baseC = sin((p.x + p.y) * 1.54 - 0.62) * 0.22;
+        float raw = abs(baseA + baseB + baseC);
+        float ridge = pow(clamp(raw * 1.2, 0.0, 1.0), 1.24);
+        float depthScale = pow(max(0.0, 1.0 - uvPoint.y), 0.48);
+        float lateral = 1.0 - smoothstep(0.22, 0.88, abs(uvPoint.x - 0.5));
+        return ridge * uHeightScale * (0.16 + depthScale * 1.18) * (0.82 + lateral * 0.34);
+      }
+
+      void main() {
+        vUv = uv;
+        float height = computeHeight(uv);
+        vHeight = clamp(height / max(0.0001, uHeightScale), 0.0, 1.0);
+
+        vec3 transformed = position;
+        transformed.z += height;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(transformed, 1.0);
+      }
+    `,
+    fragmentShader: `
+      varying float vHeight;
+      uniform float uIntensity;
+
+      void main() {
+        vec3 base = vec3(0.43, 0.95, 0.83);
+        vec3 accent = vec3(0.84, 1.0, 0.94);
+        vec3 color = mix(base, accent, smoothstep(0.25, 1.0, vHeight));
+        color *= 0.74 + uIntensity * 0.24;
+        gl_FragColor = vec4(color, 1.0);
+      }
+    `,
+    wireframe: true,
+    transparent: false,
+    side: DoubleSide,
+    depthWrite: false,
+    depthTest: true
+  });
+  const waveformPlaneGeometry = new PlaneGeometry(
+    WAVEFORM_PLANE_WIDTH,
+    WAVEFORM_PLANE_HEIGHT,
+    WAVEFORM_PLANE_SEGMENTS_X,
+    WAVEFORM_PLANE_SEGMENTS_Y
+  );
+  const waveformPlaneMesh = new Mesh(waveformPlaneGeometry, waveformPlaneMaterial);
+  waveformPlaneMesh.position.set(0, -11.2, -9.5);
+  waveformPlaneMesh.rotation.x = -1.14;
+  waveformPlaneMesh.rotation.y = 0;
+  waveformPlaneMesh.rotation.z = 0;
+  waveformPlaneMesh.renderOrder = -1;
+  scene.add(waveformPlaneMesh);
+
+  let waveformPlaneEnabled = true;
+  let waveformPlaneHasData = true;
+  let waveformPlaneTimeSeconds = 0;
+
   function resize(): void {
     const width = container.clientWidth;
     const height = container.clientHeight;
@@ -290,6 +369,13 @@ export function setupScene(container: HTMLElement): RenderScene {
       updateStarLayer(farStars, starTimeSeconds, snapshot.ship.y);
       updateStarLayer(nearStars, starTimeSeconds, snapshot.ship.y);
       updateStarLayer(closeStars, starTimeSeconds, snapshot.ship.y);
+
+      const waveformPlaneVisible = waveformPlaneEnabled && waveformPlaneHasData;
+      waveformPlaneMesh.visible = waveformPlaneVisible;
+      if (waveformPlaneVisible) {
+        waveformPlaneMaterial.uniforms.uTimeSeconds.value = waveformPlaneTimeSeconds;
+        waveformPlaneMaterial.uniforms.uIntensity.value = intensity;
+      }
 
       syncMeshPool(enemyMeshes, snapshot.enemies.length, enemyGroup, () => {
         const mesh = new Mesh(redCubeGeometry, enemyMaterial.clone());
@@ -595,7 +681,32 @@ export function setupScene(container: HTMLElement): RenderScene {
     render() {
       renderer.render(scene, camera);
     },
-    resize
+    resize,
+    setWaveformPlaneEnabled(enabled) {
+      waveformPlaneEnabled = enabled;
+      const visible = waveformPlaneEnabled && waveformPlaneHasData;
+      waveformPlaneMesh.visible = visible;
+    },
+    setWaveformPlaneSpectrumTimeline(timeline) {
+      void timeline;
+      waveformPlaneHasData = true;
+      const visible = waveformPlaneEnabled;
+      waveformPlaneMesh.visible = visible;
+    },
+    setWaveformPlaneData(waveformLeft, waveformRight) {
+      void waveformLeft;
+      void waveformRight;
+      waveformPlaneHasData = true;
+      const visible = waveformPlaneEnabled;
+      waveformPlaneMesh.visible = visible;
+    },
+    clearWaveformPlaneData() {
+      waveformPlaneHasData = false;
+      waveformPlaneMesh.visible = false;
+    },
+    setWaveformPlaneTime(timeSeconds) {
+      waveformPlaneTimeSeconds = Math.max(0, timeSeconds);
+    }
   };
 }
 
@@ -1072,6 +1183,14 @@ const ARCADE_CORE_SCALE_MULTIPLIER = 2.35;
 const ARCADE_RING_MAX_SCALE = 7.2;
 const MISSILE_TRAIL_LINE_WIDTH = 0.06;
 const MISSILE_TRAIL_Z_OFFSET = 0.018;
+const WAVEFORM_PLANE_TIMELINE_SAMPLES = 4096;
+const WAVEFORM_PLANE_TEXTURE_BINS = 64;
+const WAVEFORM_PLANE_WIDTH = 62;
+const WAVEFORM_PLANE_HEIGHT = 34;
+const WAVEFORM_PLANE_SEGMENTS_X = 72;
+const WAVEFORM_PLANE_SEGMENTS_Y = 36;
+const WAVEFORM_PLANE_HEIGHT_SCALE = 5.4;
+const WAVEFORM_PLANE_TIME_WINDOW_SECONDS = 2.4;
 const PURPLE_PULSE_TRAVEL_DASH_RATIO = 0.9;
 const PURPLE_PULSE_MIN_DURATION_SECONDS = 0.5;
 const PURPLE_PULSE_MIN_POOL_SIZE = 4;
@@ -1283,6 +1402,121 @@ function updateExplosionBurst(
 function hash01(seed: number): number {
   const x = Math.sin(seed * 12.9898 + 78.233) * 43758.5453;
   return x - Math.floor(x);
+}
+
+function fillWaveformTextureDataWithSilence(data: Uint8Array): void {
+  for (let i = 0; i < data.length; i += 4) {
+    data[i] = 0;
+    data[i + 1] = 0;
+    data[i + 2] = 0;
+    data[i + 3] = 255;
+  }
+}
+
+function populateSpectrumTimelineTexture(
+  data: Uint8Array,
+  timeline: SpectrumTimeline,
+  textureTimeSamples: number,
+  textureBinSamples: number
+): void {
+  fillWaveformTextureDataWithSilence(data);
+  if (textureTimeSamples <= 0 || textureBinSamples <= 0 || timeline.frameCount <= 0) {
+    return;
+  }
+
+  const frameCount = timeline.frameCount;
+  const binCount = timeline.binCount;
+  const frameMax = Math.max(1, frameCount - 1);
+  const binMax = Math.max(1, binCount - 1);
+  for (let y = 0; y < textureBinSamples; y += 1) {
+    const textureBinT = textureBinSamples <= 1 ? 0 : y / (textureBinSamples - 1);
+    const remappedBin = Math.pow(textureBinT, 1.3) * binMax;
+    const binLo = Math.floor(remappedBin);
+    const binHi = Math.min(binCount - 1, binLo + 1);
+    const binMix = remappedBin - binLo;
+
+    for (let x = 0; x < textureTimeSamples; x += 1) {
+      const timeT = textureTimeSamples <= 1 ? 0 : x / (textureTimeSamples - 1);
+      const remappedFrame = timeT * frameMax;
+      const frameLo = Math.floor(remappedFrame);
+      const frameHi = Math.min(frameCount - 1, frameLo + 1);
+      const frameMix = remappedFrame - frameLo;
+
+      const loLo = timeline.bins[frameLo * binCount + binLo] ?? 0;
+      const loHi = timeline.bins[frameLo * binCount + binHi] ?? loLo;
+      const hiLo = timeline.bins[frameHi * binCount + binLo] ?? loLo;
+      const hiHi = timeline.bins[frameHi * binCount + binHi] ?? hiLo;
+      const frameLoMix = loLo + (loHi - loLo) * binMix;
+      const frameHiMix = hiLo + (hiHi - hiLo) * binMix;
+      const value = clamp(frameLoMix + (frameHiMix - frameLoMix) * frameMix, 0, 1);
+
+      const beatLo = timeline.beatEnvelope[frameLo] ?? 0;
+      const beatHi = timeline.beatEnvelope[frameHi] ?? beatLo;
+      const beat = clamp(beatLo + (beatHi - beatLo) * frameMix, 0, 1);
+
+      const encodedValue = Math.round(Math.pow(value, 1.04) * 255);
+      const encodedBeat = Math.round(beat * 255);
+      const offset = (y * textureTimeSamples + x) * 4;
+      data[offset] = encodedValue;
+      data[offset + 1] = encodedBeat;
+      data[offset + 2] = encodedValue;
+      data[offset + 3] = 255;
+    }
+  }
+}
+
+function populateSpectrumTimelineTextureFromWaveform(
+  data: Uint8Array,
+  waveformLeft: Float32Array,
+  waveformRight: Float32Array,
+  textureTimeSamples: number,
+  textureBinSamples: number
+): void {
+  fillWaveformTextureDataWithSilence(data);
+  const maxLength = Math.max(waveformLeft.length, waveformRight.length);
+  if (maxLength <= 0 || textureTimeSamples <= 0 || textureBinSamples <= 0) {
+    return;
+  }
+
+  for (let y = 0; y < textureBinSamples; y += 1) {
+    const binT = textureBinSamples <= 1 ? 0 : y / (textureBinSamples - 1);
+    const skew = Math.pow(binT, 1.72);
+    const lowBoost = 1 - binT * 0.82;
+
+    for (let x = 0; x < textureTimeSamples; x += 1) {
+      const timeT = textureTimeSamples <= 1 ? 0 : x / (textureTimeSamples - 1);
+      const sourcePos = timeT * (maxLength - 1);
+      const left = sampleWaveformLinear(waveformLeft, sourcePos);
+      const right = waveformRight.length > 0 ? sampleWaveformLinear(waveformRight, sourcePos) : left;
+      const mono = clamp((left + right) * 0.5, 0, 1);
+      const ridge = Math.max(
+        0,
+        Math.sin((timeT * (3.8 + skew * 13.2) + skew * 0.21) * Math.PI * 2)
+      );
+      const value = clamp(Math.pow(mono, 1.06) * (0.5 + lowBoost * 0.44) + ridge * 0.16, 0, 1);
+      const beat = clamp(ridge * (0.4 + lowBoost * 0.42), 0, 1);
+      const encodedValue = Math.round(value * 255);
+      const encodedBeat = Math.round(beat * 255);
+      const offset = (y * textureTimeSamples + x) * 4;
+      data[offset] = encodedValue;
+      data[offset + 1] = encodedBeat;
+      data[offset + 2] = encodedValue;
+      data[offset + 3] = 255;
+    }
+  }
+}
+
+function sampleWaveformLinear(samples: Float32Array, index: number): number {
+  if (samples.length === 0) {
+    return 0;
+  }
+  const clampedIndex = clamp(index, 0, samples.length - 1);
+  const lo = Math.floor(clampedIndex);
+  const hi = Math.min(samples.length - 1, lo + 1);
+  const t = clampedIndex - lo;
+  const loValue = samples[lo] ?? 0;
+  const hiValue = samples[hi] ?? loValue;
+  return loValue + (hiValue - loValue) * t;
 }
 
 function clamp01(value: number): number {
