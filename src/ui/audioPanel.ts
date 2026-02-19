@@ -12,8 +12,11 @@ type AudioPanelHandlers = {
   onStartRun: (analysis: AudioAnalysisResult, seed: number) => void | Promise<void>;
   onCombatConfigChange: (config: CombatConfigPatch) => void;
   onWaveformPlaneChange: (enabled: boolean) => void;
+  onWaveformPlaneSurfaceEnabledChange: (enabled: boolean) => void;
+  onWaveformPlaneWireframeEnabledChange: (enabled: boolean) => void;
   onWaveformPlaneHeightScaleChange: (heightScale: number) => void;
-  onWaveformPlaneColorChange: (colorHex: string) => void;
+  onWaveformPlaneSurfaceColorChange: (colorHex: string) => void;
+  onWaveformPlaneWireframeColorChange: (colorHex: string) => void;
   onToggleUi: () => boolean;
 };
 
@@ -37,12 +40,16 @@ type UiCombatState = {
   fireScale: number;
   enemyProjectileStyle: EnemyProjectileStyle;
   waveformPlaneEnabled: boolean;
+  waveformPlaneSurfaceEnabled: boolean;
+  waveformPlaneWireframeEnabled: boolean;
   waveformPlaneHeightScale: number;
-  waveformPlaneColor: string;
+  waveformPlaneSurfaceColor: string;
+  waveformPlaneWireframeColor: string;
 };
 
 const DEFAULT_WAVEFORM_PLANE_HEIGHT_SCALE = 6.8;
-const DEFAULT_WAVEFORM_PLANE_COLOR = "#f4f4f4";
+const DEFAULT_WAVEFORM_PLANE_SURFACE_COLOR = "#f4f4f4";
+const DEFAULT_WAVEFORM_PLANE_WIREFRAME_COLOR = "#f4f4f4";
 
 const DEFAULT_COMBAT_STATE: UiCombatState = {
   blueLaser: true,
@@ -55,8 +62,11 @@ const DEFAULT_COMBAT_STATE: UiCombatState = {
   fireScale: 1,
   enemyProjectileStyle: "balls",
   waveformPlaneEnabled: true,
+  waveformPlaneSurfaceEnabled: false,
+  waveformPlaneWireframeEnabled: true,
   waveformPlaneHeightScale: DEFAULT_WAVEFORM_PLANE_HEIGHT_SCALE,
-  waveformPlaneColor: DEFAULT_WAVEFORM_PLANE_COLOR
+  waveformPlaneSurfaceColor: DEFAULT_WAVEFORM_PLANE_SURFACE_COLOR,
+  waveformPlaneWireframeColor: DEFAULT_WAVEFORM_PLANE_WIREFRAME_COLOR
 };
 
 const SPECTRUM_ANALYZER_FFT_SIZE = 1024;
@@ -218,6 +228,8 @@ export function createAudioPanel(
   visualsGroup.appendChild(visualsLegend);
 
   const waveformPlaneToggle = createModalToggle("Waveform Plane", true);
+  const waveformPlaneSurfaceToggle = createModalToggle("Plane Surface", false);
+  const waveformPlaneWireframeToggle = createModalToggle("Plane Wireframe", true);
   const waveformPlaneHeightScale = createModalRange(
     "Plane Max Height",
     2.5,
@@ -225,11 +237,21 @@ export function createAudioPanel(
     0.1,
     DEFAULT_WAVEFORM_PLANE_HEIGHT_SCALE
   );
-  const waveformPlaneColor = createModalColor("Plane Color", DEFAULT_WAVEFORM_PLANE_COLOR);
+  const waveformPlaneSurfaceColor = createModalColor(
+    "Surface Color",
+    DEFAULT_WAVEFORM_PLANE_SURFACE_COLOR
+  );
+  const waveformPlaneWireframeColor = createModalColor(
+    "Wireframe Color",
+    DEFAULT_WAVEFORM_PLANE_WIREFRAME_COLOR
+  );
   visualsGroup.append(
     waveformPlaneToggle.root,
+    waveformPlaneSurfaceToggle.root,
+    waveformPlaneWireframeToggle.root,
     waveformPlaneHeightScale.root,
-    waveformPlaneColor.root
+    waveformPlaneSurfaceColor.root,
+    waveformPlaneWireframeColor.root
   );
 
   settingsForm.append(shipGroup, enemyGroup, visualsGroup);
@@ -515,19 +537,29 @@ export function createAudioPanel(
     enemyGreenTriangleToggle.input.checked = state.greenTriangleEnabled;
     enemyProjectileLaserToggle.input.checked = state.enemyProjectileStyle === "lasers";
     waveformPlaneToggle.input.checked = state.waveformPlaneEnabled;
+    waveformPlaneSurfaceToggle.input.checked = state.waveformPlaneSurfaceEnabled;
+    waveformPlaneWireframeToggle.input.checked = state.waveformPlaneWireframeEnabled;
     enemySpawnScale.input.value = state.spawnScale.toFixed(2);
     enemyFireScale.input.value = state.fireScale.toFixed(2);
     enemySpawnScale.value.textContent = `${state.spawnScale.toFixed(2)}x`;
     enemyFireScale.value.textContent = `${state.fireScale.toFixed(2)}x`;
     waveformPlaneHeightScale.input.value = state.waveformPlaneHeightScale.toFixed(1);
     waveformPlaneHeightScale.value.textContent = state.waveformPlaneHeightScale.toFixed(1);
-    waveformPlaneColor.input.value = normalizeHexColor(
-      state.waveformPlaneColor,
-      DEFAULT_WAVEFORM_PLANE_COLOR
+    waveformPlaneSurfaceColor.input.value = normalizeHexColor(
+      state.waveformPlaneSurfaceColor,
+      DEFAULT_WAVEFORM_PLANE_SURFACE_COLOR
     );
-    waveformPlaneColor.value.textContent = normalizeHexColor(
-      state.waveformPlaneColor,
-      DEFAULT_WAVEFORM_PLANE_COLOR
+    waveformPlaneSurfaceColor.value.textContent = normalizeHexColor(
+      state.waveformPlaneSurfaceColor,
+      DEFAULT_WAVEFORM_PLANE_SURFACE_COLOR
+    ).toUpperCase();
+    waveformPlaneWireframeColor.input.value = normalizeHexColor(
+      state.waveformPlaneWireframeColor,
+      DEFAULT_WAVEFORM_PLANE_WIREFRAME_COLOR
+    );
+    waveformPlaneWireframeColor.value.textContent = normalizeHexColor(
+      state.waveformPlaneWireframeColor,
+      DEFAULT_WAVEFORM_PLANE_WIREFRAME_COLOR
     ).toUpperCase();
   };
 
@@ -542,6 +574,8 @@ export function createAudioPanel(
     fireScale: Number(enemyFireScale.input.value),
     enemyProjectileStyle: enemyProjectileLaserToggle.input.checked ? "lasers" : "balls",
     waveformPlaneEnabled: waveformPlaneToggle.input.checked,
+    waveformPlaneSurfaceEnabled: waveformPlaneSurfaceToggle.input.checked,
+    waveformPlaneWireframeEnabled: waveformPlaneWireframeToggle.input.checked,
     waveformPlaneHeightScale: clamp(
       Number.isFinite(Number(waveformPlaneHeightScale.input.value))
         ? Number(waveformPlaneHeightScale.input.value)
@@ -549,9 +583,13 @@ export function createAudioPanel(
       2.5,
       12
     ),
-    waveformPlaneColor: normalizeHexColor(
-      waveformPlaneColor.input.value,
-      DEFAULT_WAVEFORM_PLANE_COLOR
+    waveformPlaneSurfaceColor: normalizeHexColor(
+      waveformPlaneSurfaceColor.input.value,
+      DEFAULT_WAVEFORM_PLANE_SURFACE_COLOR
+    ),
+    waveformPlaneWireframeColor: normalizeHexColor(
+      waveformPlaneWireframeColor.input.value,
+      DEFAULT_WAVEFORM_PLANE_WIREFRAME_COLOR
     )
   });
 
@@ -578,8 +616,11 @@ export function createAudioPanel(
       }
     });
     handlers.onWaveformPlaneChange(state.waveformPlaneEnabled);
+    handlers.onWaveformPlaneSurfaceEnabledChange(state.waveformPlaneSurfaceEnabled);
+    handlers.onWaveformPlaneWireframeEnabledChange(state.waveformPlaneWireframeEnabled);
     handlers.onWaveformPlaneHeightScaleChange(state.waveformPlaneHeightScale);
-    handlers.onWaveformPlaneColorChange(state.waveformPlaneColor);
+    handlers.onWaveformPlaneSurfaceColorChange(state.waveformPlaneSurfaceColor);
+    handlers.onWaveformPlaneWireframeColorChange(state.waveformPlaneWireframeColor);
   };
 
   const hasRunAffectingChanges = (previous: UiCombatState, next: UiCombatState): boolean => {
@@ -643,10 +684,16 @@ export function createAudioPanel(
       waveformPlaneHeightScale.input.value
     ).toFixed(1);
   });
-  waveformPlaneColor.input.addEventListener("input", () => {
-    waveformPlaneColor.value.textContent = normalizeHexColor(
-      waveformPlaneColor.input.value,
-      DEFAULT_WAVEFORM_PLANE_COLOR
+  waveformPlaneSurfaceColor.input.addEventListener("input", () => {
+    waveformPlaneSurfaceColor.value.textContent = normalizeHexColor(
+      waveformPlaneSurfaceColor.input.value,
+      DEFAULT_WAVEFORM_PLANE_SURFACE_COLOR
+    ).toUpperCase();
+  });
+  waveformPlaneWireframeColor.input.addEventListener("input", () => {
+    waveformPlaneWireframeColor.value.textContent = normalizeHexColor(
+      waveformPlaneWireframeColor.input.value,
+      DEFAULT_WAVEFORM_PLANE_WIREFRAME_COLOR
     ).toUpperCase();
   });
 
@@ -917,7 +964,7 @@ function createModalColor(label: string, value: string): ModalColorControl {
   const input = document.createElement("input");
   input.className = "audio-settings-modal__color-input";
   input.type = "color";
-  input.value = normalizeHexColor(value, DEFAULT_WAVEFORM_PLANE_COLOR);
+  input.value = normalizeHexColor(value, DEFAULT_WAVEFORM_PLANE_SURFACE_COLOR);
 
   const valueEl = document.createElement("span");
   valueEl.className = "audio-settings-modal__range-value";

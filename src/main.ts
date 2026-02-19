@@ -189,11 +189,20 @@ const audioPanel = createAudioPanel(uiHost, {
   onWaveformPlaneChange(enabled) {
     scene.setWaveformPlaneEnabled(enabled);
   },
+  onWaveformPlaneSurfaceEnabledChange(enabled) {
+    scene.setWaveformPlaneSurfaceEnabled(enabled);
+  },
+  onWaveformPlaneWireframeEnabledChange(enabled) {
+    scene.setWaveformPlaneWireframeEnabled(enabled);
+  },
   onWaveformPlaneHeightScaleChange(heightScale) {
     scene.setWaveformPlaneHeightScale(heightScale);
   },
-  onWaveformPlaneColorChange(colorHex) {
-    scene.setWaveformPlaneColor(colorHex);
+  onWaveformPlaneSurfaceColorChange(colorHex) {
+    scene.setWaveformPlaneSurfaceColor(colorHex);
+  },
+  onWaveformPlaneWireframeColorChange(colorHex) {
+    scene.setWaveformPlaneWireframeColor(colorHex);
   },
   onToggleUi() {
     setUiHidden(!uiHidden);
