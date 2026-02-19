@@ -292,9 +292,18 @@ export function setupScene(container: HTMLElement): RenderScene {
         float ridge = pow(ridgeSource, 1.04);
         float depthScale = pow(max(0.0, 1.0 - uvPoint.y), 0.54);
         float lateral = 1.0 - smoothstep(0.18, 0.86, abs(uvPoint.x - 0.5));
-        float spectrumBin = pow(clamp(1.0 - uvPoint.y, 0.0, 1.0), 1.55);
-        float spectrum = sampleSpectrum(spectrumBin);
-        float spectrumAccent = pow(max(0.0, spectrum), 1.05);
+        float depthSpectrumBin = pow(clamp(1.0 - uvPoint.y, 0.0, 1.0), 1.55);
+        float sweepSpectrumBin = 0.5 + 0.5 * sin(
+          uvPoint.x * 12.6 +
+          uvPoint.y * 5.2 +
+          uTimeSeconds * 1.28
+        );
+        float spectrum = mix(
+          sampleSpectrum(depthSpectrumBin),
+          sampleSpectrum(sweepSpectrumBin),
+          0.42
+        );
+        float spectrumAccent = pow(max(0.0, spectrum), 1.08);
         float spectralShape = 0.56 + spectrum * 1.74 + spectrumAccent * 1.12;
         float amplitudeBoost = 0.76 + uAmplitudeDrive * 1.52;
         float nearEdgeFade = smoothstep(0.12, 0.42, uvPoint.y);
@@ -352,7 +361,7 @@ export function setupScene(container: HTMLElement): RenderScene {
       shader.vertexShader = shader.vertexShader.replace("#include <beginnormal_vertex>", waveformPlaneBeginNormal);
       shader.vertexShader = shader.vertexShader.replace("#include <begin_vertex>", waveformPlaneBeginVertex);
     };
-    material.customProgramCacheKey = () => "waveform-plane-displacement-v4";
+    material.customProgramCacheKey = () => "waveform-plane-displacement-v5";
   };
   const waveformPlaneMaterial = new MeshStandardMaterial({
     color: "#f2fff8",
@@ -1381,7 +1390,7 @@ const WAVEFORM_PLANE_WIDTH = 120;
 const WAVEFORM_PLANE_HEIGHT = 90;
 const WAVEFORM_PLANE_SEGMENTS_X = 56;
 const WAVEFORM_PLANE_SEGMENTS_Y = 42;
-const WAVEFORM_PLANE_HEIGHT_SCALE = 4.1;
+const WAVEFORM_PLANE_HEIGHT_SCALE = 6.8;
 const WAVEFORM_SCENE_FOG_NEAR = 52;
 const WAVEFORM_SCENE_FOG_FAR = 92;
 const WAVEFORM_PLANE_TIME_WINDOW_SECONDS = 2.4;
