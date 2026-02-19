@@ -50,10 +50,9 @@ const DEFAULT_COMBAT_STATE: UiCombatState = {
   waveformPlaneEnabled: true
 };
 
-const SPECTRUM_ANALYZER_FFT_SIZE = 2048;
-const SPECTRUM_ANALYZER_MIN_DB = -96;
+const SPECTRUM_ANALYZER_FFT_SIZE = 1024;
+const SPECTRUM_ANALYZER_MIN_DB = -100;
 const SPECTRUM_ANALYZER_MAX_DB = -12;
-const SPECTRUM_ANALYZER_OUTPUT_BINS = 192;
 const SPECTRUM_REACTIVE_MIN_HZ = 0;
 const SPECTRUM_REACTIVE_MAX_HZ = 6000;
 const SPECTRUM_DYNAMIC_MIN_RANGE = 0.06;
@@ -278,8 +277,17 @@ export function createAudioPanel(
   let lastSpectrumSampleTimeMs = -Infinity;
   let spectrumDynamicMin = 0;
   let spectrumDynamicMax = 1;
-  const spectrumOutputBins = new Float32Array(SPECTRUM_ANALYZER_OUTPUT_BINS);
-  const spectrumSmoothedBins = new Float32Array(SPECTRUM_ANALYZER_OUTPUT_BINS);
+  let spectrumOutputBins = new Float32Array(0);
+  let spectrumSmoothedBins = new Float32Array(0);
+
+  const ensureSpectrumBufferSize = (size: number): void => {
+    const targetSize = Math.max(0, Math.floor(size));
+    if (spectrumOutputBins.length === targetSize && spectrumSmoothedBins.length === targetSize) {
+      return;
+    }
+    spectrumOutputBins = new Float32Array(targetSize);
+    spectrumSmoothedBins = new Float32Array(targetSize);
+  };
 
   const resetSpectrumNormalization = (): void => {
     spectrumDynamicMin = 0;
@@ -299,7 +307,9 @@ export function createAudioPanel(
     audioAnalyserNode.smoothingTimeConstant = 0.5;
     audioAnalyserNode.minDecibels = SPECTRUM_ANALYZER_MIN_DB;
     audioAnalyserNode.maxDecibels = SPECTRUM_ANALYZER_MAX_DB;
-    analyserDbData = new Float32Array(new ArrayBuffer(audioAnalyserNode.frequencyBinCount * 4));
+    analyserDbData = new Float32Array(audioAnalyserNode.frequencyBinCount);
+    const reactiveWindow = getReactiveBinWindow(audioAnalyserNode.frequencyBinCount, audioContext.sampleRate);
+    ensureSpectrumBufferSize(reactiveWindow.count);
     audioSourceNode.connect(audioAnalyserNode);
     audioAnalyserNode.connect(audioContext.destination);
   };
@@ -324,7 +334,18 @@ export function createAudioPanel(
     }
     lastSpectrumSampleTimeMs = nowMs;
     audioAnalyserNode.getFloatFrequencyData(analyserDbData);
-    remapFrequencyBins(analyserDbData, spectrumOutputBins, audioContext.sampleRate);
+    const reactiveWindow = getReactiveBinWindow(analyserDbData.length, audioContext.sampleRate);
+    ensureSpectrumBufferSize(reactiveWindow.count);
+    for (let i = 0; i < reactiveWindow.count; i += 1) {
+      const dbValue = analyserDbData[reactiveWindow.from + i] ?? SPECTRUM_ANALYZER_MIN_DB;
+      const safeDb = Number.isFinite(dbValue) ? dbValue : SPECTRUM_ANALYZER_MIN_DB;
+      const clampedDb = clamp(safeDb, SPECTRUM_ANALYZER_MIN_DB, SPECTRUM_ANALYZER_MAX_DB);
+      const magnitude = db2mag(clampedDb);
+      const normalizedMagnitude =
+        (magnitude - SPECTRUM_ANALYZER_MIN_MAGNITUDE) /
+        Math.max(1e-8, SPECTRUM_ANALYZER_MAX_MAGNITUDE - SPECTRUM_ANALYZER_MIN_MAGNITUDE);
+      spectrumOutputBins[i] = clamp(normalizedMagnitude, 0, 1);
+    }
     let frameMin = 1;
     let frameMax = 0;
     for (let i = 0; i < spectrumOutputBins.length; i += 1) {
@@ -930,58 +951,31 @@ function db2mag(val: number): number {
   return Math.exp(DB_TO_MAG_EXP * val);
 }
 
-function remapFrequencyBins(
-  source: ArrayLike<number>,
-  target: Float32Array,
+function getReactiveBinWindow(
+  totalBins: number,
   sampleRateHz: number
-): void {
-  if (target.length === 0) {
-    return;
-  }
-  if (source.length === 0) {
-    target.fill(0);
-    return;
+): { from: number; count: number } {
+  if (totalBins <= 0) {
+    return { from: 0, count: 0 };
   }
   const nyquistHz = Math.max(1, sampleRateHz * 0.5);
-  const sourceMaxIndex = Math.max(1, source.length - 1);
+  const maxBinIndex = Math.max(0, totalBins - 1);
   const minReactiveHz = clamp(SPECTRUM_REACTIVE_MIN_HZ, 0, nyquistHz);
   const maxReactiveHz = clamp(SPECTRUM_REACTIVE_MAX_HZ, minReactiveHz + 1, nyquistHz);
-  const minIndex = clamp(
-    Math.floor((minReactiveHz / nyquistHz) * sourceMaxIndex),
+  const from = clamp(
+    Math.floor((minReactiveHz / nyquistHz) * maxBinIndex),
     0,
-    sourceMaxIndex
+    maxBinIndex
   );
-  const maxIndex = clamp(
-    Math.ceil((maxReactiveHz / nyquistHz) * sourceMaxIndex),
-    minIndex + 1,
-    sourceMaxIndex
+  const toInclusive = clamp(
+    Math.ceil((maxReactiveHz / nyquistHz) * maxBinIndex),
+    from,
+    maxBinIndex
   );
-  const range = Math.max(1, maxIndex - minIndex);
-  for (let i = 0; i < target.length; i += 1) {
-    const startT = i / target.length;
-    const endT = (i + 1) / target.length;
-    const start = minIndex + Math.floor(Math.pow(startT, 1.82) * range);
-    const end = minIndex + Math.floor(Math.pow(endT, 1.82) * range);
-    const from = clamp(start, minIndex, maxIndex);
-    const to = clamp(Math.max(from + 1, end), minIndex + 1, maxIndex + 1);
-    let sum = 0;
-    let count = 0;
-    for (let j = from; j < to; j += 1) {
-      const dbValue = source[j] ?? SPECTRUM_ANALYZER_MIN_DB;
-      const safeDb = Number.isFinite(dbValue) ? dbValue : SPECTRUM_ANALYZER_MIN_DB;
-      const clampedDb = clamp(safeDb, SPECTRUM_ANALYZER_MIN_DB, SPECTRUM_ANALYZER_MAX_DB);
-      const magnitude = db2mag(clampedDb);
-      const normalizedMagnitude =
-        (magnitude - SPECTRUM_ANALYZER_MIN_MAGNITUDE) /
-        Math.max(1e-8, SPECTRUM_ANALYZER_MAX_MAGNITUDE - SPECTRUM_ANALYZER_MIN_MAGNITUDE);
-      sum += clamp(normalizedMagnitude, 0, 1);
-      count += 1;
-    }
-    const averaged = count > 0 ? sum / count : 0;
-    const normalizedIndex = i / Math.max(1, target.length - 1);
-    const lowBoost = 1 - normalizedIndex * 0.72;
-    target[i] = clamp(Math.pow(averaged, 1.08) * (0.86 + lowBoost * 0.34), 0, 1);
-  }
+  return {
+    from,
+    count: Math.max(1, toInclusive - from + 1)
+  };
 }
 
 function drawSpectrumBars(canvas: HTMLCanvasElement, bins: Float32Array | null): void {
@@ -1005,7 +999,9 @@ function drawSpectrumBars(canvas: HTMLCanvasElement, bins: Float32Array | null):
     context.stroke();
   }
 
-  const barCount = Math.min(SPECTRUM_PANEL_BAR_COUNT, Math.max(18, Math.floor(width / 10)));
+  const maxRenderableBars = Math.max(18, Math.floor(width / 3));
+  const desiredBarCount = bins && bins.length > 0 ? bins.length : SPECTRUM_PANEL_BAR_COUNT;
+  const barCount = Math.min(desiredBarCount, maxRenderableBars);
   const gap = 1.5;
   const usableWidth = Math.max(1, width - gap * (barCount + 1));
   const barWidth = Math.max(1, usableWidth / barCount);
@@ -1013,7 +1009,7 @@ function drawSpectrumBars(canvas: HTMLCanvasElement, bins: Float32Array | null):
   const maxBarHeight = Math.max(10, height - 6);
 
   for (let i = 0; i < barCount; i += 1) {
-    const rawValue = bins ? sampleSpectrumBand(bins, i, barCount) : 0;
+    const rawValue = bins ? sampleSpectrumBinNearest(bins, i, barCount) : 0;
     const shaped = Math.pow(clamp(rawValue, 0, 1), 0.76);
     const level = 0.04 + shaped * 0.96;
     const barHeight = Math.max(1, level * maxBarHeight);
@@ -1033,26 +1029,14 @@ function drawSpectrumBars(canvas: HTMLCanvasElement, bins: Float32Array | null):
   }
 }
 
-function sampleSpectrumBand(bins: Float32Array, index: number, bandCount: number): number {
-  if (bins.length === 0 || bandCount <= 0) {
+function sampleSpectrumBinNearest(bins: Float32Array, index: number, barCount: number): number {
+  if (bins.length === 0 || barCount <= 0) {
     return 0;
   }
-  const start = Math.floor((index / bandCount) * bins.length);
-  const end = Math.max(start + 1, Math.floor(((index + 1) / bandCount) * bins.length));
-  let sum = 0;
-  let peak = 0;
-  let count = 0;
-  for (let i = start; i < end; i += 1) {
-    const value = bins[i] ?? 0;
-    sum += value;
-    peak = Math.max(peak, value);
-    count += 1;
-  }
-  if (count <= 0) {
-    return 0;
-  }
-  const average = sum / count;
-  return clamp(average * 0.6 + peak * 0.4, 0, 1);
+  const binPosition =
+    barCount <= 1 ? 0 : (index / Math.max(1, barCount - 1)) * Math.max(0, bins.length - 1);
+  const binIndex = clamp(Math.round(binPosition), 0, Math.max(0, bins.length - 1));
+  return clamp(bins[binIndex] ?? 0, 0, 1);
 }
 
 function drawPlaceholder(canvas: HTMLCanvasElement, text: string): void {
