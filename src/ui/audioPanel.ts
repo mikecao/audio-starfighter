@@ -7,6 +7,8 @@ import type {
 
 const RUN_SEED_STORAGE_KEY = "audio-starfighter.run-seed";
 
+type WaveformPlaneSurfaceShading = "smooth" | "flat" | "matte" | "metallic";
+
 type AudioPanelHandlers = {
   onAnalyze: (file: File) => Promise<AudioAnalysisResult>;
   onStartRun: (analysis: AudioAnalysisResult, seed: number) => void | Promise<void>;
@@ -15,6 +17,7 @@ type AudioPanelHandlers = {
   onWaveformPlaneSurfaceEnabledChange: (enabled: boolean) => void;
   onWaveformPlaneWireframeEnabledChange: (enabled: boolean) => void;
   onWaveformPlaneHeightScaleChange: (heightScale: number) => void;
+  onWaveformPlaneSurfaceShadingChange: (shading: WaveformPlaneSurfaceShading) => void;
   onWaveformPlaneSurfaceColorChange: (colorHex: string) => void;
   onWaveformPlaneWireframeColorChange: (colorHex: string) => void;
   onToggleUi: () => boolean;
@@ -43,11 +46,13 @@ type UiCombatState = {
   waveformPlaneSurfaceEnabled: boolean;
   waveformPlaneWireframeEnabled: boolean;
   waveformPlaneHeightScale: number;
+  waveformPlaneSurfaceShading: WaveformPlaneSurfaceShading;
   waveformPlaneSurfaceColor: string;
   waveformPlaneWireframeColor: string;
 };
 
 const DEFAULT_WAVEFORM_PLANE_HEIGHT_SCALE = 6.8;
+const DEFAULT_WAVEFORM_PLANE_SURFACE_SHADING: WaveformPlaneSurfaceShading = "smooth";
 const DEFAULT_WAVEFORM_PLANE_SURFACE_COLOR = "#f4f4f4";
 const DEFAULT_WAVEFORM_PLANE_WIREFRAME_COLOR = "#f4f4f4";
 
@@ -65,6 +70,7 @@ const DEFAULT_COMBAT_STATE: UiCombatState = {
   waveformPlaneSurfaceEnabled: false,
   waveformPlaneWireframeEnabled: true,
   waveformPlaneHeightScale: DEFAULT_WAVEFORM_PLANE_HEIGHT_SCALE,
+  waveformPlaneSurfaceShading: DEFAULT_WAVEFORM_PLANE_SURFACE_SHADING,
   waveformPlaneSurfaceColor: DEFAULT_WAVEFORM_PLANE_SURFACE_COLOR,
   waveformPlaneWireframeColor: DEFAULT_WAVEFORM_PLANE_WIREFRAME_COLOR
 };
@@ -84,6 +90,15 @@ const SPECTRUM_PANEL_SAMPLE_INTERVAL_MS = 1000 / 120;
 const DB_TO_MAG_EXP = 0.1151292546497023;
 const SPECTRUM_ANALYZER_MIN_MAGNITUDE = Math.exp(DB_TO_MAG_EXP * SPECTRUM_ANALYZER_MIN_DB);
 const SPECTRUM_ANALYZER_MAX_MAGNITUDE = Math.exp(DB_TO_MAG_EXP * SPECTRUM_ANALYZER_MAX_DB);
+const WAVEFORM_SURFACE_SHADING_OPTIONS: Array<{
+  value: WaveformPlaneSurfaceShading;
+  label: string;
+}> = [
+  { value: "smooth", label: "Smooth" },
+  { value: "flat", label: "Flat" },
+  { value: "matte", label: "Matte" },
+  { value: "metallic", label: "Metallic" }
+];
 
 export function createAudioPanel(
   container: HTMLElement,
@@ -237,6 +252,11 @@ export function createAudioPanel(
     0.1,
     DEFAULT_WAVEFORM_PLANE_HEIGHT_SCALE
   );
+  const waveformPlaneSurfaceShading = createModalSelect(
+    "Surface Shading",
+    WAVEFORM_SURFACE_SHADING_OPTIONS,
+    DEFAULT_WAVEFORM_PLANE_SURFACE_SHADING
+  );
   const waveformPlaneSurfaceColor = createModalColor(
     "Surface Color",
     DEFAULT_WAVEFORM_PLANE_SURFACE_COLOR
@@ -250,6 +270,7 @@ export function createAudioPanel(
     waveformPlaneSurfaceToggle.root,
     waveformPlaneWireframeToggle.root,
     waveformPlaneHeightScale.root,
+    waveformPlaneSurfaceShading.root,
     waveformPlaneSurfaceColor.root,
     waveformPlaneWireframeColor.root
   );
@@ -545,6 +566,7 @@ export function createAudioPanel(
     enemyFireScale.value.textContent = `${state.fireScale.toFixed(2)}x`;
     waveformPlaneHeightScale.input.value = state.waveformPlaneHeightScale.toFixed(1);
     waveformPlaneHeightScale.value.textContent = state.waveformPlaneHeightScale.toFixed(1);
+    waveformPlaneSurfaceShading.input.value = state.waveformPlaneSurfaceShading;
     waveformPlaneSurfaceColor.input.value = normalizeHexColor(
       state.waveformPlaneSurfaceColor,
       DEFAULT_WAVEFORM_PLANE_SURFACE_COLOR
@@ -583,6 +605,9 @@ export function createAudioPanel(
       2.5,
       12
     ),
+    waveformPlaneSurfaceShading: normalizeWaveformPlaneSurfaceShading(
+      waveformPlaneSurfaceShading.input.value
+    ),
     waveformPlaneSurfaceColor: normalizeHexColor(
       waveformPlaneSurfaceColor.input.value,
       DEFAULT_WAVEFORM_PLANE_SURFACE_COLOR
@@ -619,6 +644,7 @@ export function createAudioPanel(
     handlers.onWaveformPlaneSurfaceEnabledChange(state.waveformPlaneSurfaceEnabled);
     handlers.onWaveformPlaneWireframeEnabledChange(state.waveformPlaneWireframeEnabled);
     handlers.onWaveformPlaneHeightScaleChange(state.waveformPlaneHeightScale);
+    handlers.onWaveformPlaneSurfaceShadingChange(state.waveformPlaneSurfaceShading);
     handlers.onWaveformPlaneSurfaceColorChange(state.waveformPlaneSurfaceColor);
     handlers.onWaveformPlaneWireframeColorChange(state.waveformPlaneWireframeColor);
   };
@@ -899,6 +925,11 @@ type ModalColorControl = {
   value: HTMLSpanElement;
 };
 
+type ModalSelectControl = {
+  root: HTMLLabelElement;
+  input: HTMLSelectElement;
+};
+
 function createModalToggle(label: string, checked: boolean): ModalToggleControl {
   const wrapper = document.createElement("label");
   wrapper.className = "audio-settings-modal__check";
@@ -975,6 +1006,39 @@ function createModalColor(label: string, value: string): ModalColorControl {
     root: wrapper,
     input,
     value: valueEl
+  };
+}
+
+function createModalSelect<T extends string>(
+  label: string,
+  options: Array<{ value: T; label: string }>,
+  value: T
+): ModalSelectControl {
+  const wrapper = document.createElement("label");
+  wrapper.className = "audio-settings-modal__range audio-settings-modal__select";
+
+  const name = document.createElement("span");
+  name.className = "audio-settings-modal__range-name";
+  name.textContent = label;
+
+  const input = document.createElement("select");
+  input.className = "audio-settings-modal__select-input";
+  for (const optionValue of options) {
+    const option = document.createElement("option");
+    option.value = optionValue.value;
+    option.textContent = optionValue.label;
+    input.appendChild(option);
+  }
+  input.value = value;
+
+  const spacer = document.createElement("span");
+  spacer.className = "audio-settings-modal__range-value";
+  spacer.textContent = "";
+
+  wrapper.append(name, input, spacer);
+  return {
+    root: wrapper,
+    input
   };
 }
 
@@ -1123,6 +1187,18 @@ function normalizeHexColor(value: string, fallback: string): string {
     return candidate;
   }
   return fallback;
+}
+
+function normalizeWaveformPlaneSurfaceShading(value: string): WaveformPlaneSurfaceShading {
+  switch (value) {
+    case "flat":
+    case "matte":
+    case "metallic":
+    case "smooth":
+      return value;
+    default:
+      return DEFAULT_WAVEFORM_PLANE_SURFACE_SHADING;
+  }
 }
 
 function db2mag(val: number): number {

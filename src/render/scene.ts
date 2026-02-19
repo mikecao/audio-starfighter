@@ -33,6 +33,8 @@ import { MeshLine, MeshLineMaterial } from "three.meshline";
 import type { SpectrumTimeline } from "../audio/types";
 import type { SimulationSnapshot } from "../game/sim";
 
+type WaveformPlaneSurfaceShading = "smooth" | "flat" | "matte" | "metallic";
+
 export type RenderScene = {
 	update: (snapshot: SimulationSnapshot, alpha: number) => void;
 	render: () => void;
@@ -41,6 +43,9 @@ export type RenderScene = {
 	setWaveformPlaneSurfaceEnabled: (enabled: boolean) => void;
 	setWaveformPlaneWireframeEnabled: (enabled: boolean) => void;
 	setWaveformPlaneHeightScale: (heightScale: number) => void;
+	setWaveformPlaneSurfaceShading: (
+		shading: WaveformPlaneSurfaceShading,
+	) => void;
 	setWaveformPlaneSurfaceColor: (colorHex: string) => void;
 	setWaveformPlaneWireframeColor: (colorHex: string) => void;
 	setWaveformPlaneSpectrum: (spectrumBins: Float32Array | null) => void;
@@ -413,6 +418,39 @@ export function setupScene(container: HTMLElement): RenderScene {
 		depthTest: true,
 	});
 	applyWaveformPlaneDisplacement(waveformPlaneSurfaceMaterial);
+	const applyWaveformPlaneSurfaceShading = (
+		shading: WaveformPlaneSurfaceShading,
+	): void => {
+		const normalizedShading: WaveformPlaneSurfaceShading =
+			shading === "flat" ||
+			shading === "matte" ||
+			shading === "metallic" ||
+			shading === "smooth"
+				? shading
+				: WAVEFORM_PLANE_SURFACE_SHADING_DEFAULT;
+		if (normalizedShading === "flat") {
+			waveformPlaneSurfaceMaterial.flatShading = true;
+			waveformPlaneSurfaceMaterial.roughness = 0.88;
+			waveformPlaneSurfaceMaterial.metalness = 0.02;
+			waveformPlaneSurfaceMaterial.emissiveIntensity = 0.14;
+		} else if (normalizedShading === "matte") {
+			waveformPlaneSurfaceMaterial.flatShading = false;
+			waveformPlaneSurfaceMaterial.roughness = 1;
+			waveformPlaneSurfaceMaterial.metalness = 0;
+			waveformPlaneSurfaceMaterial.emissiveIntensity = 0.1;
+		} else if (normalizedShading === "metallic") {
+			waveformPlaneSurfaceMaterial.flatShading = false;
+			waveformPlaneSurfaceMaterial.roughness = 0.24;
+			waveformPlaneSurfaceMaterial.metalness = 0.58;
+			waveformPlaneSurfaceMaterial.emissiveIntensity = 0.11;
+		} else {
+			waveformPlaneSurfaceMaterial.flatShading = false;
+			waveformPlaneSurfaceMaterial.roughness = 0.9;
+			waveformPlaneSurfaceMaterial.metalness = 0;
+			waveformPlaneSurfaceMaterial.emissiveIntensity = 0.14;
+		}
+		waveformPlaneSurfaceMaterial.needsUpdate = true;
+	};
 
 	const waveformPlaneWireframeBaseColor = new Color(
 		WAVEFORM_PLANE_DEFAULT_WIREFRAME_COLOR_HEX,
@@ -433,6 +471,7 @@ export function setupScene(container: HTMLElement): RenderScene {
 		depthTest: true,
 	});
 	applyWaveformPlaneDisplacement(waveformPlaneWireframeMaterial);
+	applyWaveformPlaneSurfaceShading(WAVEFORM_PLANE_SURFACE_SHADING_DEFAULT);
 
 	const waveformPlaneDepthMaterial = waveformPlaneSurfaceMaterial.clone();
 	waveformPlaneDepthMaterial.wireframe = false;
@@ -1013,6 +1052,9 @@ export function setupScene(container: HTMLElement): RenderScene {
 			);
 			waveformPlaneDisplacementUniforms.uHeightScale.value =
 				waveformPlaneHeightScale;
+		},
+		setWaveformPlaneSurfaceShading(shading) {
+			applyWaveformPlaneSurfaceShading(shading);
 		},
 		setWaveformPlaneSurfaceColor(colorHex) {
 			applyWaveformPlaneSurfaceColor(colorHex);
@@ -1687,6 +1729,8 @@ const WAVEFORM_PLANE_SEGMENTS_Y = 42;
 const WAVEFORM_PLANE_HEIGHT_SCALE_DEFAULT = 6.8;
 const WAVEFORM_PLANE_HEIGHT_SCALE_MIN = 2.5;
 const WAVEFORM_PLANE_HEIGHT_SCALE_MAX = 12;
+const WAVEFORM_PLANE_SURFACE_SHADING_DEFAULT: WaveformPlaneSurfaceShading =
+	"smooth";
 const WAVEFORM_PLANE_SURFACE_ENABLED_DEFAULT = false;
 const WAVEFORM_PLANE_WIREFRAME_ENABLED_DEFAULT = true;
 const WAVEFORM_PLANE_DEFAULT_SURFACE_COLOR_HEX = "#f4f4f4";

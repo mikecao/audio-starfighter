@@ -433,6 +433,10 @@ body,
   grid-template-columns: auto auto auto;
 }
 
+.audio-settings-modal__select {
+  grid-template-columns: auto 1fr auto;
+}
+
 .audio-settings-modal__color-input {
   width: 2.4rem;
   height: 1.2rem;
@@ -441,6 +445,17 @@ body,
   background: transparent;
   padding: 0;
   cursor: pointer;
+}
+
+.audio-settings-modal__select-input {
+  width: 100%;
+  border: 0;
+  border-radius: 0.28rem;
+  background: rgb(13 25 48 / 84%);
+  color: #f0f7ff;
+  font-family: var(--font-mono);
+  font-size: 0.76rem;
+  padding: 0.18rem 0.3rem;
 }
 
 .audio-settings-modal__footer {

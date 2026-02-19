@@ -198,6 +198,9 @@ const audioPanel = createAudioPanel(uiHost, {
   onWaveformPlaneHeightScaleChange(heightScale) {
     scene.setWaveformPlaneHeightScale(heightScale);
   },
+  onWaveformPlaneSurfaceShadingChange(shading) {
+    scene.setWaveformPlaneSurfaceShading(shading);
+  },
   onWaveformPlaneSurfaceColorChange(colorHex) {
     scene.setWaveformPlaneSurfaceColor(colorHex);
   },
