@@ -429,6 +429,20 @@ body,
   accent-color: #60a5fa;
 }
 
+.audio-settings-modal__color {
+  grid-template-columns: auto auto auto;
+}
+
+.audio-settings-modal__color-input {
+  width: 2.4rem;
+  height: 1.2rem;
+  border: 0;
+  border-radius: 0.24rem;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+}
+
 .audio-settings-modal__footer {
   margin-top: 1rem;
   display: flex;

@@ -189,6 +189,12 @@ const audioPanel = createAudioPanel(uiHost, {
   onWaveformPlaneChange(enabled) {
     scene.setWaveformPlaneEnabled(enabled);
   },
+  onWaveformPlaneHeightScaleChange(heightScale) {
+    scene.setWaveformPlaneHeightScale(heightScale);
+  },
+  onWaveformPlaneColorChange(colorHex) {
+    scene.setWaveformPlaneColor(colorHex);
+  },
   onToggleUi() {
     setUiHidden(!uiHidden);
     return uiHidden;

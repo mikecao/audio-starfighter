@@ -38,6 +38,8 @@ export type RenderScene = {
   render: () => void;
   resize: () => void;
   setWaveformPlaneEnabled: (enabled: boolean) => void;
+  setWaveformPlaneHeightScale: (heightScale: number) => void;
+  setWaveformPlaneColor: (colorHex: string) => void;
   setWaveformPlaneSpectrum: (spectrumBins: Float32Array | null) => void;
   setWaveformPlaneSpectrumTimeline: (timeline: SpectrumTimeline | null) => void;
   setWaveformPlaneData: (waveformLeft: Float32Array, waveformRight: Float32Array) => void;
@@ -259,10 +261,15 @@ export function setupScene(container: HTMLElement): RenderScene {
   waveformSpectrumTexture.minFilter = LinearFilter;
   waveformSpectrumTexture.needsUpdate = true;
   const waveformSpectrumSmoothed = new Float32Array(WAVEFORM_PLANE_SPECTRUM_BIN_COUNT);
+  let waveformPlaneHeightScale = WAVEFORM_PLANE_HEIGHT_SCALE_DEFAULT;
+  const waveformPlaneBaseColor = new Color(WAVEFORM_PLANE_DEFAULT_COLOR_HEX);
+  const waveformPlaneEmissiveColor = waveformPlaneBaseColor
+    .clone()
+    .multiplyScalar(WAVEFORM_PLANE_EMISSIVE_COLOR_SCALE);
 
   const waveformPlaneDisplacementUniforms = {
     uTimeSeconds: { value: 0 },
-    uHeightScale: { value: WAVEFORM_PLANE_HEIGHT_SCALE },
+    uHeightScale: { value: waveformPlaneHeightScale },
     uAmplitudeDrive: { value: 0 },
     uSpectrumTex: { value: waveformSpectrumTexture }
   };
@@ -364,8 +371,8 @@ export function setupScene(container: HTMLElement): RenderScene {
     material.customProgramCacheKey = () => "waveform-plane-displacement-v5";
   };
   const waveformPlaneMaterial = new MeshStandardMaterial({
-    color: "#f2fff8",
-    emissive: "#0d2f22",
+    color: waveformPlaneBaseColor.clone(),
+    emissive: waveformPlaneEmissiveColor.clone(),
     emissiveIntensity: 0.14,
     roughness: 0.9,
     metalness: 0,
@@ -385,6 +392,17 @@ export function setupScene(container: HTMLElement): RenderScene {
   waveformPlaneDepthMaterial.depthWrite = true;
   waveformPlaneDepthMaterial.depthTest = true;
   applyWaveformPlaneDisplacement(waveformPlaneDepthMaterial);
+  const applyWaveformPlaneColor = (colorHex: string): void => {
+    const normalizedColor = /^#[0-9a-f]{6}$/i.test(colorHex)
+      ? colorHex
+      : WAVEFORM_PLANE_DEFAULT_COLOR_HEX;
+    waveformPlaneBaseColor.set(normalizedColor);
+    waveformPlaneMaterial.color.copy(waveformPlaneBaseColor);
+    waveformPlaneEmissiveColor
+      .copy(waveformPlaneBaseColor)
+      .multiplyScalar(WAVEFORM_PLANE_EMISSIVE_COLOR_SCALE);
+    waveformPlaneMaterial.emissive.copy(waveformPlaneEmissiveColor);
+  };
   const waveformPlaneGeometry = new PlaneGeometry(
     WAVEFORM_PLANE_WIDTH,
     WAVEFORM_PLANE_HEIGHT,
@@ -800,6 +818,17 @@ export function setupScene(container: HTMLElement): RenderScene {
       const visible = waveformPlaneEnabled && waveformPlaneHasData;
       waveformPlaneDepthMesh.visible = visible;
       waveformPlaneMesh.visible = visible;
+    },
+    setWaveformPlaneHeightScale(heightScale) {
+      waveformPlaneHeightScale = clamp(
+        Number.isFinite(heightScale) ? heightScale : WAVEFORM_PLANE_HEIGHT_SCALE_DEFAULT,
+        WAVEFORM_PLANE_HEIGHT_SCALE_MIN,
+        WAVEFORM_PLANE_HEIGHT_SCALE_MAX
+      );
+      waveformPlaneDisplacementUniforms.uHeightScale.value = waveformPlaneHeightScale;
+    },
+    setWaveformPlaneColor(colorHex) {
+      applyWaveformPlaneColor(colorHex);
     },
     setWaveformPlaneSpectrum(spectrumBins) {
       if (!spectrumBins || spectrumBins.length === 0) {
@@ -1390,7 +1419,11 @@ const WAVEFORM_PLANE_WIDTH = 120;
 const WAVEFORM_PLANE_HEIGHT = 90;
 const WAVEFORM_PLANE_SEGMENTS_X = 56;
 const WAVEFORM_PLANE_SEGMENTS_Y = 42;
-const WAVEFORM_PLANE_HEIGHT_SCALE = 6.8;
+const WAVEFORM_PLANE_HEIGHT_SCALE_DEFAULT = 6.8;
+const WAVEFORM_PLANE_HEIGHT_SCALE_MIN = 2.5;
+const WAVEFORM_PLANE_HEIGHT_SCALE_MAX = 12;
+const WAVEFORM_PLANE_DEFAULT_COLOR_HEX = "#f4f4f4";
+const WAVEFORM_PLANE_EMISSIVE_COLOR_SCALE = 0.085;
 const WAVEFORM_SCENE_FOG_NEAR = 52;
 const WAVEFORM_SCENE_FOG_FAR = 92;
 const WAVEFORM_PLANE_TIME_WINDOW_SECONDS = 2.4;

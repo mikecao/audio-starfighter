@@ -12,6 +12,8 @@ type AudioPanelHandlers = {
   onStartRun: (analysis: AudioAnalysisResult, seed: number) => void | Promise<void>;
   onCombatConfigChange: (config: CombatConfigPatch) => void;
   onWaveformPlaneChange: (enabled: boolean) => void;
+  onWaveformPlaneHeightScaleChange: (heightScale: number) => void;
+  onWaveformPlaneColorChange: (colorHex: string) => void;
   onToggleUi: () => boolean;
 };
 
@@ -35,7 +37,12 @@ type UiCombatState = {
   fireScale: number;
   enemyProjectileStyle: EnemyProjectileStyle;
   waveformPlaneEnabled: boolean;
+  waveformPlaneHeightScale: number;
+  waveformPlaneColor: string;
 };
+
+const DEFAULT_WAVEFORM_PLANE_HEIGHT_SCALE = 6.8;
+const DEFAULT_WAVEFORM_PLANE_COLOR = "#f4f4f4";
 
 const DEFAULT_COMBAT_STATE: UiCombatState = {
   blueLaser: true,
@@ -47,7 +54,9 @@ const DEFAULT_COMBAT_STATE: UiCombatState = {
   spawnScale: 1,
   fireScale: 1,
   enemyProjectileStyle: "balls",
-  waveformPlaneEnabled: true
+  waveformPlaneEnabled: true,
+  waveformPlaneHeightScale: DEFAULT_WAVEFORM_PLANE_HEIGHT_SCALE,
+  waveformPlaneColor: DEFAULT_WAVEFORM_PLANE_COLOR
 };
 
 const SPECTRUM_ANALYZER_FFT_SIZE = 1024;
@@ -209,7 +218,19 @@ export function createAudioPanel(
   visualsGroup.appendChild(visualsLegend);
 
   const waveformPlaneToggle = createModalToggle("Waveform Plane", true);
-  visualsGroup.append(waveformPlaneToggle.root);
+  const waveformPlaneHeightScale = createModalRange(
+    "Plane Max Height",
+    2.5,
+    12,
+    0.1,
+    DEFAULT_WAVEFORM_PLANE_HEIGHT_SCALE
+  );
+  const waveformPlaneColor = createModalColor("Plane Color", DEFAULT_WAVEFORM_PLANE_COLOR);
+  visualsGroup.append(
+    waveformPlaneToggle.root,
+    waveformPlaneHeightScale.root,
+    waveformPlaneColor.root
+  );
 
   settingsForm.append(shipGroup, enemyGroup, visualsGroup);
 
@@ -498,6 +519,16 @@ export function createAudioPanel(
     enemyFireScale.input.value = state.fireScale.toFixed(2);
     enemySpawnScale.value.textContent = `${state.spawnScale.toFixed(2)}x`;
     enemyFireScale.value.textContent = `${state.fireScale.toFixed(2)}x`;
+    waveformPlaneHeightScale.input.value = state.waveformPlaneHeightScale.toFixed(1);
+    waveformPlaneHeightScale.value.textContent = state.waveformPlaneHeightScale.toFixed(1);
+    waveformPlaneColor.input.value = normalizeHexColor(
+      state.waveformPlaneColor,
+      DEFAULT_WAVEFORM_PLANE_COLOR
+    );
+    waveformPlaneColor.value.textContent = normalizeHexColor(
+      state.waveformPlaneColor,
+      DEFAULT_WAVEFORM_PLANE_COLOR
+    ).toUpperCase();
   };
 
   const readCombatStateFromForm = (): UiCombatState => ({
@@ -510,7 +541,18 @@ export function createAudioPanel(
     spawnScale: Number(enemySpawnScale.input.value),
     fireScale: Number(enemyFireScale.input.value),
     enemyProjectileStyle: enemyProjectileLaserToggle.input.checked ? "lasers" : "balls",
-    waveformPlaneEnabled: waveformPlaneToggle.input.checked
+    waveformPlaneEnabled: waveformPlaneToggle.input.checked,
+    waveformPlaneHeightScale: clamp(
+      Number.isFinite(Number(waveformPlaneHeightScale.input.value))
+        ? Number(waveformPlaneHeightScale.input.value)
+        : DEFAULT_WAVEFORM_PLANE_HEIGHT_SCALE,
+      2.5,
+      12
+    ),
+    waveformPlaneColor: normalizeHexColor(
+      waveformPlaneColor.input.value,
+      DEFAULT_WAVEFORM_PLANE_COLOR
+    )
   });
 
   const publishCombatState = (state: UiCombatState): void => {
@@ -536,6 +578,39 @@ export function createAudioPanel(
       }
     });
     handlers.onWaveformPlaneChange(state.waveformPlaneEnabled);
+    handlers.onWaveformPlaneHeightScaleChange(state.waveformPlaneHeightScale);
+    handlers.onWaveformPlaneColorChange(state.waveformPlaneColor);
+  };
+
+  const hasRunAffectingChanges = (previous: UiCombatState, next: UiCombatState): boolean => {
+    if (previous.blueLaser !== next.blueLaser) {
+      return true;
+    }
+    if (previous.yellowLaser !== next.yellowLaser) {
+      return true;
+    }
+    if (previous.greenLaser !== next.greenLaser) {
+      return true;
+    }
+    if (previous.purpleMissile !== next.purpleMissile) {
+      return true;
+    }
+    if (previous.redCubeEnabled !== next.redCubeEnabled) {
+      return true;
+    }
+    if (previous.greenTriangleEnabled !== next.greenTriangleEnabled) {
+      return true;
+    }
+    if (previous.enemyProjectileStyle !== next.enemyProjectileStyle) {
+      return true;
+    }
+    if (Math.abs(previous.spawnScale - next.spawnScale) > 1e-4) {
+      return true;
+    }
+    if (Math.abs(previous.fireScale - next.fireScale) > 1e-4) {
+      return true;
+    }
+    return false;
   };
 
   settingsButton.addEventListener("click", () => {
@@ -563,13 +638,30 @@ export function createAudioPanel(
   enemyFireScale.input.addEventListener("input", () => {
     enemyFireScale.value.textContent = `${Number(enemyFireScale.input.value).toFixed(2)}x`;
   });
+  waveformPlaneHeightScale.input.addEventListener("input", () => {
+    waveformPlaneHeightScale.value.textContent = Number(
+      waveformPlaneHeightScale.input.value
+    ).toFixed(1);
+  });
+  waveformPlaneColor.input.addEventListener("input", () => {
+    waveformPlaneColor.value.textContent = normalizeHexColor(
+      waveformPlaneColor.input.value,
+      DEFAULT_WAVEFORM_PLANE_COLOR
+    ).toUpperCase();
+  });
 
   settingsSaveButton.addEventListener("click", async () => {
-    combatState = readCombatStateFromForm();
+    const nextState = readCombatStateFromForm();
+    const previousState = combatState;
+    combatState = nextState;
     publishCombatState(combatState);
     closeSettingsModal();
 
-    if (!latestAnalysis) {
+    const shouldRecomputeRun = hasRunAffectingChanges(previousState, nextState);
+    if (!latestAnalysis || !shouldRecomputeRun) {
+      if (latestAnalysis) {
+        setAnalysisSummary(latestAnalysis);
+      }
       return;
     }
 
@@ -754,6 +846,12 @@ type ModalRangeControl = {
   value: HTMLSpanElement;
 };
 
+type ModalColorControl = {
+  root: HTMLLabelElement;
+  input: HTMLInputElement;
+  value: HTMLSpanElement;
+};
+
 function createModalToggle(label: string, checked: boolean): ModalToggleControl {
   const wrapper = document.createElement("label");
   wrapper.className = "audio-settings-modal__check";
@@ -799,6 +897,31 @@ function createModalRange(
   const valueEl = document.createElement("span");
   valueEl.className = "audio-settings-modal__range-value";
   valueEl.textContent = `${value.toFixed(2)}x`;
+
+  wrapper.append(name, input, valueEl);
+  return {
+    root: wrapper,
+    input,
+    value: valueEl
+  };
+}
+
+function createModalColor(label: string, value: string): ModalColorControl {
+  const wrapper = document.createElement("label");
+  wrapper.className = "audio-settings-modal__range audio-settings-modal__color";
+
+  const name = document.createElement("span");
+  name.className = "audio-settings-modal__range-name";
+  name.textContent = label;
+
+  const input = document.createElement("input");
+  input.className = "audio-settings-modal__color-input";
+  input.type = "color";
+  input.value = normalizeHexColor(value, DEFAULT_WAVEFORM_PLANE_COLOR);
+
+  const valueEl = document.createElement("span");
+  valueEl.className = "audio-settings-modal__range-value";
+  valueEl.textContent = input.value.toUpperCase();
 
   wrapper.append(name, input, valueEl);
   return {
@@ -945,6 +1068,14 @@ function sampleWaveform(envelope: Float32Array, x: number, width: number): numbe
   const normalized = width <= 1 ? 0 : x / (width - 1);
   const index = Math.min(envelope.length - 1, Math.floor(normalized * (envelope.length - 1)));
   return envelope[index] ?? 0;
+}
+
+function normalizeHexColor(value: string, fallback: string): string {
+  const candidate = value.trim().toLowerCase();
+  if (/^#[0-9a-f]{6}$/.test(candidate)) {
+    return candidate;
+  }
+  return fallback;
 }
 
 function db2mag(val: number): number {
