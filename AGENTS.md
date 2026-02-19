@@ -30,10 +30,16 @@ Preserve music-to-visual sync quality while keeping runtime stable under heavy s
 - `src/render/scene.ts`
   - three.js scene, camera, mesh pools
   - Stars, enemies, projectiles, explosions, laser beams
+  - Waveform plane materials, shader wiring, runtime distortion selection
+- `src/render/waveformPlaneDistortion.ts`
+  - Distortion algorithm catalog (`ridge`, `ripple`)
+  - Distortion-specific shader header generation
+  - Spectrum shaping + amplitude metrics used by scene uniforms
 - `src/audio/*`
   - Decode, feature extraction, beat detection, cue generation, mood classification
 - `src/ui/*`
   - Audio panel, debug HUD, event timeline rail
+  - Reactive spectrum publishing/subscription and playback controls
 
 ## Development Workflow
 
@@ -48,6 +54,7 @@ Preserve music-to-visual sync quality while keeping runtime stable under heavy s
 - Prefer precompute-time work over per-frame runtime work.
 - Avoid per-frame object churn in hot paths.
 - Keep render update loops pool-based and allocation-light.
+- Keep spectrum flow single-source: update once, fan out via subscribers.
 
 ## Cue/Sync Expectations
 
@@ -60,6 +67,13 @@ Preserve music-to-visual sync quality while keeping runtime stable under heavy s
 - Canvas-first layout: scene on top, controls below.
 - Hidden UI mode should skip unnecessary UI update calculations.
 - Keep waveform/timeline canvases sharp on HiDPI displays.
+- Distortion and smoothing controls should remain consistent with render behavior.
+
+## Waveform Plane Expectations
+
+- Distortion changes must route through normalized algorithm selection.
+- Preserve deterministic distortion output for identical audio input and settings.
+- Maintain pause semantics for time/spectrum-driven displacement updates.
 
 ## Git Hygiene
 
