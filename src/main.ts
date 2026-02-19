@@ -76,6 +76,7 @@ const uiOverlaySelectors = [
   ".audio-controls-settings",
   ".event-timeline",
   ".waveform-panel",
+  ".spectrum-panel",
   ".playback-panel"
 ];
 

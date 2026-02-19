@@ -51,7 +51,21 @@ const DEFAULT_COMBAT_STATE: UiCombatState = {
 };
 
 const SPECTRUM_ANALYZER_FFT_SIZE = 2048;
+const SPECTRUM_ANALYZER_MIN_DB = -96;
+const SPECTRUM_ANALYZER_MAX_DB = -12;
 const SPECTRUM_ANALYZER_OUTPUT_BINS = 192;
+const SPECTRUM_REACTIVE_MIN_HZ = 0;
+const SPECTRUM_REACTIVE_MAX_HZ = 6000;
+const SPECTRUM_DYNAMIC_MIN_RANGE = 0.06;
+const SPECTRUM_DYNAMIC_MIN_ATTACK = 0.22;
+const SPECTRUM_DYNAMIC_MIN_RELEASE = 0.014;
+const SPECTRUM_DYNAMIC_MAX_ATTACK = 0.28;
+const SPECTRUM_DYNAMIC_MAX_RELEASE = 0.02;
+const SPECTRUM_PANEL_BAR_COUNT = 72;
+const SPECTRUM_PANEL_SAMPLE_INTERVAL_MS = 1000 / 120;
+const DB_TO_MAG_EXP = 0.1151292546497023;
+const SPECTRUM_ANALYZER_MIN_MAGNITUDE = Math.exp(DB_TO_MAG_EXP * SPECTRUM_ANALYZER_MIN_DB);
+const SPECTRUM_ANALYZER_MAX_MAGNITUDE = Math.exp(DB_TO_MAG_EXP * SPECTRUM_ANALYZER_MAX_DB);
 
 export function createAudioPanel(
   container: HTMLElement,
@@ -230,6 +244,16 @@ export function createAudioPanel(
   waveformPanel.appendChild(canvas);
   container.appendChild(waveformPanel);
 
+  const spectrumPanel = document.createElement("section");
+  spectrumPanel.className = "spectrum-panel";
+
+  const spectrumCanvas = document.createElement("canvas");
+  spectrumCanvas.className = "spectrum-panel__canvas";
+  spectrumCanvas.width = 960;
+  spectrumCanvas.height = 84;
+  spectrumPanel.appendChild(spectrumCanvas);
+  container.appendChild(spectrumPanel);
+
   const playbackPanel = document.createElement("section");
   playbackPanel.className = "playback-panel";
 
@@ -250,22 +274,32 @@ export function createAudioPanel(
   let audioContext: AudioContext | null = null;
   let audioSourceNode: MediaElementAudioSourceNode | null = null;
   let audioAnalyserNode: AnalyserNode | null = null;
-  let analyserByteData: Uint8Array<ArrayBuffer> | null = null;
+  let analyserDbData: Float32Array<ArrayBuffer> | null = null;
+  let lastSpectrumSampleTimeMs = -Infinity;
+  let spectrumDynamicMin = 0;
+  let spectrumDynamicMax = 1;
   const spectrumOutputBins = new Float32Array(SPECTRUM_ANALYZER_OUTPUT_BINS);
   const spectrumSmoothedBins = new Float32Array(SPECTRUM_ANALYZER_OUTPUT_BINS);
 
+  const resetSpectrumNormalization = (): void => {
+    spectrumDynamicMin = 0;
+    spectrumDynamicMax = 1;
+    spectrumOutputBins.fill(0);
+    spectrumSmoothedBins.fill(0);
+  };
+
   const ensureAudioAnalyser = (): void => {
-    if (audioContext && audioSourceNode && audioAnalyserNode && analyserByteData) {
+    if (audioContext && audioSourceNode && audioAnalyserNode && analyserDbData) {
       return;
     }
     audioContext = new AudioContext();
     audioSourceNode = audioContext.createMediaElementSource(audio);
     audioAnalyserNode = audioContext.createAnalyser();
     audioAnalyserNode.fftSize = SPECTRUM_ANALYZER_FFT_SIZE;
-    audioAnalyserNode.smoothingTimeConstant = 0.62;
-    audioAnalyserNode.minDecibels = -96;
-    audioAnalyserNode.maxDecibels = -12;
-    analyserByteData = new Uint8Array(new ArrayBuffer(audioAnalyserNode.frequencyBinCount));
+    audioAnalyserNode.smoothingTimeConstant = 0.5;
+    audioAnalyserNode.minDecibels = SPECTRUM_ANALYZER_MIN_DB;
+    audioAnalyserNode.maxDecibels = SPECTRUM_ANALYZER_MAX_DB;
+    analyserDbData = new Float32Array(new ArrayBuffer(audioAnalyserNode.frequencyBinCount * 4));
     audioSourceNode.connect(audioAnalyserNode);
     audioAnalyserNode.connect(audioContext.destination);
   };
@@ -275,6 +309,54 @@ export function createAudioPanel(
     if (audioContext && audioContext.state === "suspended") {
       void audioContext.resume();
     }
+  };
+
+  const updateLiveSpectrumBins = (): Float32Array | null => {
+    if (!audioAnalyserNode || !analyserDbData || !audioContext) {
+      return null;
+    }
+    if (audioContext.state === "suspended") {
+      return null;
+    }
+    const nowMs = performance.now();
+    if (nowMs - lastSpectrumSampleTimeMs < SPECTRUM_PANEL_SAMPLE_INTERVAL_MS) {
+      return spectrumOutputBins;
+    }
+    lastSpectrumSampleTimeMs = nowMs;
+    audioAnalyserNode.getFloatFrequencyData(analyserDbData);
+    remapFrequencyBins(analyserDbData, spectrumOutputBins, audioContext.sampleRate);
+    let frameMin = 1;
+    let frameMax = 0;
+    for (let i = 0; i < spectrumOutputBins.length; i += 1) {
+      const value = clamp(spectrumOutputBins[i] ?? 0, 0, 1);
+      if (value < frameMin) {
+        frameMin = value;
+      }
+      if (value > frameMax) {
+        frameMax = value;
+      }
+    }
+    const minBlend =
+      frameMin < spectrumDynamicMin ? SPECTRUM_DYNAMIC_MIN_ATTACK : SPECTRUM_DYNAMIC_MIN_RELEASE;
+    const maxBlend =
+      frameMax > spectrumDynamicMax ? SPECTRUM_DYNAMIC_MAX_ATTACK : SPECTRUM_DYNAMIC_MAX_RELEASE;
+    spectrumDynamicMin += (frameMin - spectrumDynamicMin) * minBlend;
+    spectrumDynamicMax += (frameMax - spectrumDynamicMax) * maxBlend;
+    spectrumDynamicMin = clamp(spectrumDynamicMin, 0, 1);
+    spectrumDynamicMax = clamp(spectrumDynamicMax, spectrumDynamicMin + SPECTRUM_DYNAMIC_MIN_RANGE, 1);
+    const dynamicRange = Math.max(SPECTRUM_DYNAMIC_MIN_RANGE, spectrumDynamicMax - spectrumDynamicMin);
+    for (let i = 0; i < spectrumOutputBins.length; i += 1) {
+      const normalized = (spectrumOutputBins[i] - spectrumDynamicMin) / dynamicRange;
+      spectrumOutputBins[i] = clamp(normalized, 0, 1);
+    }
+    for (let i = 0; i < spectrumOutputBins.length; i += 1) {
+      const incoming = spectrumOutputBins[i];
+      const previous = spectrumSmoothedBins[i] ?? 0;
+      const blend = incoming > previous ? 0.56 : 0.2;
+      spectrumSmoothedBins[i] = previous + (incoming - previous) * blend;
+      spectrumOutputBins[i] = spectrumSmoothedBins[i];
+    }
+    return spectrumOutputBins;
   };
 
   audio.addEventListener("play", () => {
@@ -296,8 +378,10 @@ export function createAudioPanel(
     } else {
       drawPlaceholder(canvas, placeholderText);
     }
+    drawSpectrumBars(spectrumCanvas, updateLiveSpectrumBins());
   });
   resizeObserver.observe(canvas);
+  resizeObserver.observe(spectrumCanvas);
 
   fileInput.addEventListener("change", () => {
     const file = fileInput.files?.[0];
@@ -315,6 +399,8 @@ export function createAudioPanel(
     const currentRequestId = ++requestId;
     playbackTimeSeconds = 0;
     lastTimelineDrawPlaybackTime = -1;
+    lastSpectrumSampleTimeMs = -Infinity;
+    resetSpectrumNormalization();
     placeholderText = "Analyzing...";
     summary.textContent = `Analyzing ${file.name}...`;
     drawPlaceholder(canvas, placeholderText);
@@ -545,6 +631,7 @@ export function createAudioPanel(
   });
 
   drawPlaceholder(canvas, placeholderText);
+  drawSpectrumBars(spectrumCanvas, null);
 
   return {
     getLatestAnalysis() {
@@ -573,22 +660,9 @@ export function createAudioPanel(
       return !audio.paused && !audio.ended;
     },
     getAudioSpectrumBins() {
-      if (!audioAnalyserNode || !analyserByteData || !audioContext) {
-        return null;
-      }
-      if (audioContext.state === "suspended") {
-        return null;
-      }
-      audioAnalyserNode.getByteFrequencyData(analyserByteData);
-      remapFrequencyBins(analyserByteData, spectrumOutputBins);
-      for (let i = 0; i < spectrumOutputBins.length; i += 1) {
-        const incoming = spectrumOutputBins[i];
-        const previous = spectrumSmoothedBins[i] ?? 0;
-        const blend = incoming > previous ? 0.56 : 0.2;
-        spectrumSmoothedBins[i] = previous + (incoming - previous) * blend;
-        spectrumOutputBins[i] = spectrumSmoothedBins[i];
-      }
-      return spectrumOutputBins;
+      const bins = updateLiveSpectrumBins();
+      drawSpectrumBars(spectrumCanvas, bins);
+      return bins;
     },
     async loadFile(file) {
       await analyzeAndLoadFile(file);
@@ -852,7 +926,15 @@ function sampleWaveform(envelope: Float32Array, x: number, width: number): numbe
   return envelope[index] ?? 0;
 }
 
-function remapFrequencyBins(source: ArrayLike<number>, target: Float32Array): void {
+function db2mag(val: number): number {
+  return Math.exp(DB_TO_MAG_EXP * val);
+}
+
+function remapFrequencyBins(
+  source: ArrayLike<number>,
+  target: Float32Array,
+  sampleRateHz: number
+): void {
   if (target.length === 0) {
     return;
   }
@@ -860,8 +942,20 @@ function remapFrequencyBins(source: ArrayLike<number>, target: Float32Array): vo
     target.fill(0);
     return;
   }
-  const minIndex = 1;
-  const maxIndex = source.length - 1;
+  const nyquistHz = Math.max(1, sampleRateHz * 0.5);
+  const sourceMaxIndex = Math.max(1, source.length - 1);
+  const minReactiveHz = clamp(SPECTRUM_REACTIVE_MIN_HZ, 0, nyquistHz);
+  const maxReactiveHz = clamp(SPECTRUM_REACTIVE_MAX_HZ, minReactiveHz + 1, nyquistHz);
+  const minIndex = clamp(
+    Math.floor((minReactiveHz / nyquistHz) * sourceMaxIndex),
+    0,
+    sourceMaxIndex
+  );
+  const maxIndex = clamp(
+    Math.ceil((maxReactiveHz / nyquistHz) * sourceMaxIndex),
+    minIndex + 1,
+    sourceMaxIndex
+  );
   const range = Math.max(1, maxIndex - minIndex);
   for (let i = 0; i < target.length; i += 1) {
     const startT = i / target.length;
@@ -873,7 +967,14 @@ function remapFrequencyBins(source: ArrayLike<number>, target: Float32Array): vo
     let sum = 0;
     let count = 0;
     for (let j = from; j < to; j += 1) {
-      sum += (source[j] ?? 0) / 255;
+      const dbValue = source[j] ?? SPECTRUM_ANALYZER_MIN_DB;
+      const safeDb = Number.isFinite(dbValue) ? dbValue : SPECTRUM_ANALYZER_MIN_DB;
+      const clampedDb = clamp(safeDb, SPECTRUM_ANALYZER_MIN_DB, SPECTRUM_ANALYZER_MAX_DB);
+      const magnitude = db2mag(clampedDb);
+      const normalizedMagnitude =
+        (magnitude - SPECTRUM_ANALYZER_MIN_MAGNITUDE) /
+        Math.max(1e-8, SPECTRUM_ANALYZER_MAX_MAGNITUDE - SPECTRUM_ANALYZER_MIN_MAGNITUDE);
+      sum += clamp(normalizedMagnitude, 0, 1);
       count += 1;
     }
     const averaged = count > 0 ? sum / count : 0;
@@ -881,6 +982,77 @@ function remapFrequencyBins(source: ArrayLike<number>, target: Float32Array): vo
     const lowBoost = 1 - normalizedIndex * 0.72;
     target[i] = clamp(Math.pow(averaged, 1.08) * (0.86 + lowBoost * 0.34), 0, 1);
   }
+}
+
+function drawSpectrumBars(canvas: HTMLCanvasElement, bins: Float32Array | null): void {
+  const context = canvas.getContext("2d");
+  if (!context) {
+    return;
+  }
+
+  const { width, height } = prepareCanvasForHiDpi(canvas, context);
+  context.clearRect(0, 0, width, height);
+  context.fillStyle = "#050d1d";
+  context.fillRect(0, 0, width, height);
+
+  context.strokeStyle = "rgba(95, 132, 196, 0.32)";
+  context.lineWidth = 1;
+  for (let y = 1; y <= 3; y += 1) {
+    const gy = Math.round((y / 4) * height) + 0.5;
+    context.beginPath();
+    context.moveTo(0, gy);
+    context.lineTo(width, gy);
+    context.stroke();
+  }
+
+  const barCount = Math.min(SPECTRUM_PANEL_BAR_COUNT, Math.max(18, Math.floor(width / 10)));
+  const gap = 1.5;
+  const usableWidth = Math.max(1, width - gap * (barCount + 1));
+  const barWidth = Math.max(1, usableWidth / barCount);
+  const baseline = height - 2;
+  const maxBarHeight = Math.max(10, height - 6);
+
+  for (let i = 0; i < barCount; i += 1) {
+    const rawValue = bins ? sampleSpectrumBand(bins, i, barCount) : 0;
+    const shaped = Math.pow(clamp(rawValue, 0, 1), 0.76);
+    const level = 0.04 + shaped * 0.96;
+    const barHeight = Math.max(1, level * maxBarHeight);
+    const x = gap + i * (barWidth + gap);
+    const y = baseline - barHeight;
+
+    const hue = i / Math.max(1, barCount - 1);
+    const red = Math.round(64 + hue * 70);
+    const green = Math.round(212 - hue * 44);
+    const blue = Math.round(255 - hue * 28);
+    const alpha = 0.28 + level * 0.66;
+    context.fillStyle = `rgba(${red}, ${green}, ${blue}, ${alpha.toFixed(3)})`;
+    context.fillRect(x, y, barWidth, barHeight);
+
+    context.fillStyle = `rgba(230, 244, 255, ${(0.06 + level * 0.26).toFixed(3)})`;
+    context.fillRect(x, y, barWidth, 1);
+  }
+}
+
+function sampleSpectrumBand(bins: Float32Array, index: number, bandCount: number): number {
+  if (bins.length === 0 || bandCount <= 0) {
+    return 0;
+  }
+  const start = Math.floor((index / bandCount) * bins.length);
+  const end = Math.max(start + 1, Math.floor(((index + 1) / bandCount) * bins.length));
+  let sum = 0;
+  let peak = 0;
+  let count = 0;
+  for (let i = start; i < end; i += 1) {
+    const value = bins[i] ?? 0;
+    sum += value;
+    peak = Math.max(peak, value);
+    count += 1;
+  }
+  if (count <= 0) {
+    return 0;
+  }
+  const average = sum / count;
+  return clamp(average * 0.6 + peak * 0.4, 0, 1);
 }
 
 function drawPlaceholder(canvas: HTMLCanvasElement, text: string): void {
