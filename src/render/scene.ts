@@ -32,6 +32,18 @@ import {
 import { MeshLine, MeshLineMaterial } from "three.meshline";
 import type { SpectrumTimeline } from "../audio/types";
 import type { SimulationSnapshot } from "../game/sim";
+import {
+	WAVEFORM_PLANE_DISTORTION_DEFAULT,
+	buildWaveformPlaneDisplacementHeader,
+	normalizeWaveformPlaneDistortionAlgorithm,
+	populateWaveformPlaneSpectrumForDistortion,
+	type WaveformPlaneDistortionAlgorithm,
+} from "./waveformPlaneDistortion";
+import {
+	WAVEFORM_PLANE_POSITION_DEFAULT,
+	normalizeWaveformPlanePositionMode,
+	type WaveformPlanePositionMode,
+} from "./waveformPlanePosition";
 
 type WaveformPlaneSurfaceShading = "smooth" | "flat" | "matte" | "metallic";
 
@@ -42,9 +54,13 @@ export type RenderScene = {
 	setWaveformPlaneEnabled: (enabled: boolean) => void;
 	setWaveformPlaneSurfaceEnabled: (enabled: boolean) => void;
 	setWaveformPlaneWireframeEnabled: (enabled: boolean) => void;
+	setWaveformPlanePosition: (positionMode: WaveformPlanePositionMode) => void;
 	setWaveformPlaneHeightScale: (heightScale: number) => void;
 	setWaveformPlaneSurfaceShading: (
 		shading: WaveformPlaneSurfaceShading,
+	) => void;
+	setWaveformPlaneDistortionAlgorithm: (
+		algorithm: WaveformPlaneDistortionAlgorithm,
 	) => void;
 	setWaveformPlaneSurfaceColor: (colorHex: string) => void;
 	setWaveformPlaneWireframeColor: (colorHex: string) => void;
@@ -294,52 +310,8 @@ export function setupScene(container: HTMLElement): RenderScene {
 		uAmplitudeDrive: { value: 0 },
 		uSpectrumTex: { value: waveformSpectrumTexture },
 	};
-	const waveformPlaneDisplacementHeader = `
-      uniform float uTimeSeconds;
-      uniform float uHeightScale;
-      uniform float uAmplitudeDrive;
-      uniform sampler2D uSpectrumTex;
-
-      float sampleSpectrum(float binNorm) {
-        float u = clamp(binNorm, 0.0, 1.0);
-        float stepSize = ${Math.max(1 / (WAVEFORM_PLANE_SPECTRUM_BIN_COUNT - 1), 1e-5).toFixed(6)};
-        float c = texture2D(uSpectrumTex, vec2(u, 0.5)).r;
-        float l = texture2D(uSpectrumTex, vec2(max(0.0, u - stepSize), 0.5)).r;
-        float r = texture2D(uSpectrumTex, vec2(min(1.0, u + stepSize), 0.5)).r;
-        return c * 0.52 + (l + r) * 0.24;
-      }
-
-      float computeHeight(vec2 uvPoint) {
-        vec2 p = uvPoint * vec2(5.8, 8.9);
-        p.x += uTimeSeconds * 1.84;
-        float baseA = sin(p.x * 1.33 + p.y * 0.29) * 0.58;
-        float baseB = sin(p.x * 0.79 - p.y * 1.14 + 1.12) * 0.37;
-        float baseC = sin((p.x + p.y) * 1.47 - 0.46) * 0.25;
-        float raw = abs(baseA + baseB + baseC);
-        float ridgeSource = (raw * 1.24) / (1.0 + raw * 0.34);
-        float ridge = pow(ridgeSource, 1.04);
-        float depthScale = pow(max(0.0, 1.0 - uvPoint.y), 0.54);
-        float lateral = 1.0 - smoothstep(0.18, 0.86, abs(uvPoint.x - 0.5));
-        float depthSpectrumBin = pow(clamp(1.0 - uvPoint.y, 0.0, 1.0), 1.55);
-        float sweepSpectrumBin = 0.5 + 0.5 * sin(
-          uvPoint.x * 12.6 +
-          uvPoint.y * 5.2 +
-          uTimeSeconds * 1.28
-        );
-        float spectrum = mix(
-          sampleSpectrum(depthSpectrumBin),
-          sampleSpectrum(sweepSpectrumBin),
-          0.42
-        );
-        float spectrumAccent = pow(max(0.0, spectrum), 1.08);
-        float spectralShape = 0.56 + spectrum * 1.74 + spectrumAccent * 1.12;
-        float amplitudeBoost = 0.76 + uAmplitudeDrive * 1.52;
-        float nearEdgeFade = smoothstep(0.12, 0.42, uvPoint.y);
-        float nearSafetyScale = 0.08 + nearEdgeFade * 0.92;
-        float nearAmplitudeScale = 0.28 + nearEdgeFade * 0.72;
-        return ridge * uHeightScale * (0.1 + depthScale * 0.88) * (0.74 + lateral * 0.46) * spectralShape * amplitudeBoost * nearSafetyScale * nearAmplitudeScale;
-      }
-  `;
+	let waveformPlaneDistortionAlgorithm: WaveformPlaneDistortionAlgorithm =
+		WAVEFORM_PLANE_DISTORTION_DEFAULT;
 	const waveformPlaneBeginNormal = `
       float heightN = computeHeight(uv);
       float steppedHeightN = floor(heightN * 8.0 + 0.5) / 8.0;
@@ -387,7 +359,11 @@ export function setupScene(container: HTMLElement): RenderScene {
 	): void => {
 		material.onBeforeCompile = (shader) => {
 			Object.assign(shader.uniforms, waveformPlaneDisplacementUniforms);
-			shader.vertexShader = `${waveformPlaneDisplacementHeader}\n${shader.vertexShader}`;
+			const displacementHeader = buildWaveformPlaneDisplacementHeader(
+				waveformPlaneDistortionAlgorithm,
+				Math.max(1 / (WAVEFORM_PLANE_SPECTRUM_BIN_COUNT - 1), 1e-5),
+			);
+			shader.vertexShader = `${displacementHeader}\n${shader.vertexShader}`;
 			shader.vertexShader = shader.vertexShader.replace(
 				"#include <beginnormal_vertex>",
 				waveformPlaneBeginNormal,
@@ -397,7 +373,8 @@ export function setupScene(container: HTMLElement): RenderScene {
 				waveformPlaneBeginVertex,
 			);
 		};
-		material.customProgramCacheKey = () => "waveform-plane-displacement-v5";
+		material.customProgramCacheKey = () =>
+			`waveform-plane-displacement-v6-${waveformPlaneDistortionAlgorithm}`;
 	};
 	const waveformPlaneSurfaceBaseColor = new Color(
 		WAVEFORM_PLANE_DEFAULT_SURFACE_COLOR_HEX,
@@ -482,6 +459,19 @@ export function setupScene(container: HTMLElement): RenderScene {
 	waveformPlaneDepthMaterial.depthWrite = true;
 	waveformPlaneDepthMaterial.depthTest = true;
 	applyWaveformPlaneDisplacement(waveformPlaneDepthMaterial);
+	const applyWaveformPlaneDistortionAlgorithm = (
+		algorithm: WaveformPlaneDistortionAlgorithm,
+	): void => {
+		const normalizedAlgorithm =
+			normalizeWaveformPlaneDistortionAlgorithm(algorithm);
+		if (normalizedAlgorithm === waveformPlaneDistortionAlgorithm) {
+			return;
+		}
+		waveformPlaneDistortionAlgorithm = normalizedAlgorithm;
+		waveformPlaneSurfaceMaterial.needsUpdate = true;
+		waveformPlaneWireframeMaterial.needsUpdate = true;
+		waveformPlaneDepthMaterial.needsUpdate = true;
+	};
 	const normalizeWaveformPlaneColor = (
 		colorHex: string,
 		fallback: string,
@@ -520,55 +510,108 @@ export function setupScene(container: HTMLElement): RenderScene {
 		WAVEFORM_PLANE_SEGMENTS_X,
 		WAVEFORM_PLANE_SEGMENTS_Y,
 	);
-	const waveformPlaneDepthMesh = new Mesh(
-		waveformPlaneGeometry,
-		waveformPlaneDepthMaterial,
-	);
-	waveformPlaneDepthMesh.position.set(0, -15.8, -28);
-	waveformPlaneDepthMesh.rotation.x = -1.21;
-	waveformPlaneDepthMesh.rotation.y = 0;
-	waveformPlaneDepthMesh.rotation.z = 0;
-	waveformPlaneDepthMesh.renderOrder = -2;
-	const waveformPlaneSurfaceMesh = new Mesh(
-		waveformPlaneGeometry,
-		waveformPlaneSurfaceMaterial,
-	);
-	waveformPlaneSurfaceMesh.position.set(0, -15.8, -28);
-	waveformPlaneSurfaceMesh.rotation.x = -1.21;
-	waveformPlaneSurfaceMesh.rotation.y = 0;
-	waveformPlaneSurfaceMesh.rotation.z = 0;
-	waveformPlaneSurfaceMesh.renderOrder = -1;
-	const waveformPlaneWireframeMesh = new Mesh(
-		waveformPlaneGeometry,
-		waveformPlaneWireframeMaterial,
-	);
-	waveformPlaneWireframeMesh.position.set(0, -15.8, -28);
-	waveformPlaneWireframeMesh.rotation.x = -1.21;
-	waveformPlaneWireframeMesh.rotation.y = 0;
-	waveformPlaneWireframeMesh.rotation.z = 0;
-	waveformPlaneWireframeMesh.renderOrder = 0;
-	scene.add(waveformPlaneDepthMesh);
-	scene.add(waveformPlaneSurfaceMesh);
-	scene.add(waveformPlaneWireframeMesh);
+	type WaveformPlanePlacement = "bottom" | "top";
+	type WaveformPlaneMeshSet = {
+		placement: WaveformPlanePlacement;
+		depthMesh: Mesh;
+		surfaceMesh: Mesh;
+		wireframeMesh: Mesh;
+	};
+	const createWaveformPlaneMeshSet = (
+		placement: WaveformPlanePlacement,
+		positionY: number,
+		rotationX: number,
+	): WaveformPlaneMeshSet => {
+		const depthMesh = new Mesh(waveformPlaneGeometry, waveformPlaneDepthMaterial);
+		depthMesh.position.set(0, positionY, WAVEFORM_PLANE_Z);
+		depthMesh.rotation.x = rotationX;
+		depthMesh.rotation.y = 0;
+		depthMesh.rotation.z = 0;
+		depthMesh.renderOrder = -2;
+
+		const surfaceMesh = new Mesh(
+			waveformPlaneGeometry,
+			waveformPlaneSurfaceMaterial,
+		);
+		surfaceMesh.position.set(0, positionY, WAVEFORM_PLANE_Z);
+		surfaceMesh.rotation.x = rotationX;
+		surfaceMesh.rotation.y = 0;
+		surfaceMesh.rotation.z = 0;
+		surfaceMesh.renderOrder = -1;
+
+		const wireframeMesh = new Mesh(
+			waveformPlaneGeometry,
+			waveformPlaneWireframeMaterial,
+		);
+		wireframeMesh.position.set(0, positionY, WAVEFORM_PLANE_Z);
+		wireframeMesh.rotation.x = rotationX;
+		wireframeMesh.rotation.y = 0;
+		wireframeMesh.rotation.z = 0;
+		wireframeMesh.renderOrder = 0;
+
+		return {
+			placement,
+			depthMesh,
+			surfaceMesh,
+			wireframeMesh,
+		};
+	};
+	const waveformPlaneMeshSets: WaveformPlaneMeshSet[] = [
+		createWaveformPlaneMeshSet(
+			"bottom",
+			WAVEFORM_PLANE_BOTTOM_Y,
+			WAVEFORM_PLANE_BOTTOM_ROTATION_X,
+		),
+		createWaveformPlaneMeshSet(
+			"top",
+			WAVEFORM_PLANE_TOP_Y,
+			WAVEFORM_PLANE_TOP_ROTATION_X,
+		),
+	];
+	for (const meshSet of waveformPlaneMeshSets) {
+		scene.add(meshSet.depthMesh);
+		scene.add(meshSet.surfaceMesh);
+		scene.add(meshSet.wireframeMesh);
+	}
 
 	let waveformPlaneEnabled = true;
 	let waveformPlaneSurfaceEnabled = WAVEFORM_PLANE_SURFACE_ENABLED_DEFAULT;
 	let waveformPlaneWireframeEnabled = WAVEFORM_PLANE_WIREFRAME_ENABLED_DEFAULT;
+	let waveformPlanePositionMode: WaveformPlanePositionMode =
+		WAVEFORM_PLANE_POSITION_DEFAULT;
 	let waveformPlaneHasData = true;
 	let waveformPlaneTimeSeconds = 0;
 	let waveformPlaneAmplitudeDrive = 0;
 	let waveformPlaneAmplitudePeak = 0.35;
 	let waveformPlaneSpectrumPeak = 0.35;
+	const isWaveformPlanePlacementVisible = (
+		placement: WaveformPlanePlacement,
+	): boolean => {
+		if (waveformPlanePositionMode === "both") {
+			return true;
+		}
+		if (waveformPlanePositionMode === "top") {
+			return placement === "top";
+		}
+		return placement === "bottom";
+	};
 	const syncWaveformPlaneVisibility = (): void => {
 		const active = waveformPlaneEnabled && waveformPlaneHasData;
 		const hasRenderableLayer =
 			waveformPlaneSurfaceEnabled || waveformPlaneWireframeEnabled;
 		const visible = active && hasRenderableLayer;
-		waveformPlaneSurfaceMesh.visible = visible && waveformPlaneSurfaceEnabled;
-		waveformPlaneWireframeMesh.visible =
-			visible && waveformPlaneWireframeEnabled;
-		waveformPlaneDepthMesh.visible =
-			visible && waveformPlaneWireframeEnabled && !waveformPlaneSurfaceEnabled;
+		for (const meshSet of waveformPlaneMeshSets) {
+			const placementVisible =
+				visible && isWaveformPlanePlacementVisible(meshSet.placement);
+			meshSet.surfaceMesh.visible =
+				placementVisible && waveformPlaneSurfaceEnabled;
+			meshSet.wireframeMesh.visible =
+				placementVisible && waveformPlaneWireframeEnabled;
+			meshSet.depthMesh.visible =
+				placementVisible &&
+				waveformPlaneWireframeEnabled &&
+				!waveformPlaneSurfaceEnabled;
+		}
 	};
 	syncWaveformPlaneVisibility();
 
@@ -1042,6 +1085,11 @@ export function setupScene(container: HTMLElement): RenderScene {
 			waveformPlaneWireframeEnabled = enabled;
 			syncWaveformPlaneVisibility();
 		},
+		setWaveformPlanePosition(positionMode) {
+			waveformPlanePositionMode =
+				normalizeWaveformPlanePositionMode(positionMode);
+			syncWaveformPlaneVisibility();
+		},
 		setWaveformPlaneHeightScale(heightScale) {
 			waveformPlaneHeightScale = clamp(
 				Number.isFinite(heightScale)
@@ -1055,6 +1103,9 @@ export function setupScene(container: HTMLElement): RenderScene {
 		},
 		setWaveformPlaneSurfaceShading(shading) {
 			applyWaveformPlaneSurfaceShading(shading);
+		},
+		setWaveformPlaneDistortionAlgorithm(algorithm) {
+			applyWaveformPlaneDistortionAlgorithm(algorithm);
 		},
 		setWaveformPlaneSurfaceColor(colorHex) {
 			applyWaveformPlaneSurfaceColor(colorHex);
@@ -1080,78 +1131,17 @@ export function setupScene(container: HTMLElement): RenderScene {
 				return;
 			}
 
-			const maxSourceIndex = Math.max(0, spectrumBins.length - 1);
-			let frameSpectrumPeak = 0;
-			for (let i = 0; i < spectrumBins.length; i += 1) {
-				frameSpectrumPeak = Math.max(
-					frameSpectrumPeak,
-					clamp(spectrumBins[i] ?? 0, 0, 1),
-				);
-			}
-			waveformPlaneSpectrumPeak = clamp(frameSpectrumPeak, 0.22, 1.4);
-			const lowBandCount = Math.max(
-				1,
-				Math.min(spectrumBins.length, Math.floor(spectrumBins.length * 0.12)),
-			);
-			let lowBandWeightedSum = 0;
-			let lowBandWeightTotal = 0;
-			for (let i = 0; i < lowBandCount; i += 1) {
-				const normalized = lowBandCount <= 1 ? 0 : i / (lowBandCount - 1);
-				const weight = 1.0 - normalized * 0.75;
-				lowBandWeightedSum += clamp(spectrumBins[i] ?? 0, 0, 1) * weight;
-				lowBandWeightTotal += weight;
-			}
-			const lowBandDrive =
-				lowBandWeightTotal > 0 ? lowBandWeightedSum / lowBandWeightTotal : 0;
-			const lowMidBandCount = Math.max(
-				1,
-				Math.min(spectrumBins.length, Math.floor(spectrumBins.length * 0.3)),
-			);
-			let lowMidBandWeightedSum = 0;
-			let lowMidBandWeightTotal = 0;
-			for (let i = 0; i < lowMidBandCount; i += 1) {
-				const normalized = lowMidBandCount <= 1 ? 0 : i / (lowMidBandCount - 1);
-				const weight = 1.0 - normalized * 0.6;
-				lowMidBandWeightedSum += clamp(spectrumBins[i] ?? 0, 0, 1) * weight;
-				lowMidBandWeightTotal += weight;
-			}
-			const lowMidBandDrive =
-				lowMidBandWeightTotal > 0
-					? lowMidBandWeightedSum / lowMidBandWeightTotal
-					: 0;
-			const rawAmplitudeTarget = clamp(
-				Math.pow(lowBandDrive, 0.78) * 0.92 +
-					Math.pow(lowMidBandDrive, 0.86) * 0.44,
-				0,
-				1,
-			);
-			waveformPlaneAmplitudePeak = clamp(rawAmplitudeTarget, 0.22, 1.2);
-			const normalizedAmplitudeTarget = clamp(rawAmplitudeTarget, 0, 1);
-			const amplitudeNoiseGate = 0.04;
-			const amplitudeTarget =
-				normalizedAmplitudeTarget <= amplitudeNoiseGate
-					? 0
-					: clamp(
-							(normalizedAmplitudeTarget - amplitudeNoiseGate) /
-								(1 - amplitudeNoiseGate),
-							0,
-							1,
-						);
-			waveformPlaneAmplitudeDrive = amplitudeTarget;
-
+			const metrics = populateWaveformPlaneSpectrumForDistortion({
+				algorithm: waveformPlaneDistortionAlgorithm,
+				sourceBins: spectrumBins,
+				targetBins: waveformSpectrumSmoothed,
+				sampleLinear: sampleWaveformLinear,
+			});
+			waveformPlaneAmplitudeDrive = metrics.amplitudeDrive;
+			waveformPlaneAmplitudePeak = metrics.amplitudePeak;
+			waveformPlaneSpectrumPeak = metrics.spectrumPeak;
 			for (let i = 0; i < WAVEFORM_PLANE_SPECTRUM_BIN_COUNT; i += 1) {
-				const t =
-					WAVEFORM_PLANE_SPECTRUM_BIN_COUNT <= 1
-						? 0
-						: i / (WAVEFORM_PLANE_SPECTRUM_BIN_COUNT - 1);
-				const sourcePos = Math.pow(t, 1.36) * maxSourceIndex;
-				const target = clamp(
-					sampleWaveformLinear(spectrumBins, sourcePos),
-					0,
-					1,
-				);
-				waveformSpectrumSmoothed[i] = target;
-				const encoded = Math.round(target * 255);
+				const encoded = Math.round(clamp(waveformSpectrumSmoothed[i], 0, 1) * 255);
 				const offset = i * 4;
 				waveformSpectrumTextureData[offset] = encoded;
 				waveformSpectrumTextureData[offset + 1] = encoded;
@@ -1726,6 +1716,11 @@ const WAVEFORM_PLANE_WIDTH = 120;
 const WAVEFORM_PLANE_HEIGHT = 90;
 const WAVEFORM_PLANE_SEGMENTS_X = 56;
 const WAVEFORM_PLANE_SEGMENTS_Y = 42;
+const WAVEFORM_PLANE_Z = -28;
+const WAVEFORM_PLANE_BOTTOM_Y = -15.8;
+const WAVEFORM_PLANE_TOP_Y = 15.8;
+const WAVEFORM_PLANE_BOTTOM_ROTATION_X = -1.21;
+const WAVEFORM_PLANE_TOP_ROTATION_X = 1.21;
 const WAVEFORM_PLANE_HEIGHT_SCALE_DEFAULT = 6.8;
 const WAVEFORM_PLANE_HEIGHT_SCALE_MIN = 2.5;
 const WAVEFORM_PLANE_HEIGHT_SCALE_MAX = 12;

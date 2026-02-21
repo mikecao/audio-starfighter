@@ -195,11 +195,17 @@ const audioPanel = createAudioPanel(uiHost, {
   onWaveformPlaneWireframeEnabledChange(enabled) {
     scene.setWaveformPlaneWireframeEnabled(enabled);
   },
+  onWaveformPlanePositionModeChange(positionMode) {
+    scene.setWaveformPlanePosition(positionMode);
+  },
   onWaveformPlaneHeightScaleChange(heightScale) {
     scene.setWaveformPlaneHeightScale(heightScale);
   },
   onWaveformPlaneSurfaceShadingChange(shading) {
     scene.setWaveformPlaneSurfaceShading(shading);
+  },
+  onWaveformPlaneDistortionAlgorithmChange(algorithm) {
+    scene.setWaveformPlaneDistortionAlgorithm(algorithm);
   },
   onWaveformPlaneSurfaceColorChange(colorHex) {
     scene.setWaveformPlaneSurfaceColor(colorHex);
@@ -211,6 +217,9 @@ const audioPanel = createAudioPanel(uiHost, {
     setUiHidden(!uiHidden);
     return uiHidden;
   }
+});
+audioPanel.subscribeSpectrum((bins) => {
+  scene.setWaveformPlaneSpectrum(bins);
 });
 
 sim.setRandomSeed(DEMO_RUN_SEED);
@@ -317,7 +326,7 @@ function animate(frameTimeMs: number): void {
   lastSimTimeSeconds = snapshot.simTimeSeconds;
   const audioPlaybackTimeSeconds = audioPanel.getAudioPlaybackTime();
   scene.setWaveformPlaneTime(snapshot.simTimeSeconds);
-  scene.setWaveformPlaneSpectrum(audioPanel.getAudioSpectrumBins());
+  audioPanel.updateReactiveSpectrum(!uiHidden);
   if (analysis && analysis !== appliedAnalysisRef) {
     scene.setWaveformPlaneSpectrumTimeline(analysis.spectrum);
     const runTimeline = buildRunTimelineEvents(analysis);

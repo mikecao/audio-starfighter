@@ -4,6 +4,18 @@ import type {
   EnemyArchetypeId,
   EnemyProjectileStyle
 } from "../game/combatConfig";
+import {
+  WAVEFORM_PLANE_DISTORTION_DEFAULT,
+  WAVEFORM_PLANE_DISTORTION_OPTIONS,
+  normalizeWaveformPlaneDistortionAlgorithm,
+  type WaveformPlaneDistortionAlgorithm
+} from "../render/waveformPlaneDistortion";
+import {
+  WAVEFORM_PLANE_POSITION_DEFAULT,
+  WAVEFORM_PLANE_POSITION_OPTIONS,
+  normalizeWaveformPlanePositionMode,
+  type WaveformPlanePositionMode
+} from "../render/waveformPlanePosition";
 
 const RUN_SEED_STORAGE_KEY = "audio-starfighter.run-seed";
 
@@ -16,19 +28,28 @@ type AudioPanelHandlers = {
   onWaveformPlaneChange: (enabled: boolean) => void;
   onWaveformPlaneSurfaceEnabledChange: (enabled: boolean) => void;
   onWaveformPlaneWireframeEnabledChange: (enabled: boolean) => void;
+  onWaveformPlanePositionModeChange: (
+    positionMode: WaveformPlanePositionMode
+  ) => void;
   onWaveformPlaneHeightScaleChange: (heightScale: number) => void;
   onWaveformPlaneSurfaceShadingChange: (shading: WaveformPlaneSurfaceShading) => void;
+  onWaveformPlaneDistortionAlgorithmChange: (
+    algorithm: WaveformPlaneDistortionAlgorithm
+  ) => void;
   onWaveformPlaneSurfaceColorChange: (colorHex: string) => void;
   onWaveformPlaneWireframeColorChange: (colorHex: string) => void;
   onToggleUi: () => boolean;
 };
+
+type SpectrumSubscriber = (bins: Float32Array | null) => void;
 
 export type AudioPanel = {
   getLatestAnalysis: () => AudioAnalysisResult | null;
   setPlaybackTime: (timeSeconds: number) => void;
   getAudioPlaybackTime: () => number;
   isAudioPlaying: () => boolean;
-  getAudioSpectrumBins: () => Float32Array | null;
+  updateReactiveSpectrum: (drawUi?: boolean) => Float32Array | null;
+  subscribeSpectrum: (subscriber: SpectrumSubscriber) => () => void;
   loadFile: (file: File) => Promise<void>;
 };
 
@@ -45,13 +66,17 @@ type UiCombatState = {
   waveformPlaneEnabled: boolean;
   waveformPlaneSurfaceEnabled: boolean;
   waveformPlaneWireframeEnabled: boolean;
+  waveformPlanePositionMode: WaveformPlanePositionMode;
   waveformPlaneHeightScale: number;
+  waveformPlaneDistortionAlgorithm: WaveformPlaneDistortionAlgorithm;
+  spectrumSmoothingTimeConstant: number;
   waveformPlaneSurfaceShading: WaveformPlaneSurfaceShading;
   waveformPlaneSurfaceColor: string;
   waveformPlaneWireframeColor: string;
 };
 
 const DEFAULT_WAVEFORM_PLANE_HEIGHT_SCALE = 6.8;
+const DEFAULT_SPECTRUM_SMOOTHING_TIME_CONSTANT = 0.5;
 const DEFAULT_WAVEFORM_PLANE_SURFACE_SHADING: WaveformPlaneSurfaceShading = "smooth";
 const DEFAULT_WAVEFORM_PLANE_SURFACE_COLOR = "#f4f4f4";
 const DEFAULT_WAVEFORM_PLANE_WIREFRAME_COLOR = "#f4f4f4";
@@ -69,7 +94,10 @@ const DEFAULT_COMBAT_STATE: UiCombatState = {
   waveformPlaneEnabled: true,
   waveformPlaneSurfaceEnabled: false,
   waveformPlaneWireframeEnabled: true,
+  waveformPlanePositionMode: WAVEFORM_PLANE_POSITION_DEFAULT,
   waveformPlaneHeightScale: DEFAULT_WAVEFORM_PLANE_HEIGHT_SCALE,
+  waveformPlaneDistortionAlgorithm: WAVEFORM_PLANE_DISTORTION_DEFAULT,
+  spectrumSmoothingTimeConstant: DEFAULT_SPECTRUM_SMOOTHING_TIME_CONSTANT,
   waveformPlaneSurfaceShading: DEFAULT_WAVEFORM_PLANE_SURFACE_SHADING,
   waveformPlaneSurfaceColor: DEFAULT_WAVEFORM_PLANE_SURFACE_COLOR,
   waveformPlaneWireframeColor: DEFAULT_WAVEFORM_PLANE_WIREFRAME_COLOR
@@ -245,12 +273,29 @@ export function createAudioPanel(
   const waveformPlaneToggle = createModalToggle("Waveform Plane", true);
   const waveformPlaneSurfaceToggle = createModalToggle("Plane Surface", false);
   const waveformPlaneWireframeToggle = createModalToggle("Plane Wireframe", true);
+  const waveformPlanePositionMode = createModalSelect(
+    "Plane Position",
+    WAVEFORM_PLANE_POSITION_OPTIONS,
+    WAVEFORM_PLANE_POSITION_DEFAULT
+  );
   const waveformPlaneHeightScale = createModalRange(
     "Plane Max Height",
     2.5,
     12,
     0.1,
     DEFAULT_WAVEFORM_PLANE_HEIGHT_SCALE
+  );
+  const waveformPlaneDistortionAlgorithm = createModalSelect(
+    "Distortion",
+    WAVEFORM_PLANE_DISTORTION_OPTIONS,
+    WAVEFORM_PLANE_DISTORTION_DEFAULT
+  );
+  const spectrumSmoothingTimeConstant = createModalRange(
+    "Spectrum Smoothing",
+    0,
+    0.95,
+    0.01,
+    DEFAULT_SPECTRUM_SMOOTHING_TIME_CONSTANT
   );
   const waveformPlaneSurfaceShading = createModalSelect(
     "Surface Shading",
@@ -269,7 +314,10 @@ export function createAudioPanel(
     waveformPlaneToggle.root,
     waveformPlaneSurfaceToggle.root,
     waveformPlaneWireframeToggle.root,
+    waveformPlanePositionMode.root,
     waveformPlaneHeightScale.root,
+    waveformPlaneDistortionAlgorithm.root,
+    spectrumSmoothingTimeConstant.root,
     waveformPlaneSurfaceShading.root,
     waveformPlaneSurfaceColor.root,
     waveformPlaneWireframeColor.root
@@ -320,10 +368,24 @@ export function createAudioPanel(
   const playbackPanel = document.createElement("section");
   playbackPanel.className = "playback-panel";
 
+  const playbackControls = document.createElement("div");
+  playbackControls.className = "playback-panel__controls";
+
   const audio = document.createElement("audio");
   audio.className = "playback-panel__audio";
   audio.controls = true;
-  playbackPanel.appendChild(audio);
+  playbackControls.appendChild(audio);
+
+  const repeatButton = document.createElement("button");
+  repeatButton.type = "button";
+  repeatButton.className = "audio-controls__button playback-panel__repeat";
+  repeatButton.textContent = "\u21bb";
+  repeatButton.title = "Enable repeat";
+  repeatButton.setAttribute("aria-label", "Toggle repeat playback");
+  repeatButton.setAttribute("aria-pressed", "false");
+  playbackControls.appendChild(repeatButton);
+
+  playbackPanel.appendChild(playbackControls);
   container.appendChild(playbackPanel);
 
   let latestAnalysis: AudioAnalysisResult | null = null;
@@ -343,6 +405,11 @@ export function createAudioPanel(
   let spectrumDynamicMax = 1;
   let spectrumOutputBins = new Float32Array(0);
   let spectrumSmoothedBins = new Float32Array(0);
+  let latestReactiveSpectrumBins: Float32Array | null = null;
+  let spectrumFrameChanged = false;
+  const spectrumSubscribers = new Set<SpectrumSubscriber>();
+  let shouldDrawSpectrumUi = true;
+  let repeatEnabled = false;
 
   const ensureSpectrumBufferSize = (size: number): void => {
     const targetSize = Math.max(0, Math.floor(size));
@@ -358,6 +425,22 @@ export function createAudioPanel(
     spectrumDynamicMax = 1;
     spectrumOutputBins.fill(0);
     spectrumSmoothedBins.fill(0);
+    latestReactiveSpectrumBins = null;
+    spectrumFrameChanged = true;
+  };
+
+  const publishSpectrum = (bins: Float32Array | null): void => {
+    for (const subscriber of spectrumSubscribers) {
+      subscriber(bins);
+    }
+  };
+
+  const applySpectrumSmoothingTimeConstant = (value: number): void => {
+    const normalized = normalizeSpectrumSmoothingTimeConstant(value);
+    combatState.spectrumSmoothingTimeConstant = normalized;
+    if (audioAnalyserNode) {
+      audioAnalyserNode.smoothingTimeConstant = normalized;
+    }
   };
 
   const ensureAudioAnalyser = (): void => {
@@ -368,7 +451,9 @@ export function createAudioPanel(
     audioSourceNode = audioContext.createMediaElementSource(audio);
     audioAnalyserNode = audioContext.createAnalyser();
     audioAnalyserNode.fftSize = SPECTRUM_ANALYZER_FFT_SIZE;
-    audioAnalyserNode.smoothingTimeConstant = 0.5;
+    audioAnalyserNode.smoothingTimeConstant = normalizeSpectrumSmoothingTimeConstant(
+      combatState.spectrumSmoothingTimeConstant
+    );
     audioAnalyserNode.minDecibels = SPECTRUM_ANALYZER_MIN_DB;
     audioAnalyserNode.maxDecibels = SPECTRUM_ANALYZER_MAX_DB;
     analyserDbData = new Float32Array(audioAnalyserNode.frequencyBinCount);
@@ -385,16 +470,27 @@ export function createAudioPanel(
     }
   };
 
+  const syncRepeatButtonState = (): void => {
+    audio.loop = repeatEnabled;
+    repeatButton.classList.toggle("playback-panel__repeat--active", repeatEnabled);
+    repeatButton.title = repeatEnabled ? "Disable repeat" : "Enable repeat";
+    repeatButton.setAttribute("aria-pressed", repeatEnabled ? "true" : "false");
+  };
+
+  syncRepeatButtonState();
+
   const updateLiveSpectrumBins = (): Float32Array | null => {
-    if (!audioAnalyserNode || !analyserDbData || !audioContext) {
-      return null;
-    }
-    if (audioContext.state === "suspended") {
-      return null;
+    spectrumFrameChanged = false;
+    if (!audioAnalyserNode || !analyserDbData || !audioContext || audioContext.state === "suspended") {
+      if (latestReactiveSpectrumBins !== null) {
+        latestReactiveSpectrumBins = null;
+        spectrumFrameChanged = true;
+      }
+      return latestReactiveSpectrumBins;
     }
     const nowMs = performance.now();
     if (nowMs - lastSpectrumSampleTimeMs < SPECTRUM_PANEL_SAMPLE_INTERVAL_MS) {
-      return spectrumOutputBins;
+      return latestReactiveSpectrumBins;
     }
     lastSpectrumSampleTimeMs = nowMs;
     audioAnalyserNode.getFloatFrequencyData(analyserDbData);
@@ -441,8 +537,38 @@ export function createAudioPanel(
       spectrumSmoothedBins[i] = previous + (incoming - previous) * blend;
       spectrumOutputBins[i] = spectrumSmoothedBins[i];
     }
-    return spectrumOutputBins;
+    latestReactiveSpectrumBins = spectrumOutputBins;
+    spectrumFrameChanged = true;
+    return latestReactiveSpectrumBins;
   };
+
+  const updateReactiveSpectrum = (drawUi = true): Float32Array | null => {
+    const wasDrawingSpectrumUi = shouldDrawSpectrumUi;
+    shouldDrawSpectrumUi = drawUi;
+    const bins = updateLiveSpectrumBins();
+    if (spectrumFrameChanged) {
+      publishSpectrum(bins);
+    } else if (drawUi && !wasDrawingSpectrumUi) {
+      drawSpectrumBars(spectrumCanvas, latestReactiveSpectrumBins);
+    }
+    return bins;
+  };
+
+  const subscribeSpectrum = (subscriber: SpectrumSubscriber): (() => void) => {
+    spectrumSubscribers.add(subscriber);
+    subscriber(latestReactiveSpectrumBins);
+    return () => {
+      spectrumSubscribers.delete(subscriber);
+    };
+  };
+
+  const spectrumPanelSubscriber: SpectrumSubscriber = (bins) => {
+    if (!shouldDrawSpectrumUi) {
+      return;
+    }
+    drawSpectrumBars(spectrumCanvas, bins);
+  };
+  spectrumSubscribers.add(spectrumPanelSubscriber);
 
   audio.addEventListener("play", () => {
     resumeAudioAnalyser();
@@ -463,7 +589,7 @@ export function createAudioPanel(
     } else {
       drawPlaceholder(canvas, placeholderText);
     }
-    drawSpectrumBars(spectrumCanvas, updateLiveSpectrumBins());
+    drawSpectrumBars(spectrumCanvas, latestReactiveSpectrumBins);
   });
   resizeObserver.observe(canvas);
   resizeObserver.observe(spectrumCanvas);
@@ -486,6 +612,8 @@ export function createAudioPanel(
     lastTimelineDrawPlaybackTime = -1;
     lastSpectrumSampleTimeMs = -Infinity;
     resetSpectrumNormalization();
+    publishSpectrum(null);
+    spectrumFrameChanged = false;
     placeholderText = "Analyzing...";
     summary.textContent = `Analyzing ${file.name}...`;
     drawPlaceholder(canvas, placeholderText);
@@ -533,6 +661,11 @@ export function createAudioPanel(
     void startRun("restart");
   });
 
+  repeatButton.addEventListener("click", () => {
+    repeatEnabled = !repeatEnabled;
+    syncRepeatButtonState();
+  });
+
   toggleUiButton.addEventListener("click", () => {
     const hidden = handlers.onToggleUi();
     toggleUiButton.textContent = hidden ? "Show UI" : "Hide UI";
@@ -560,12 +693,16 @@ export function createAudioPanel(
     waveformPlaneToggle.input.checked = state.waveformPlaneEnabled;
     waveformPlaneSurfaceToggle.input.checked = state.waveformPlaneSurfaceEnabled;
     waveformPlaneWireframeToggle.input.checked = state.waveformPlaneWireframeEnabled;
+    waveformPlanePositionMode.input.value = state.waveformPlanePositionMode;
     enemySpawnScale.input.value = state.spawnScale.toFixed(2);
     enemyFireScale.input.value = state.fireScale.toFixed(2);
     enemySpawnScale.value.textContent = `${state.spawnScale.toFixed(2)}x`;
     enemyFireScale.value.textContent = `${state.fireScale.toFixed(2)}x`;
     waveformPlaneHeightScale.input.value = state.waveformPlaneHeightScale.toFixed(1);
     waveformPlaneHeightScale.value.textContent = state.waveformPlaneHeightScale.toFixed(1);
+    waveformPlaneDistortionAlgorithm.input.value = state.waveformPlaneDistortionAlgorithm;
+    spectrumSmoothingTimeConstant.input.value = state.spectrumSmoothingTimeConstant.toFixed(2);
+    spectrumSmoothingTimeConstant.value.textContent = state.spectrumSmoothingTimeConstant.toFixed(2);
     waveformPlaneSurfaceShading.input.value = state.waveformPlaneSurfaceShading;
     waveformPlaneSurfaceColor.input.value = normalizeHexColor(
       state.waveformPlaneSurfaceColor,
@@ -598,12 +735,21 @@ export function createAudioPanel(
     waveformPlaneEnabled: waveformPlaneToggle.input.checked,
     waveformPlaneSurfaceEnabled: waveformPlaneSurfaceToggle.input.checked,
     waveformPlaneWireframeEnabled: waveformPlaneWireframeToggle.input.checked,
+    waveformPlanePositionMode: normalizeWaveformPlanePositionMode(
+      waveformPlanePositionMode.input.value
+    ),
     waveformPlaneHeightScale: clamp(
       Number.isFinite(Number(waveformPlaneHeightScale.input.value))
         ? Number(waveformPlaneHeightScale.input.value)
         : DEFAULT_WAVEFORM_PLANE_HEIGHT_SCALE,
       2.5,
       12
+    ),
+    waveformPlaneDistortionAlgorithm: normalizeWaveformPlaneDistortionAlgorithm(
+      waveformPlaneDistortionAlgorithm.input.value
+    ),
+    spectrumSmoothingTimeConstant: normalizeSpectrumSmoothingTimeConstant(
+      Number(spectrumSmoothingTimeConstant.input.value)
     ),
     waveformPlaneSurfaceShading: normalizeWaveformPlaneSurfaceShading(
       waveformPlaneSurfaceShading.input.value
@@ -643,7 +789,10 @@ export function createAudioPanel(
     handlers.onWaveformPlaneChange(state.waveformPlaneEnabled);
     handlers.onWaveformPlaneSurfaceEnabledChange(state.waveformPlaneSurfaceEnabled);
     handlers.onWaveformPlaneWireframeEnabledChange(state.waveformPlaneWireframeEnabled);
+    handlers.onWaveformPlanePositionModeChange(state.waveformPlanePositionMode);
     handlers.onWaveformPlaneHeightScaleChange(state.waveformPlaneHeightScale);
+    handlers.onWaveformPlaneDistortionAlgorithmChange(state.waveformPlaneDistortionAlgorithm);
+    applySpectrumSmoothingTimeConstant(state.spectrumSmoothingTimeConstant);
     handlers.onWaveformPlaneSurfaceShadingChange(state.waveformPlaneSurfaceShading);
     handlers.onWaveformPlaneSurfaceColorChange(state.waveformPlaneSurfaceColor);
     handlers.onWaveformPlaneWireframeColorChange(state.waveformPlaneWireframeColor);
@@ -709,6 +858,12 @@ export function createAudioPanel(
     waveformPlaneHeightScale.value.textContent = Number(
       waveformPlaneHeightScale.input.value
     ).toFixed(1);
+  });
+  spectrumSmoothingTimeConstant.input.addEventListener("input", () => {
+    const normalized = normalizeSpectrumSmoothingTimeConstant(
+      Number(spectrumSmoothingTimeConstant.input.value)
+    );
+    spectrumSmoothingTimeConstant.value.textContent = normalized.toFixed(2);
   });
   waveformPlaneSurfaceColor.input.addEventListener("input", () => {
     waveformPlaneSurfaceColor.value.textContent = normalizeHexColor(
@@ -845,10 +1000,11 @@ export function createAudioPanel(
     isAudioPlaying() {
       return !audio.paused && !audio.ended;
     },
-    getAudioSpectrumBins() {
-      const bins = updateLiveSpectrumBins();
-      drawSpectrumBars(spectrumCanvas, bins);
-      return bins;
+    updateReactiveSpectrum(drawUi = true) {
+      return updateReactiveSpectrum(drawUi);
+    },
+    subscribeSpectrum(subscriber) {
+      return subscribeSpectrum(subscriber);
     },
     async loadFile(file) {
       await analyzeAndLoadFile(file);
@@ -1199,6 +1355,13 @@ function normalizeWaveformPlaneSurfaceShading(value: string): WaveformPlaneSurfa
     default:
       return DEFAULT_WAVEFORM_PLANE_SURFACE_SHADING;
   }
+}
+
+function normalizeSpectrumSmoothingTimeConstant(value: number): number {
+  if (!Number.isFinite(value)) {
+    return DEFAULT_SPECTRUM_SMOOTHING_TIME_CONSTANT;
+  }
+  return clamp(value, 0, 0.95);
 }
 
 function db2mag(val: number): number {
