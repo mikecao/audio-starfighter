@@ -314,19 +314,47 @@ export function createAudioPanel(
     "Wireframe Color",
     DEFAULT_WAVEFORM_PLANE_WIREFRAME_COLOR
   );
-  visualsGroup.append(
-    starfieldToggle.root,
-    waveformPlaneToggle.root,
+
+  const waveformPlaneOptions = document.createElement("div");
+  waveformPlaneOptions.className = "audio-settings-modal__nested";
+
+  const waveformPlaneSurfaceOptions = document.createElement("div");
+  waveformPlaneSurfaceOptions.className =
+    "audio-settings-modal__nested audio-settings-modal__nested--child";
+  waveformPlaneSurfaceOptions.append(
+    waveformPlaneSurfaceShading.root,
+    waveformPlaneSurfaceColor.root
+  );
+
+  const waveformPlaneWireframeOptions = document.createElement("div");
+  waveformPlaneWireframeOptions.className =
+    "audio-settings-modal__nested audio-settings-modal__nested--child";
+  waveformPlaneWireframeOptions.append(waveformPlaneWireframeColor.root);
+
+  waveformPlaneOptions.append(
     waveformPlaneSurfaceToggle.root,
+    waveformPlaneSurfaceOptions,
     waveformPlaneWireframeToggle.root,
+    waveformPlaneWireframeOptions,
     waveformPlanePositionMode.root,
     waveformPlaneHeightScale.root,
     waveformPlaneDistortionAlgorithm.root,
-    spectrumSmoothingTimeConstant.root,
-    waveformPlaneSurfaceShading.root,
-    waveformPlaneSurfaceColor.root,
-    waveformPlaneWireframeColor.root
+    spectrumSmoothingTimeConstant.root
   );
+
+  const setControlVisible = (element: HTMLElement, visible: boolean): void => {
+    element.style.display = visible ? "" : "none";
+  };
+  const syncVisualControlVisibility = (): void => {
+    const planeEnabled = waveformPlaneToggle.input.checked;
+    const surfaceEnabled = planeEnabled && waveformPlaneSurfaceToggle.input.checked;
+    const wireframeEnabled = planeEnabled && waveformPlaneWireframeToggle.input.checked;
+    setControlVisible(waveformPlaneOptions, planeEnabled);
+    setControlVisible(waveformPlaneSurfaceOptions, surfaceEnabled);
+    setControlVisible(waveformPlaneWireframeOptions, wireframeEnabled);
+  };
+
+  visualsGroup.append(starfieldToggle.root, waveformPlaneToggle.root, waveformPlaneOptions);
 
   settingsForm.append(shipGroup, enemyGroup, visualsGroup);
 
@@ -726,6 +754,7 @@ export function createAudioPanel(
       state.waveformPlaneWireframeColor,
       DEFAULT_WAVEFORM_PLANE_WIREFRAME_COLOR
     ).toUpperCase();
+    syncVisualControlVisibility();
   };
 
   const readCombatStateFromForm = (): UiCombatState => ({
@@ -866,6 +895,15 @@ export function createAudioPanel(
     waveformPlaneHeightScale.value.textContent = Number(
       waveformPlaneHeightScale.input.value
     ).toFixed(1);
+  });
+  waveformPlaneToggle.input.addEventListener("change", () => {
+    syncVisualControlVisibility();
+  });
+  waveformPlaneSurfaceToggle.input.addEventListener("change", () => {
+    syncVisualControlVisibility();
+  });
+  waveformPlaneWireframeToggle.input.addEventListener("change", () => {
+    syncVisualControlVisibility();
   });
   spectrumSmoothingTimeConstant.input.addEventListener("input", () => {
     const normalized = normalizeSpectrumSmoothingTimeConstant(
