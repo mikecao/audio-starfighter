@@ -186,6 +186,9 @@ const audioPanel = createAudioPanel(uiHost, {
     currentCombatConfig = config;
     sim.setCombatConfig(currentCombatConfig);
   },
+  onStarfieldEnabledChange(enabled) {
+    scene.setStarfieldEnabled(enabled);
+  },
   onWaveformPlaneChange(enabled) {
     scene.setWaveformPlaneEnabled(enabled);
   },

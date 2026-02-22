@@ -51,6 +51,7 @@ export type RenderScene = {
 	update: (snapshot: SimulationSnapshot, alpha: number) => void;
 	render: () => void;
 	resize: () => void;
+	setStarfieldEnabled: (enabled: boolean) => void;
 	setWaveformPlaneEnabled: (enabled: boolean) => void;
 	setWaveformPlaneSurfaceEnabled: (enabled: boolean) => void;
 	setWaveformPlaneWireframeEnabled: (enabled: boolean) => void;
@@ -274,12 +275,21 @@ export function setupScene(container: HTMLElement): RenderScene {
 	const closeStars = createStarLayer(130, 0xe0f2fe, 10.5, 0.12, 0.56);
 	const nearStars = createStarLayer(220, 0x93c5fd, 6.6, 0.08, 0.34);
 	const farStars = createStarLayer(150, 0x334155, 3.1, 0.05, 0.14);
+	const starLayers = [farStars, nearStars, closeStars];
 	scene.add(farStars.primary);
 	scene.add(farStars.wrap);
 	scene.add(nearStars.primary);
 	scene.add(nearStars.wrap);
 	scene.add(closeStars.primary);
 	scene.add(closeStars.wrap);
+	let starfieldEnabled = true;
+	const syncStarfieldVisibility = (): void => {
+		for (const layer of starLayers) {
+			layer.primary.visible = starfieldEnabled;
+			layer.wrap.visible = starfieldEnabled;
+		}
+	};
+	syncStarfieldVisibility();
 
 	const waveformSpectrumTextureData = new Uint8Array(
 		WAVEFORM_PLANE_SPECTRUM_BIN_COUNT * 4,
@@ -680,9 +690,11 @@ export function setupScene(container: HTMLElement): RenderScene {
 			sceneFog.color.copy(currentBg);
 			shipMaterial.emissive.set("#0e7490");
 			shipMaterial.emissiveIntensity = 0.08 + intensity * 0.3;
-			updateStarLayer(farStars, starTimeSeconds, snapshot.ship.y);
-			updateStarLayer(nearStars, starTimeSeconds, snapshot.ship.y);
-			updateStarLayer(closeStars, starTimeSeconds, snapshot.ship.y);
+			if (starfieldEnabled) {
+				updateStarLayer(farStars, starTimeSeconds, snapshot.ship.y);
+				updateStarLayer(nearStars, starTimeSeconds, snapshot.ship.y);
+				updateStarLayer(closeStars, starTimeSeconds, snapshot.ship.y);
+			}
 
 			const waveformPlaneVisible =
 				waveformPlaneEnabled &&
@@ -1073,6 +1085,10 @@ export function setupScene(container: HTMLElement): RenderScene {
 			renderer.render(scene, camera);
 		},
 		resize,
+		setStarfieldEnabled(enabled) {
+			starfieldEnabled = enabled;
+			syncStarfieldVisibility();
+		},
 		setWaveformPlaneEnabled(enabled) {
 			waveformPlaneEnabled = enabled;
 			syncWaveformPlaneVisibility();

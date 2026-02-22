@@ -25,6 +25,7 @@ type AudioPanelHandlers = {
   onAnalyze: (file: File) => Promise<AudioAnalysisResult>;
   onStartRun: (analysis: AudioAnalysisResult, seed: number) => void | Promise<void>;
   onCombatConfigChange: (config: CombatConfigPatch) => void;
+  onStarfieldEnabledChange: (enabled: boolean) => void;
   onWaveformPlaneChange: (enabled: boolean) => void;
   onWaveformPlaneSurfaceEnabledChange: (enabled: boolean) => void;
   onWaveformPlaneWireframeEnabledChange: (enabled: boolean) => void;
@@ -63,6 +64,7 @@ type UiCombatState = {
   spawnScale: number;
   fireScale: number;
   enemyProjectileStyle: EnemyProjectileStyle;
+  starfieldEnabled: boolean;
   waveformPlaneEnabled: boolean;
   waveformPlaneSurfaceEnabled: boolean;
   waveformPlaneWireframeEnabled: boolean;
@@ -91,6 +93,7 @@ const DEFAULT_COMBAT_STATE: UiCombatState = {
   spawnScale: 1,
   fireScale: 1,
   enemyProjectileStyle: "balls",
+  starfieldEnabled: true,
   waveformPlaneEnabled: true,
   waveformPlaneSurfaceEnabled: false,
   waveformPlaneWireframeEnabled: true,
@@ -270,6 +273,7 @@ export function createAudioPanel(
   visualsLegend.textContent = "Visuals";
   visualsGroup.appendChild(visualsLegend);
 
+  const starfieldToggle = createModalToggle("Starfield", true);
   const waveformPlaneToggle = createModalToggle("Waveform Plane", true);
   const waveformPlaneSurfaceToggle = createModalToggle("Plane Surface", false);
   const waveformPlaneWireframeToggle = createModalToggle("Plane Wireframe", true);
@@ -311,6 +315,7 @@ export function createAudioPanel(
     DEFAULT_WAVEFORM_PLANE_WIREFRAME_COLOR
   );
   visualsGroup.append(
+    starfieldToggle.root,
     waveformPlaneToggle.root,
     waveformPlaneSurfaceToggle.root,
     waveformPlaneWireframeToggle.root,
@@ -690,6 +695,7 @@ export function createAudioPanel(
     enemyRedCubeToggle.input.checked = state.redCubeEnabled;
     enemyGreenTriangleToggle.input.checked = state.greenTriangleEnabled;
     enemyProjectileLaserToggle.input.checked = state.enemyProjectileStyle === "lasers";
+    starfieldToggle.input.checked = state.starfieldEnabled;
     waveformPlaneToggle.input.checked = state.waveformPlaneEnabled;
     waveformPlaneSurfaceToggle.input.checked = state.waveformPlaneSurfaceEnabled;
     waveformPlaneWireframeToggle.input.checked = state.waveformPlaneWireframeEnabled;
@@ -732,6 +738,7 @@ export function createAudioPanel(
     spawnScale: Number(enemySpawnScale.input.value),
     fireScale: Number(enemyFireScale.input.value),
     enemyProjectileStyle: enemyProjectileLaserToggle.input.checked ? "lasers" : "balls",
+    starfieldEnabled: starfieldToggle.input.checked,
     waveformPlaneEnabled: waveformPlaneToggle.input.checked,
     waveformPlaneSurfaceEnabled: waveformPlaneSurfaceToggle.input.checked,
     waveformPlaneWireframeEnabled: waveformPlaneWireframeToggle.input.checked,
@@ -786,6 +793,7 @@ export function createAudioPanel(
         enemyProjectileStyle: state.enemyProjectileStyle
       }
     });
+    handlers.onStarfieldEnabledChange(state.starfieldEnabled);
     handlers.onWaveformPlaneChange(state.waveformPlaneEnabled);
     handlers.onWaveformPlaneSurfaceEnabledChange(state.waveformPlaneSurfaceEnabled);
     handlers.onWaveformPlaneWireframeEnabledChange(state.waveformPlaneWireframeEnabled);
