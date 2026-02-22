@@ -393,6 +393,15 @@ body,
   border-left: 1px solid rgb(118 146 198 / 24%);
 }
 
+.audio-settings-modal__subheading {
+  margin: 0.2rem 0 0.1rem;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #b5d6ff;
+}
+
 .audio-settings-modal__legend {
   padding: 0 0.18rem;
   font-family: var(--font-mono);

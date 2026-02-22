@@ -192,29 +192,32 @@ const audioPanel = createAudioPanel(uiHost, {
   onWaveformPlaneChange(enabled) {
     scene.setWaveformPlaneEnabled(enabled);
   },
-  onWaveformPlaneSurfaceEnabledChange(enabled) {
-    scene.setWaveformPlaneSurfaceEnabled(enabled);
+  onWaveformPlaneSurfaceEnabledChange(side, enabled) {
+    scene.setWaveformPlaneSurfaceEnabled(side, enabled);
   },
-  onWaveformPlaneWireframeEnabledChange(enabled) {
-    scene.setWaveformPlaneWireframeEnabled(enabled);
+  onWaveformPlaneWireframeEnabledChange(side, enabled) {
+    scene.setWaveformPlaneWireframeEnabled(side, enabled);
   },
   onWaveformPlanePositionModeChange(positionMode) {
     scene.setWaveformPlanePosition(positionMode);
   },
-  onWaveformPlaneHeightScaleChange(heightScale) {
-    scene.setWaveformPlaneHeightScale(heightScale);
+  onWaveformPlaneHeightScaleChange(side, heightScale) {
+    scene.setWaveformPlaneHeightScale(side, heightScale);
   },
-  onWaveformPlaneSurfaceShadingChange(shading) {
-    scene.setWaveformPlaneSurfaceShading(shading);
+  onWaveformPlaneSurfaceShadingChange(side, shading) {
+    scene.setWaveformPlaneSurfaceShading(side, shading);
   },
-  onWaveformPlaneDistortionAlgorithmChange(algorithm) {
-    scene.setWaveformPlaneDistortionAlgorithm(algorithm);
+  onWaveformPlaneDistortionAlgorithmChange(side, algorithm) {
+    scene.setWaveformPlaneDistortionAlgorithm(side, algorithm);
   },
-  onWaveformPlaneSurfaceColorChange(colorHex) {
-    scene.setWaveformPlaneSurfaceColor(colorHex);
+  onWaveformPlaneSurfaceColorChange(side, colorHex) {
+    scene.setWaveformPlaneSurfaceColor(side, colorHex);
   },
-  onWaveformPlaneWireframeColorChange(colorHex) {
-    scene.setWaveformPlaneWireframeColor(colorHex);
+  onWaveformPlaneWireframeColorChange(side, colorHex) {
+    scene.setWaveformPlaneWireframeColor(side, colorHex);
+  },
+  onWaveformPlaneSpectrumSmoothingChange(side, smoothingTimeConstant) {
+    scene.setWaveformPlaneSpectrumSmoothing(side, smoothingTimeConstant);
   },
   onToggleUi() {
     setUiHidden(!uiHidden);

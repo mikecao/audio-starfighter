@@ -46,6 +46,7 @@ import {
 } from "./waveformPlanePosition";
 
 type WaveformPlaneSurfaceShading = "smooth" | "flat" | "matte" | "metallic";
+type WaveformPlaneSide = "bottom" | "top";
 
 export type RenderScene = {
 	update: (snapshot: SimulationSnapshot, alpha: number) => void;
@@ -53,18 +54,39 @@ export type RenderScene = {
 	resize: () => void;
 	setStarfieldEnabled: (enabled: boolean) => void;
 	setWaveformPlaneEnabled: (enabled: boolean) => void;
-	setWaveformPlaneSurfaceEnabled: (enabled: boolean) => void;
-	setWaveformPlaneWireframeEnabled: (enabled: boolean) => void;
+	setWaveformPlaneSurfaceEnabled: (
+		side: WaveformPlaneSide,
+		enabled: boolean,
+	) => void;
+	setWaveformPlaneWireframeEnabled: (
+		side: WaveformPlaneSide,
+		enabled: boolean,
+	) => void;
 	setWaveformPlanePosition: (positionMode: WaveformPlanePositionMode) => void;
-	setWaveformPlaneHeightScale: (heightScale: number) => void;
+	setWaveformPlaneHeightScale: (
+		side: WaveformPlaneSide,
+		heightScale: number,
+	) => void;
 	setWaveformPlaneSurfaceShading: (
+		side: WaveformPlaneSide,
 		shading: WaveformPlaneSurfaceShading,
 	) => void;
 	setWaveformPlaneDistortionAlgorithm: (
+		side: WaveformPlaneSide,
 		algorithm: WaveformPlaneDistortionAlgorithm,
 	) => void;
-	setWaveformPlaneSurfaceColor: (colorHex: string) => void;
-	setWaveformPlaneWireframeColor: (colorHex: string) => void;
+	setWaveformPlaneSurfaceColor: (
+		side: WaveformPlaneSide,
+		colorHex: string,
+	) => void;
+	setWaveformPlaneWireframeColor: (
+		side: WaveformPlaneSide,
+		colorHex: string,
+	) => void;
+	setWaveformPlaneSpectrumSmoothing: (
+		side: WaveformPlaneSide,
+		smoothingTimeConstant: number,
+	) => void;
 	setWaveformPlaneSpectrum: (spectrumBins: Float32Array | null) => void;
 	setWaveformPlaneSpectrumTimeline: (timeline: SpectrumTimeline | null) => void;
 	setWaveformPlaneData: (
@@ -291,37 +313,38 @@ export function setupScene(container: HTMLElement): RenderScene {
 	};
 	syncStarfieldVisibility();
 
-	const waveformSpectrumTextureData = new Uint8Array(
-		WAVEFORM_PLANE_SPECTRUM_BIN_COUNT * 4,
-	);
-	for (let i = 0; i < waveformSpectrumTextureData.length; i += 4) {
-		waveformSpectrumTextureData[i] = 0;
-		waveformSpectrumTextureData[i + 1] = 0;
-		waveformSpectrumTextureData[i + 2] = 0;
-		waveformSpectrumTextureData[i + 3] = 255;
-	}
-	const waveformSpectrumTexture = new DataTexture(
-		waveformSpectrumTextureData,
-		WAVEFORM_PLANE_SPECTRUM_BIN_COUNT,
-		1,
-		RGBAFormat,
-	);
-	waveformSpectrumTexture.magFilter = LinearFilter;
-	waveformSpectrumTexture.minFilter = LinearFilter;
-	waveformSpectrumTexture.needsUpdate = true;
-	const waveformSpectrumSmoothed = new Float32Array(
-		WAVEFORM_PLANE_SPECTRUM_BIN_COUNT,
-	);
-	let waveformPlaneHeightScale = WAVEFORM_PLANE_HEIGHT_SCALE_DEFAULT;
-
-	const waveformPlaneDisplacementUniforms = {
-		uTimeSeconds: { value: 0 },
-		uHeightScale: { value: waveformPlaneHeightScale },
-		uAmplitudeDrive: { value: 0 },
-		uSpectrumTex: { value: waveformSpectrumTexture },
+	type WaveformPlaneMeshSet = {
+		placement: WaveformPlaneSide;
+		depthMesh: Mesh;
+		surfaceMesh: Mesh;
+		wireframeMesh: Mesh;
 	};
-	let waveformPlaneDistortionAlgorithm: WaveformPlaneDistortionAlgorithm =
-		WAVEFORM_PLANE_DISTORTION_DEFAULT;
+	type WaveformPlaneRenderState = {
+		side: WaveformPlaneSide;
+		displacementUniforms: {
+			uTimeSeconds: { value: number };
+			uHeightScale: { value: number };
+			uAmplitudeDrive: { value: number };
+			uSpectrumTex: { value: DataTexture };
+		};
+		distortionAlgorithm: WaveformPlaneDistortionAlgorithm;
+		spectrumSmoothingTimeConstant: number;
+		spectrumTextureData: Uint8Array;
+		spectrumTexture: DataTexture;
+		spectrumShaped: Float32Array;
+		sourceSpectrumSmoothed: Float32Array;
+		surfaceBaseColor: Color;
+		surfaceEmissiveColor: Color;
+		wireframeBaseColor: Color;
+		wireframeEmissiveColor: Color;
+		surfaceMaterial: MeshStandardMaterial;
+		wireframeMaterial: MeshStandardMaterial;
+		depthMaterial: MeshStandardMaterial;
+		meshSet: WaveformPlaneMeshSet;
+		surfaceEnabled: boolean;
+		wireframeEnabled: boolean;
+		amplitudeDrive: number;
+	};
 	const waveformPlaneBeginNormal = `
       float heightN = computeHeight(uv);
       float steppedHeightN = floor(heightN * 8.0 + 0.5) / 8.0;
@@ -364,195 +387,53 @@ export function setupScene(container: HTMLElement): RenderScene {
       float baseZV = steppedHeightV * heightAttenuationV;
       vec3 transformed = vec3(baseXV * widthScaleV, baseYV, position.z + baseZV);
   `;
-	const applyWaveformPlaneDisplacement = (
-		material: MeshStandardMaterial,
-	): void => {
-		material.onBeforeCompile = (shader) => {
-			Object.assign(shader.uniforms, waveformPlaneDisplacementUniforms);
-			const displacementHeader = buildWaveformPlaneDisplacementHeader(
-				waveformPlaneDistortionAlgorithm,
-				Math.max(1 / (WAVEFORM_PLANE_SPECTRUM_BIN_COUNT - 1), 1e-5),
-			);
-			shader.vertexShader = `${displacementHeader}\n${shader.vertexShader}`;
-			shader.vertexShader = shader.vertexShader.replace(
-				"#include <beginnormal_vertex>",
-				waveformPlaneBeginNormal,
-			);
-			shader.vertexShader = shader.vertexShader.replace(
-				"#include <begin_vertex>",
-				waveformPlaneBeginVertex,
-			);
-		};
-		material.customProgramCacheKey = () =>
-			`waveform-plane-displacement-v6-${waveformPlaneDistortionAlgorithm}`;
-	};
-	const waveformPlaneSurfaceBaseColor = new Color(
-		WAVEFORM_PLANE_DEFAULT_SURFACE_COLOR_HEX,
-	);
-	const waveformPlaneSurfaceEmissiveColor = waveformPlaneSurfaceBaseColor
-		.clone()
-		.multiplyScalar(WAVEFORM_PLANE_SURFACE_EMISSIVE_COLOR_SCALE);
-	const waveformPlaneSurfaceMaterial = new MeshStandardMaterial({
-		color: waveformPlaneSurfaceBaseColor.clone(),
-		emissive: waveformPlaneSurfaceEmissiveColor.clone(),
-		emissiveIntensity: 0.14,
-		roughness: 0.9,
-		metalness: 0,
-		wireframe: false,
-		transparent: false,
-		side: FrontSide,
-		depthWrite: true,
-		depthTest: true,
-	});
-	applyWaveformPlaneDisplacement(waveformPlaneSurfaceMaterial);
-	const applyWaveformPlaneSurfaceShading = (
-		shading: WaveformPlaneSurfaceShading,
-	): void => {
-		const normalizedShading: WaveformPlaneSurfaceShading =
-			shading === "flat" ||
-			shading === "matte" ||
-			shading === "metallic" ||
-			shading === "smooth"
-				? shading
-				: WAVEFORM_PLANE_SURFACE_SHADING_DEFAULT;
-		if (normalizedShading === "flat") {
-			waveformPlaneSurfaceMaterial.flatShading = true;
-			waveformPlaneSurfaceMaterial.roughness = 0.88;
-			waveformPlaneSurfaceMaterial.metalness = 0.02;
-			waveformPlaneSurfaceMaterial.emissiveIntensity = 0.14;
-		} else if (normalizedShading === "matte") {
-			waveformPlaneSurfaceMaterial.flatShading = false;
-			waveformPlaneSurfaceMaterial.roughness = 1;
-			waveformPlaneSurfaceMaterial.metalness = 0;
-			waveformPlaneSurfaceMaterial.emissiveIntensity = 0.1;
-		} else if (normalizedShading === "metallic") {
-			waveformPlaneSurfaceMaterial.flatShading = false;
-			waveformPlaneSurfaceMaterial.roughness = 0.24;
-			waveformPlaneSurfaceMaterial.metalness = 0.58;
-			waveformPlaneSurfaceMaterial.emissiveIntensity = 0.11;
-		} else {
-			waveformPlaneSurfaceMaterial.flatShading = false;
-			waveformPlaneSurfaceMaterial.roughness = 0.9;
-			waveformPlaneSurfaceMaterial.metalness = 0;
-			waveformPlaneSurfaceMaterial.emissiveIntensity = 0.14;
-		}
-		waveformPlaneSurfaceMaterial.needsUpdate = true;
-	};
-
-	const waveformPlaneWireframeBaseColor = new Color(
-		WAVEFORM_PLANE_DEFAULT_WIREFRAME_COLOR_HEX,
-	);
-	const waveformPlaneWireframeEmissiveColor = waveformPlaneWireframeBaseColor
-		.clone()
-		.multiplyScalar(WAVEFORM_PLANE_WIREFRAME_EMISSIVE_COLOR_SCALE);
-	const waveformPlaneWireframeMaterial = new MeshStandardMaterial({
-		color: waveformPlaneWireframeBaseColor.clone(),
-		emissive: waveformPlaneWireframeEmissiveColor.clone(),
-		emissiveIntensity: 0.14,
-		roughness: 0.9,
-		metalness: 0,
-		wireframe: true,
-		transparent: false,
-		side: FrontSide,
-		depthWrite: false,
-		depthTest: true,
-	});
-	applyWaveformPlaneDisplacement(waveformPlaneWireframeMaterial);
-	applyWaveformPlaneSurfaceShading(WAVEFORM_PLANE_SURFACE_SHADING_DEFAULT);
-
-	const waveformPlaneDepthMaterial = waveformPlaneSurfaceMaterial.clone();
-	waveformPlaneDepthMaterial.wireframe = false;
-	waveformPlaneDepthMaterial.colorWrite = false;
-	waveformPlaneDepthMaterial.transparent = false;
-	waveformPlaneDepthMaterial.side = FrontSide;
-	waveformPlaneDepthMaterial.fog = false;
-	waveformPlaneDepthMaterial.depthWrite = true;
-	waveformPlaneDepthMaterial.depthTest = true;
-	applyWaveformPlaneDisplacement(waveformPlaneDepthMaterial);
-	const applyWaveformPlaneDistortionAlgorithm = (
-		algorithm: WaveformPlaneDistortionAlgorithm,
-	): void => {
-		const normalizedAlgorithm =
-			normalizeWaveformPlaneDistortionAlgorithm(algorithm);
-		if (normalizedAlgorithm === waveformPlaneDistortionAlgorithm) {
-			return;
-		}
-		waveformPlaneDistortionAlgorithm = normalizedAlgorithm;
-		waveformPlaneSurfaceMaterial.needsUpdate = true;
-		waveformPlaneWireframeMaterial.needsUpdate = true;
-		waveformPlaneDepthMaterial.needsUpdate = true;
-	};
-	const normalizeWaveformPlaneColor = (
-		colorHex: string,
-		fallback: string,
-	): string => (/^#[0-9a-f]{6}$/i.test(colorHex) ? colorHex : fallback);
-	const applyWaveformPlaneSurfaceColor = (colorHex: string): void => {
-		const normalizedColor = normalizeWaveformPlaneColor(
-			colorHex,
-			WAVEFORM_PLANE_DEFAULT_SURFACE_COLOR_HEX,
-		);
-		waveformPlaneSurfaceBaseColor.set(normalizedColor);
-		waveformPlaneSurfaceMaterial.color.copy(waveformPlaneSurfaceBaseColor);
-		waveformPlaneSurfaceEmissiveColor
-			.copy(waveformPlaneSurfaceBaseColor)
-			.multiplyScalar(WAVEFORM_PLANE_SURFACE_EMISSIVE_COLOR_SCALE);
-		waveformPlaneSurfaceMaterial.emissive.copy(
-			waveformPlaneSurfaceEmissiveColor,
-		);
-	};
-	const applyWaveformPlaneWireframeColor = (colorHex: string): void => {
-		const normalizedColor = normalizeWaveformPlaneColor(
-			colorHex,
-			WAVEFORM_PLANE_DEFAULT_WIREFRAME_COLOR_HEX,
-		);
-		waveformPlaneWireframeBaseColor.set(normalizedColor);
-		waveformPlaneWireframeMaterial.color.copy(waveformPlaneWireframeBaseColor);
-		waveformPlaneWireframeEmissiveColor
-			.copy(waveformPlaneWireframeBaseColor)
-			.multiplyScalar(WAVEFORM_PLANE_WIREFRAME_EMISSIVE_COLOR_SCALE);
-		waveformPlaneWireframeMaterial.emissive.copy(
-			waveformPlaneWireframeEmissiveColor,
-		);
-	};
 	const waveformPlaneGeometry = new PlaneGeometry(
 		WAVEFORM_PLANE_WIDTH,
 		WAVEFORM_PLANE_HEIGHT,
 		WAVEFORM_PLANE_SEGMENTS_X,
 		WAVEFORM_PLANE_SEGMENTS_Y,
 	);
-	type WaveformPlanePlacement = "bottom" | "top";
-	type WaveformPlaneMeshSet = {
-		placement: WaveformPlanePlacement;
-		depthMesh: Mesh;
-		surfaceMesh: Mesh;
-		wireframeMesh: Mesh;
+	const normalizeWaveformPlaneSide = (side: WaveformPlaneSide): WaveformPlaneSide =>
+		side === "top" ? "top" : "bottom";
+	const normalizeWaveformPlaneColor = (
+		colorHex: string,
+		fallback: string,
+	): string => (/^#[0-9a-f]{6}$/i.test(colorHex) ? colorHex : fallback);
+	const normalizeWaveformPlaneSpectrumSmoothing = (value: number): number => {
+		if (!Number.isFinite(value)) {
+			return WAVEFORM_PLANE_SPECTRUM_SMOOTHING_DEFAULT;
+		}
+		return clamp(
+			value,
+			WAVEFORM_PLANE_SPECTRUM_SMOOTHING_MIN,
+			WAVEFORM_PLANE_SPECTRUM_SMOOTHING_MAX,
+		);
 	};
 	const createWaveformPlaneMeshSet = (
-		placement: WaveformPlanePlacement,
+		placement: WaveformPlaneSide,
 		positionY: number,
 		rotationX: number,
+		materials: {
+			depth: MeshStandardMaterial;
+			surface: MeshStandardMaterial;
+			wireframe: MeshStandardMaterial;
+		},
 	): WaveformPlaneMeshSet => {
-		const depthMesh = new Mesh(waveformPlaneGeometry, waveformPlaneDepthMaterial);
+		const depthMesh = new Mesh(waveformPlaneGeometry, materials.depth);
 		depthMesh.position.set(0, positionY, WAVEFORM_PLANE_Z);
 		depthMesh.rotation.x = rotationX;
 		depthMesh.rotation.y = 0;
 		depthMesh.rotation.z = 0;
 		depthMesh.renderOrder = -2;
 
-		const surfaceMesh = new Mesh(
-			waveformPlaneGeometry,
-			waveformPlaneSurfaceMaterial,
-		);
+		const surfaceMesh = new Mesh(waveformPlaneGeometry, materials.surface);
 		surfaceMesh.position.set(0, positionY, WAVEFORM_PLANE_Z);
 		surfaceMesh.rotation.x = rotationX;
 		surfaceMesh.rotation.y = 0;
 		surfaceMesh.rotation.z = 0;
 		surfaceMesh.renderOrder = -1;
 
-		const wireframeMesh = new Mesh(
-			waveformPlaneGeometry,
-			waveformPlaneWireframeMaterial,
-		);
+		const wireframeMesh = new Mesh(waveformPlaneGeometry, materials.wireframe);
 		wireframeMesh.position.set(0, positionY, WAVEFORM_PLANE_Z);
 		wireframeMesh.rotation.x = rotationX;
 		wireframeMesh.rotation.y = 0;
@@ -566,36 +447,243 @@ export function setupScene(container: HTMLElement): RenderScene {
 			wireframeMesh,
 		};
 	};
-	const waveformPlaneMeshSets: WaveformPlaneMeshSet[] = [
-		createWaveformPlaneMeshSet(
-			"bottom",
-			WAVEFORM_PLANE_BOTTOM_Y,
-			WAVEFORM_PLANE_BOTTOM_ROTATION_X,
-		),
-		createWaveformPlaneMeshSet(
-			"top",
-			WAVEFORM_PLANE_TOP_Y,
-			WAVEFORM_PLANE_TOP_ROTATION_X,
-		),
+	const applyWaveformPlaneDisplacement = (
+		state: WaveformPlaneRenderState,
+		material: MeshStandardMaterial,
+	): void => {
+		material.onBeforeCompile = (shader) => {
+			Object.assign(shader.uniforms, state.displacementUniforms);
+			const displacementHeader = buildWaveformPlaneDisplacementHeader(
+				state.distortionAlgorithm,
+				Math.max(1 / (WAVEFORM_PLANE_SPECTRUM_BIN_COUNT - 1), 1e-5),
+			);
+			shader.vertexShader = `${displacementHeader}\n${shader.vertexShader}`;
+			shader.vertexShader = shader.vertexShader.replace(
+				"#include <beginnormal_vertex>",
+				waveformPlaneBeginNormal,
+			);
+			shader.vertexShader = shader.vertexShader.replace(
+				"#include <begin_vertex>",
+				waveformPlaneBeginVertex,
+			);
+		};
+		material.customProgramCacheKey = () =>
+			`waveform-plane-displacement-v8-${state.side}-${state.distortionAlgorithm}`;
+	};
+	const applyWaveformPlaneSurfaceShading = (
+		state: WaveformPlaneRenderState,
+		shading: WaveformPlaneSurfaceShading,
+	): void => {
+		const normalizedShading: WaveformPlaneSurfaceShading =
+			shading === "flat" ||
+			shading === "matte" ||
+			shading === "metallic" ||
+			shading === "smooth"
+				? shading
+				: WAVEFORM_PLANE_SURFACE_SHADING_DEFAULT;
+		if (normalizedShading === "flat") {
+			state.surfaceMaterial.flatShading = true;
+			state.surfaceMaterial.roughness = 0.88;
+			state.surfaceMaterial.metalness = 0.02;
+			state.surfaceMaterial.emissiveIntensity = 0.14;
+		} else if (normalizedShading === "matte") {
+			state.surfaceMaterial.flatShading = false;
+			state.surfaceMaterial.roughness = 1;
+			state.surfaceMaterial.metalness = 0;
+			state.surfaceMaterial.emissiveIntensity = 0.1;
+		} else if (normalizedShading === "metallic") {
+			state.surfaceMaterial.flatShading = false;
+			state.surfaceMaterial.roughness = 0.24;
+			state.surfaceMaterial.metalness = 0.58;
+			state.surfaceMaterial.emissiveIntensity = 0.11;
+		} else {
+			state.surfaceMaterial.flatShading = false;
+			state.surfaceMaterial.roughness = 0.9;
+			state.surfaceMaterial.metalness = 0;
+			state.surfaceMaterial.emissiveIntensity = 0.14;
+		}
+		state.surfaceMaterial.needsUpdate = true;
+	};
+	const applyWaveformPlaneDistortionAlgorithm = (
+		state: WaveformPlaneRenderState,
+		algorithm: WaveformPlaneDistortionAlgorithm,
+	): void => {
+		const normalizedAlgorithm =
+			normalizeWaveformPlaneDistortionAlgorithm(algorithm);
+		if (normalizedAlgorithm === state.distortionAlgorithm) {
+			return;
+		}
+		state.distortionAlgorithm = normalizedAlgorithm;
+		state.surfaceMaterial.needsUpdate = true;
+		state.wireframeMaterial.needsUpdate = true;
+		state.depthMaterial.needsUpdate = true;
+	};
+	const applyWaveformPlaneSurfaceColor = (
+		state: WaveformPlaneRenderState,
+		colorHex: string,
+	): void => {
+		const normalizedColor = normalizeWaveformPlaneColor(
+			colorHex,
+			WAVEFORM_PLANE_DEFAULT_SURFACE_COLOR_HEX,
+		);
+		state.surfaceBaseColor.set(normalizedColor);
+		state.surfaceMaterial.color.copy(state.surfaceBaseColor);
+		state.surfaceEmissiveColor
+			.copy(state.surfaceBaseColor)
+			.multiplyScalar(WAVEFORM_PLANE_SURFACE_EMISSIVE_COLOR_SCALE);
+		state.surfaceMaterial.emissive.copy(state.surfaceEmissiveColor);
+	};
+	const applyWaveformPlaneWireframeColor = (
+		state: WaveformPlaneRenderState,
+		colorHex: string,
+	): void => {
+		const normalizedColor = normalizeWaveformPlaneColor(
+			colorHex,
+			WAVEFORM_PLANE_DEFAULT_WIREFRAME_COLOR_HEX,
+		);
+		state.wireframeBaseColor.set(normalizedColor);
+		state.wireframeMaterial.color.copy(state.wireframeBaseColor);
+		state.wireframeEmissiveColor
+			.copy(state.wireframeBaseColor)
+			.multiplyScalar(WAVEFORM_PLANE_WIREFRAME_EMISSIVE_COLOR_SCALE);
+		state.wireframeMaterial.emissive.copy(state.wireframeEmissiveColor);
+	};
+	const createWaveformPlaneState = (
+		side: WaveformPlaneSide,
+		positionY: number,
+		rotationX: number,
+	): WaveformPlaneRenderState => {
+		const spectrumTextureData = new Uint8Array(
+			WAVEFORM_PLANE_SPECTRUM_BIN_COUNT * 4,
+		);
+		for (let i = 0; i < spectrumTextureData.length; i += 4) {
+			spectrumTextureData[i] = 0;
+			spectrumTextureData[i + 1] = 0;
+			spectrumTextureData[i + 2] = 0;
+			spectrumTextureData[i + 3] = 255;
+		}
+		const spectrumTexture = new DataTexture(
+			spectrumTextureData,
+			WAVEFORM_PLANE_SPECTRUM_BIN_COUNT,
+			1,
+			RGBAFormat,
+		);
+		spectrumTexture.magFilter = LinearFilter;
+		spectrumTexture.minFilter = LinearFilter;
+		spectrumTexture.needsUpdate = true;
+		const spectrumShaped = new Float32Array(WAVEFORM_PLANE_SPECTRUM_BIN_COUNT);
+		const displacementUniforms = {
+			uTimeSeconds: { value: 0 },
+			uHeightScale: { value: WAVEFORM_PLANE_HEIGHT_SCALE_DEFAULT },
+			uAmplitudeDrive: { value: 0 },
+			uSpectrumTex: { value: spectrumTexture },
+		};
+
+		const surfaceBaseColor = new Color(WAVEFORM_PLANE_DEFAULT_SURFACE_COLOR_HEX);
+		const surfaceEmissiveColor = surfaceBaseColor
+			.clone()
+			.multiplyScalar(WAVEFORM_PLANE_SURFACE_EMISSIVE_COLOR_SCALE);
+		const surfaceMaterial = new MeshStandardMaterial({
+			color: surfaceBaseColor.clone(),
+			emissive: surfaceEmissiveColor.clone(),
+			emissiveIntensity: 0.14,
+			roughness: 0.9,
+			metalness: 0,
+			wireframe: false,
+			transparent: false,
+			side: FrontSide,
+			depthWrite: true,
+			depthTest: true,
+		});
+		const wireframeBaseColor = new Color(
+			WAVEFORM_PLANE_DEFAULT_WIREFRAME_COLOR_HEX,
+		);
+		const wireframeEmissiveColor = wireframeBaseColor
+			.clone()
+			.multiplyScalar(WAVEFORM_PLANE_WIREFRAME_EMISSIVE_COLOR_SCALE);
+		const wireframeMaterial = new MeshStandardMaterial({
+			color: wireframeBaseColor.clone(),
+			emissive: wireframeEmissiveColor.clone(),
+			emissiveIntensity: 0.14,
+			roughness: 0.9,
+			metalness: 0,
+			wireframe: true,
+			transparent: false,
+			side: FrontSide,
+			depthWrite: false,
+			depthTest: true,
+		});
+		const depthMaterial = surfaceMaterial.clone();
+		depthMaterial.wireframe = false;
+		depthMaterial.colorWrite = false;
+		depthMaterial.transparent = false;
+		depthMaterial.side = FrontSide;
+		depthMaterial.fog = false;
+		depthMaterial.depthWrite = true;
+		depthMaterial.depthTest = true;
+
+		const state: WaveformPlaneRenderState = {
+			side,
+			displacementUniforms,
+			distortionAlgorithm: WAVEFORM_PLANE_DISTORTION_DEFAULT,
+			spectrumSmoothingTimeConstant: WAVEFORM_PLANE_SPECTRUM_SMOOTHING_DEFAULT,
+			spectrumTextureData,
+			spectrumTexture,
+			spectrumShaped,
+			sourceSpectrumSmoothed: new Float32Array(0),
+			surfaceBaseColor,
+			surfaceEmissiveColor,
+			wireframeBaseColor,
+			wireframeEmissiveColor,
+			surfaceMaterial,
+			wireframeMaterial,
+			depthMaterial,
+			meshSet: createWaveformPlaneMeshSet(side, positionY, rotationX, {
+				depth: depthMaterial,
+				surface: surfaceMaterial,
+				wireframe: wireframeMaterial,
+			}),
+			surfaceEnabled: WAVEFORM_PLANE_SURFACE_ENABLED_DEFAULT,
+			wireframeEnabled: WAVEFORM_PLANE_WIREFRAME_ENABLED_DEFAULT,
+			amplitudeDrive: 0,
+		};
+
+		applyWaveformPlaneDisplacement(state, state.surfaceMaterial);
+		applyWaveformPlaneDisplacement(state, state.wireframeMaterial);
+		applyWaveformPlaneDisplacement(state, state.depthMaterial);
+		applyWaveformPlaneSurfaceShading(state, WAVEFORM_PLANE_SURFACE_SHADING_DEFAULT);
+		return state;
+	};
+	const waveformPlaneStates: Record<WaveformPlaneSide, WaveformPlaneRenderState> =
+		{
+			bottom: createWaveformPlaneState(
+				"bottom",
+				WAVEFORM_PLANE_BOTTOM_Y,
+				WAVEFORM_PLANE_BOTTOM_ROTATION_X,
+			),
+			top: createWaveformPlaneState(
+				"top",
+				WAVEFORM_PLANE_TOP_Y,
+				WAVEFORM_PLANE_TOP_ROTATION_X,
+			),
+		};
+	const waveformPlaneStateList = [
+		waveformPlaneStates.bottom,
+		waveformPlaneStates.top,
 	];
-	for (const meshSet of waveformPlaneMeshSets) {
-		scene.add(meshSet.depthMesh);
-		scene.add(meshSet.surfaceMesh);
-		scene.add(meshSet.wireframeMesh);
+	for (const planeState of waveformPlaneStateList) {
+		scene.add(planeState.meshSet.depthMesh);
+		scene.add(planeState.meshSet.surfaceMesh);
+		scene.add(planeState.meshSet.wireframeMesh);
 	}
 
 	let waveformPlaneEnabled = true;
-	let waveformPlaneSurfaceEnabled = WAVEFORM_PLANE_SURFACE_ENABLED_DEFAULT;
-	let waveformPlaneWireframeEnabled = WAVEFORM_PLANE_WIREFRAME_ENABLED_DEFAULT;
 	let waveformPlanePositionMode: WaveformPlanePositionMode =
 		WAVEFORM_PLANE_POSITION_DEFAULT;
 	let waveformPlaneHasData = true;
 	let waveformPlaneTimeSeconds = 0;
-	let waveformPlaneAmplitudeDrive = 0;
-	let waveformPlaneAmplitudePeak = 0.35;
-	let waveformPlaneSpectrumPeak = 0.35;
 	const isWaveformPlanePlacementVisible = (
-		placement: WaveformPlanePlacement,
+		placement: WaveformPlaneSide,
 	): boolean => {
 		if (waveformPlanePositionMode === "both") {
 			return true;
@@ -607,21 +695,66 @@ export function setupScene(container: HTMLElement): RenderScene {
 	};
 	const syncWaveformPlaneVisibility = (): void => {
 		const active = waveformPlaneEnabled && waveformPlaneHasData;
-		const hasRenderableLayer =
-			waveformPlaneSurfaceEnabled || waveformPlaneWireframeEnabled;
-		const visible = active && hasRenderableLayer;
-		for (const meshSet of waveformPlaneMeshSets) {
+		for (const planeState of waveformPlaneStateList) {
+			const meshSet = planeState.meshSet;
 			const placementVisible =
-				visible && isWaveformPlanePlacementVisible(meshSet.placement);
+				active && isWaveformPlanePlacementVisible(meshSet.placement);
 			meshSet.surfaceMesh.visible =
-				placementVisible && waveformPlaneSurfaceEnabled;
+				placementVisible && planeState.surfaceEnabled;
 			meshSet.wireframeMesh.visible =
-				placementVisible && waveformPlaneWireframeEnabled;
+				placementVisible && planeState.wireframeEnabled;
 			meshSet.depthMesh.visible =
 				placementVisible &&
-				waveformPlaneWireframeEnabled &&
-				!waveformPlaneSurfaceEnabled;
+				planeState.wireframeEnabled &&
+				!planeState.surfaceEnabled;
 		}
+	};
+	const updateWaveformPlaneSpectrumForState = (
+		state: WaveformPlaneRenderState,
+		spectrumBins: Float32Array,
+	): void => {
+		if (state.sourceSpectrumSmoothed.length !== spectrumBins.length) {
+			state.sourceSpectrumSmoothed = new Float32Array(spectrumBins.length);
+		}
+		const smoothing = normalizeWaveformPlaneSpectrumSmoothing(
+			state.spectrumSmoothingTimeConstant,
+		);
+		const blend = clamp(1 - smoothing, 0.02, 1);
+		for (let i = 0; i < spectrumBins.length; i += 1) {
+			const target = clamp(spectrumBins[i] ?? 0, 0, 1);
+			state.sourceSpectrumSmoothed[i] +=
+				(target - state.sourceSpectrumSmoothed[i]) * blend;
+		}
+
+		const metrics = populateWaveformPlaneSpectrumForDistortion({
+			algorithm: state.distortionAlgorithm,
+			sourceBins: state.sourceSpectrumSmoothed,
+			targetBins: state.spectrumShaped,
+			sampleLinear: sampleWaveformLinear,
+		});
+		state.amplitudeDrive = metrics.amplitudeDrive;
+		for (let i = 0; i < WAVEFORM_PLANE_SPECTRUM_BIN_COUNT; i += 1) {
+			const encoded = Math.round(clamp(state.spectrumShaped[i], 0, 1) * 255);
+			const offset = i * 4;
+			state.spectrumTextureData[offset] = encoded;
+			state.spectrumTextureData[offset + 1] = encoded;
+			state.spectrumTextureData[offset + 2] = encoded;
+			state.spectrumTextureData[offset + 3] = 255;
+		}
+		state.spectrumTexture.needsUpdate = true;
+	};
+	const resetWaveformPlaneSpectrumState = (state: WaveformPlaneRenderState): void => {
+		state.amplitudeDrive = 0;
+		state.sourceSpectrumSmoothed.fill(0);
+		for (let i = 0; i < WAVEFORM_PLANE_SPECTRUM_BIN_COUNT; i += 1) {
+			state.spectrumShaped[i] = 0;
+			const offset = i * 4;
+			state.spectrumTextureData[offset] = 0;
+			state.spectrumTextureData[offset + 1] = 0;
+			state.spectrumTextureData[offset + 2] = 0;
+			state.spectrumTextureData[offset + 3] = 255;
+		}
+		state.spectrumTexture.needsUpdate = true;
 	};
 	syncWaveformPlaneVisibility();
 
@@ -696,16 +829,23 @@ export function setupScene(container: HTMLElement): RenderScene {
 				updateStarLayer(closeStars, starTimeSeconds, snapshot.ship.y);
 			}
 
-			const waveformPlaneVisible =
-				waveformPlaneEnabled &&
-				waveformPlaneHasData &&
-				(waveformPlaneSurfaceEnabled || waveformPlaneWireframeEnabled);
 			syncWaveformPlaneVisibility();
-			if (waveformPlaneVisible) {
-				waveformPlaneDisplacementUniforms.uTimeSeconds.value =
-					waveformPlaneTimeSeconds;
-				waveformPlaneDisplacementUniforms.uAmplitudeDrive.value =
-					waveformPlaneAmplitudeDrive;
+			if (waveformPlaneEnabled && waveformPlaneHasData) {
+				for (const planeState of waveformPlaneStateList) {
+					const placementVisible = isWaveformPlanePlacementVisible(
+						planeState.meshSet.placement,
+					);
+					const renderable =
+						placementVisible &&
+						(planeState.surfaceEnabled || planeState.wireframeEnabled);
+					if (!renderable) {
+						continue;
+					}
+					planeState.displacementUniforms.uTimeSeconds.value =
+						waveformPlaneTimeSeconds;
+					planeState.displacementUniforms.uAmplitudeDrive.value =
+						planeState.amplitudeDrive;
+				}
 			}
 
 			syncMeshPool(enemyMeshes, snapshot.enemies.length, enemyGroup, () => {
@@ -1093,12 +1233,14 @@ export function setupScene(container: HTMLElement): RenderScene {
 			waveformPlaneEnabled = enabled;
 			syncWaveformPlaneVisibility();
 		},
-		setWaveformPlaneSurfaceEnabled(enabled) {
-			waveformPlaneSurfaceEnabled = enabled;
+		setWaveformPlaneSurfaceEnabled(side, enabled) {
+			const normalizedSide = normalizeWaveformPlaneSide(side);
+			waveformPlaneStates[normalizedSide].surfaceEnabled = enabled;
 			syncWaveformPlaneVisibility();
 		},
-		setWaveformPlaneWireframeEnabled(enabled) {
-			waveformPlaneWireframeEnabled = enabled;
+		setWaveformPlaneWireframeEnabled(side, enabled) {
+			const normalizedSide = normalizeWaveformPlaneSide(side);
+			waveformPlaneStates[normalizedSide].wireframeEnabled = enabled;
 			syncWaveformPlaneVisibility();
 		},
 		setWaveformPlanePosition(positionMode) {
@@ -1106,66 +1248,56 @@ export function setupScene(container: HTMLElement): RenderScene {
 				normalizeWaveformPlanePositionMode(positionMode);
 			syncWaveformPlaneVisibility();
 		},
-		setWaveformPlaneHeightScale(heightScale) {
-			waveformPlaneHeightScale = clamp(
+		setWaveformPlaneHeightScale(side, heightScale) {
+			const normalizedSide = normalizeWaveformPlaneSide(side);
+			const state = waveformPlaneStates[normalizedSide];
+			const nextHeightScale = clamp(
 				Number.isFinite(heightScale)
 					? heightScale
 					: WAVEFORM_PLANE_HEIGHT_SCALE_DEFAULT,
 				WAVEFORM_PLANE_HEIGHT_SCALE_MIN,
 				WAVEFORM_PLANE_HEIGHT_SCALE_MAX,
 			);
-			waveformPlaneDisplacementUniforms.uHeightScale.value =
-				waveformPlaneHeightScale;
+			state.displacementUniforms.uHeightScale.value = nextHeightScale;
 		},
-		setWaveformPlaneSurfaceShading(shading) {
-			applyWaveformPlaneSurfaceShading(shading);
+		setWaveformPlaneSurfaceShading(side, shading) {
+			const normalizedSide = normalizeWaveformPlaneSide(side);
+			applyWaveformPlaneSurfaceShading(waveformPlaneStates[normalizedSide], shading);
 		},
-		setWaveformPlaneDistortionAlgorithm(algorithm) {
-			applyWaveformPlaneDistortionAlgorithm(algorithm);
+		setWaveformPlaneDistortionAlgorithm(side, algorithm) {
+			const normalizedSide = normalizeWaveformPlaneSide(side);
+			applyWaveformPlaneDistortionAlgorithm(
+				waveformPlaneStates[normalizedSide],
+				algorithm,
+			);
 		},
-		setWaveformPlaneSurfaceColor(colorHex) {
-			applyWaveformPlaneSurfaceColor(colorHex);
+		setWaveformPlaneSurfaceColor(side, colorHex) {
+			const normalizedSide = normalizeWaveformPlaneSide(side);
+			applyWaveformPlaneSurfaceColor(waveformPlaneStates[normalizedSide], colorHex);
 		},
-		setWaveformPlaneWireframeColor(colorHex) {
-			applyWaveformPlaneWireframeColor(colorHex);
+		setWaveformPlaneWireframeColor(side, colorHex) {
+			const normalizedSide = normalizeWaveformPlaneSide(side);
+			applyWaveformPlaneWireframeColor(
+				waveformPlaneStates[normalizedSide],
+				colorHex,
+			);
+		},
+		setWaveformPlaneSpectrumSmoothing(side, smoothingTimeConstant) {
+			const normalizedSide = normalizeWaveformPlaneSide(side);
+			waveformPlaneStates[normalizedSide].spectrumSmoothingTimeConstant =
+				normalizeWaveformPlaneSpectrumSmoothing(smoothingTimeConstant);
 		},
 		setWaveformPlaneSpectrum(spectrumBins) {
 			if (!spectrumBins || spectrumBins.length === 0) {
-				waveformPlaneAmplitudeDrive = 0;
-				waveformPlaneAmplitudePeak = 0.22;
-				waveformPlaneSpectrumPeak = 0.22;
-				for (let i = 0; i < WAVEFORM_PLANE_SPECTRUM_BIN_COUNT; i += 1) {
-					waveformSpectrumSmoothed[i] = 0;
-					const encoded = 0;
-					const offset = i * 4;
-					waveformSpectrumTextureData[offset] = encoded;
-					waveformSpectrumTextureData[offset + 1] = encoded;
-					waveformSpectrumTextureData[offset + 2] = encoded;
-					waveformSpectrumTextureData[offset + 3] = 255;
+				for (const planeState of waveformPlaneStateList) {
+					resetWaveformPlaneSpectrumState(planeState);
 				}
-				waveformSpectrumTexture.needsUpdate = true;
 				return;
 			}
 
-			const metrics = populateWaveformPlaneSpectrumForDistortion({
-				algorithm: waveformPlaneDistortionAlgorithm,
-				sourceBins: spectrumBins,
-				targetBins: waveformSpectrumSmoothed,
-				sampleLinear: sampleWaveformLinear,
-			});
-			waveformPlaneAmplitudeDrive = metrics.amplitudeDrive;
-			waveformPlaneAmplitudePeak = metrics.amplitudePeak;
-			waveformPlaneSpectrumPeak = metrics.spectrumPeak;
-			for (let i = 0; i < WAVEFORM_PLANE_SPECTRUM_BIN_COUNT; i += 1) {
-				const encoded = Math.round(clamp(waveformSpectrumSmoothed[i], 0, 1) * 255);
-				const offset = i * 4;
-				waveformSpectrumTextureData[offset] = encoded;
-				waveformSpectrumTextureData[offset + 1] = encoded;
-				waveformSpectrumTextureData[offset + 2] = encoded;
-				waveformSpectrumTextureData[offset + 3] = 255;
+			for (const planeState of waveformPlaneStateList) {
+				updateWaveformPlaneSpectrumForState(planeState, spectrumBins);
 			}
-
-			waveformSpectrumTexture.needsUpdate = true;
 		},
 		setWaveformPlaneSpectrumTimeline(timeline) {
 			void timeline;
@@ -1740,6 +1872,9 @@ const WAVEFORM_PLANE_TOP_ROTATION_X = 1.21;
 const WAVEFORM_PLANE_HEIGHT_SCALE_DEFAULT = 6.8;
 const WAVEFORM_PLANE_HEIGHT_SCALE_MIN = 2.5;
 const WAVEFORM_PLANE_HEIGHT_SCALE_MAX = 12;
+const WAVEFORM_PLANE_SPECTRUM_SMOOTHING_DEFAULT = 0.5;
+const WAVEFORM_PLANE_SPECTRUM_SMOOTHING_MIN = 0;
+const WAVEFORM_PLANE_SPECTRUM_SMOOTHING_MAX = 0.95;
 const WAVEFORM_PLANE_SURFACE_SHADING_DEFAULT: WaveformPlaneSurfaceShading =
 	"smooth";
 const WAVEFORM_PLANE_SURFACE_ENABLED_DEFAULT = false;

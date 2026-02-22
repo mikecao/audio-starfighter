@@ -20,6 +20,7 @@ import {
 const RUN_SEED_STORAGE_KEY = "audio-starfighter.run-seed";
 
 type WaveformPlaneSurfaceShading = "smooth" | "flat" | "matte" | "metallic";
+type WaveformPlaneSide = "bottom" | "top";
 
 type AudioPanelHandlers = {
   onAnalyze: (file: File) => Promise<AudioAnalysisResult>;
@@ -27,18 +28,41 @@ type AudioPanelHandlers = {
   onCombatConfigChange: (config: CombatConfigPatch) => void;
   onStarfieldEnabledChange: (enabled: boolean) => void;
   onWaveformPlaneChange: (enabled: boolean) => void;
-  onWaveformPlaneSurfaceEnabledChange: (enabled: boolean) => void;
-  onWaveformPlaneWireframeEnabledChange: (enabled: boolean) => void;
+  onWaveformPlaneSurfaceEnabledChange: (
+    side: WaveformPlaneSide,
+    enabled: boolean
+  ) => void;
+  onWaveformPlaneWireframeEnabledChange: (
+    side: WaveformPlaneSide,
+    enabled: boolean
+  ) => void;
   onWaveformPlanePositionModeChange: (
     positionMode: WaveformPlanePositionMode
   ) => void;
-  onWaveformPlaneHeightScaleChange: (heightScale: number) => void;
-  onWaveformPlaneSurfaceShadingChange: (shading: WaveformPlaneSurfaceShading) => void;
+  onWaveformPlaneHeightScaleChange: (
+    side: WaveformPlaneSide,
+    heightScale: number
+  ) => void;
+  onWaveformPlaneSurfaceShadingChange: (
+    side: WaveformPlaneSide,
+    shading: WaveformPlaneSurfaceShading
+  ) => void;
   onWaveformPlaneDistortionAlgorithmChange: (
+    side: WaveformPlaneSide,
     algorithm: WaveformPlaneDistortionAlgorithm
   ) => void;
-  onWaveformPlaneSurfaceColorChange: (colorHex: string) => void;
-  onWaveformPlaneWireframeColorChange: (colorHex: string) => void;
+  onWaveformPlaneSurfaceColorChange: (
+    side: WaveformPlaneSide,
+    colorHex: string
+  ) => void;
+  onWaveformPlaneWireframeColorChange: (
+    side: WaveformPlaneSide,
+    colorHex: string
+  ) => void;
+  onWaveformPlaneSpectrumSmoothingChange: (
+    side: WaveformPlaneSide,
+    smoothingTimeConstant: number
+  ) => void;
   onToggleUi: () => boolean;
 };
 
@@ -66,15 +90,23 @@ type UiCombatState = {
   enemyProjectileStyle: EnemyProjectileStyle;
   starfieldEnabled: boolean;
   waveformPlaneEnabled: boolean;
-  waveformPlaneSurfaceEnabled: boolean;
-  waveformPlaneWireframeEnabled: boolean;
   waveformPlanePositionMode: WaveformPlanePositionMode;
-  waveformPlaneHeightScale: number;
-  waveformPlaneDistortionAlgorithm: WaveformPlaneDistortionAlgorithm;
-  spectrumSmoothingTimeConstant: number;
-  waveformPlaneSurfaceShading: WaveformPlaneSurfaceShading;
-  waveformPlaneSurfaceColor: string;
-  waveformPlaneWireframeColor: string;
+  waveformPlaneTopSurfaceEnabled: boolean;
+  waveformPlaneTopWireframeEnabled: boolean;
+  waveformPlaneTopHeightScale: number;
+  waveformPlaneTopDistortionAlgorithm: WaveformPlaneDistortionAlgorithm;
+  waveformPlaneTopSpectrumSmoothingTimeConstant: number;
+  waveformPlaneTopSurfaceShading: WaveformPlaneSurfaceShading;
+  waveformPlaneTopSurfaceColor: string;
+  waveformPlaneTopWireframeColor: string;
+  waveformPlaneBottomSurfaceEnabled: boolean;
+  waveformPlaneBottomWireframeEnabled: boolean;
+  waveformPlaneBottomHeightScale: number;
+  waveformPlaneBottomDistortionAlgorithm: WaveformPlaneDistortionAlgorithm;
+  waveformPlaneBottomSpectrumSmoothingTimeConstant: number;
+  waveformPlaneBottomSurfaceShading: WaveformPlaneSurfaceShading;
+  waveformPlaneBottomSurfaceColor: string;
+  waveformPlaneBottomWireframeColor: string;
 };
 
 const DEFAULT_WAVEFORM_PLANE_HEIGHT_SCALE = 6.8;
@@ -95,15 +127,23 @@ const DEFAULT_COMBAT_STATE: UiCombatState = {
   enemyProjectileStyle: "balls",
   starfieldEnabled: true,
   waveformPlaneEnabled: true,
-  waveformPlaneSurfaceEnabled: false,
-  waveformPlaneWireframeEnabled: true,
   waveformPlanePositionMode: WAVEFORM_PLANE_POSITION_DEFAULT,
-  waveformPlaneHeightScale: DEFAULT_WAVEFORM_PLANE_HEIGHT_SCALE,
-  waveformPlaneDistortionAlgorithm: WAVEFORM_PLANE_DISTORTION_DEFAULT,
-  spectrumSmoothingTimeConstant: DEFAULT_SPECTRUM_SMOOTHING_TIME_CONSTANT,
-  waveformPlaneSurfaceShading: DEFAULT_WAVEFORM_PLANE_SURFACE_SHADING,
-  waveformPlaneSurfaceColor: DEFAULT_WAVEFORM_PLANE_SURFACE_COLOR,
-  waveformPlaneWireframeColor: DEFAULT_WAVEFORM_PLANE_WIREFRAME_COLOR
+  waveformPlaneTopSurfaceEnabled: false,
+  waveformPlaneTopWireframeEnabled: true,
+  waveformPlaneTopHeightScale: DEFAULT_WAVEFORM_PLANE_HEIGHT_SCALE,
+  waveformPlaneTopDistortionAlgorithm: WAVEFORM_PLANE_DISTORTION_DEFAULT,
+  waveformPlaneTopSpectrumSmoothingTimeConstant: DEFAULT_SPECTRUM_SMOOTHING_TIME_CONSTANT,
+  waveformPlaneTopSurfaceShading: DEFAULT_WAVEFORM_PLANE_SURFACE_SHADING,
+  waveformPlaneTopSurfaceColor: DEFAULT_WAVEFORM_PLANE_SURFACE_COLOR,
+  waveformPlaneTopWireframeColor: DEFAULT_WAVEFORM_PLANE_WIREFRAME_COLOR,
+  waveformPlaneBottomSurfaceEnabled: false,
+  waveformPlaneBottomWireframeEnabled: true,
+  waveformPlaneBottomHeightScale: DEFAULT_WAVEFORM_PLANE_HEIGHT_SCALE,
+  waveformPlaneBottomDistortionAlgorithm: WAVEFORM_PLANE_DISTORTION_DEFAULT,
+  waveformPlaneBottomSpectrumSmoothingTimeConstant: DEFAULT_SPECTRUM_SMOOTHING_TIME_CONSTANT,
+  waveformPlaneBottomSurfaceShading: DEFAULT_WAVEFORM_PLANE_SURFACE_SHADING,
+  waveformPlaneBottomSurfaceColor: DEFAULT_WAVEFORM_PLANE_SURFACE_COLOR,
+  waveformPlaneBottomWireframeColor: DEFAULT_WAVEFORM_PLANE_WIREFRAME_COLOR
 };
 
 const SPECTRUM_ANALYZER_FFT_SIZE = 1024;
@@ -275,71 +315,147 @@ export function createAudioPanel(
 
   const starfieldToggle = createModalToggle("Starfield", true);
   const waveformPlaneToggle = createModalToggle("Waveform Plane", true);
-  const waveformPlaneSurfaceToggle = createModalToggle("Plane Surface", false);
-  const waveformPlaneWireframeToggle = createModalToggle("Plane Wireframe", true);
   const waveformPlanePositionMode = createModalSelect(
     "Plane Position",
     WAVEFORM_PLANE_POSITION_OPTIONS,
     WAVEFORM_PLANE_POSITION_DEFAULT
   );
-  const waveformPlaneHeightScale = createModalRange(
-    "Plane Max Height",
+  const waveformPlaneTopSurfaceToggle = createModalToggle("Top Surface", false);
+  const waveformPlaneTopWireframeToggle = createModalToggle("Top Wireframe", true);
+  const waveformPlaneTopHeightScale = createModalRange(
+    "Top Max Height",
     2.5,
     12,
     0.1,
     DEFAULT_WAVEFORM_PLANE_HEIGHT_SCALE
   );
-  const waveformPlaneDistortionAlgorithm = createModalSelect(
-    "Distortion",
+  const waveformPlaneTopDistortionAlgorithm = createModalSelect(
+    "Top Distortion",
     WAVEFORM_PLANE_DISTORTION_OPTIONS,
     WAVEFORM_PLANE_DISTORTION_DEFAULT
   );
-  const spectrumSmoothingTimeConstant = createModalRange(
-    "Spectrum Smoothing",
+  const waveformPlaneTopSpectrumSmoothingTimeConstant = createModalRange(
+    "Top Spectrum Smoothing",
     0,
     0.95,
     0.01,
     DEFAULT_SPECTRUM_SMOOTHING_TIME_CONSTANT
   );
-  const waveformPlaneSurfaceShading = createModalSelect(
-    "Surface Shading",
+  const waveformPlaneTopSurfaceShading = createModalSelect(
+    "Top Surface Shading",
     WAVEFORM_SURFACE_SHADING_OPTIONS,
     DEFAULT_WAVEFORM_PLANE_SURFACE_SHADING
   );
-  const waveformPlaneSurfaceColor = createModalColor(
-    "Surface Color",
+  const waveformPlaneTopSurfaceColor = createModalColor(
+    "Top Surface Color",
     DEFAULT_WAVEFORM_PLANE_SURFACE_COLOR
   );
-  const waveformPlaneWireframeColor = createModalColor(
-    "Wireframe Color",
+  const waveformPlaneTopWireframeColor = createModalColor(
+    "Top Wireframe Color",
+    DEFAULT_WAVEFORM_PLANE_WIREFRAME_COLOR
+  );
+  const waveformPlaneBottomSurfaceToggle = createModalToggle("Bottom Surface", false);
+  const waveformPlaneBottomWireframeToggle = createModalToggle("Bottom Wireframe", true);
+  const waveformPlaneBottomHeightScale = createModalRange(
+    "Bottom Max Height",
+    2.5,
+    12,
+    0.1,
+    DEFAULT_WAVEFORM_PLANE_HEIGHT_SCALE
+  );
+  const waveformPlaneBottomDistortionAlgorithm = createModalSelect(
+    "Bottom Distortion",
+    WAVEFORM_PLANE_DISTORTION_OPTIONS,
+    WAVEFORM_PLANE_DISTORTION_DEFAULT
+  );
+  const waveformPlaneBottomSpectrumSmoothingTimeConstant = createModalRange(
+    "Bottom Spectrum Smoothing",
+    0,
+    0.95,
+    0.01,
+    DEFAULT_SPECTRUM_SMOOTHING_TIME_CONSTANT
+  );
+  const waveformPlaneBottomSurfaceShading = createModalSelect(
+    "Bottom Surface Shading",
+    WAVEFORM_SURFACE_SHADING_OPTIONS,
+    DEFAULT_WAVEFORM_PLANE_SURFACE_SHADING
+  );
+  const waveformPlaneBottomSurfaceColor = createModalColor(
+    "Bottom Surface Color",
+    DEFAULT_WAVEFORM_PLANE_SURFACE_COLOR
+  );
+  const waveformPlaneBottomWireframeColor = createModalColor(
+    "Bottom Wireframe Color",
     DEFAULT_WAVEFORM_PLANE_WIREFRAME_COLOR
   );
 
   const waveformPlaneOptions = document.createElement("div");
   waveformPlaneOptions.className = "audio-settings-modal__nested";
 
-  const waveformPlaneSurfaceOptions = document.createElement("div");
-  waveformPlaneSurfaceOptions.className =
+  const waveformPlaneTopSection = document.createElement("div");
+  waveformPlaneTopSection.className = "audio-settings-modal__nested";
+  const waveformPlaneTopHeading = document.createElement("p");
+  waveformPlaneTopHeading.className = "audio-settings-modal__subheading";
+  waveformPlaneTopHeading.textContent = "Top Plane";
+
+  const waveformPlaneTopSurfaceOptions = document.createElement("div");
+  waveformPlaneTopSurfaceOptions.className =
     "audio-settings-modal__nested audio-settings-modal__nested--child";
-  waveformPlaneSurfaceOptions.append(
-    waveformPlaneSurfaceShading.root,
-    waveformPlaneSurfaceColor.root
+  waveformPlaneTopSurfaceOptions.append(
+    waveformPlaneTopSurfaceShading.root,
+    waveformPlaneTopSurfaceColor.root
   );
 
-  const waveformPlaneWireframeOptions = document.createElement("div");
-  waveformPlaneWireframeOptions.className =
+  const waveformPlaneTopWireframeOptions = document.createElement("div");
+  waveformPlaneTopWireframeOptions.className =
     "audio-settings-modal__nested audio-settings-modal__nested--child";
-  waveformPlaneWireframeOptions.append(waveformPlaneWireframeColor.root);
+  waveformPlaneTopWireframeOptions.append(waveformPlaneTopWireframeColor.root);
+
+  waveformPlaneTopSection.append(
+    waveformPlaneTopHeading,
+    waveformPlaneTopSurfaceToggle.root,
+    waveformPlaneTopSurfaceOptions,
+    waveformPlaneTopWireframeToggle.root,
+    waveformPlaneTopWireframeOptions,
+    waveformPlaneTopHeightScale.root,
+    waveformPlaneTopDistortionAlgorithm.root,
+    waveformPlaneTopSpectrumSmoothingTimeConstant.root
+  );
+
+  const waveformPlaneBottomSection = document.createElement("div");
+  waveformPlaneBottomSection.className = "audio-settings-modal__nested";
+  const waveformPlaneBottomHeading = document.createElement("p");
+  waveformPlaneBottomHeading.className = "audio-settings-modal__subheading";
+  waveformPlaneBottomHeading.textContent = "Bottom Plane";
+
+  const waveformPlaneBottomSurfaceOptions = document.createElement("div");
+  waveformPlaneBottomSurfaceOptions.className =
+    "audio-settings-modal__nested audio-settings-modal__nested--child";
+  waveformPlaneBottomSurfaceOptions.append(
+    waveformPlaneBottomSurfaceShading.root,
+    waveformPlaneBottomSurfaceColor.root
+  );
+
+  const waveformPlaneBottomWireframeOptions = document.createElement("div");
+  waveformPlaneBottomWireframeOptions.className =
+    "audio-settings-modal__nested audio-settings-modal__nested--child";
+  waveformPlaneBottomWireframeOptions.append(waveformPlaneBottomWireframeColor.root);
+
+  waveformPlaneBottomSection.append(
+    waveformPlaneBottomHeading,
+    waveformPlaneBottomSurfaceToggle.root,
+    waveformPlaneBottomSurfaceOptions,
+    waveformPlaneBottomWireframeToggle.root,
+    waveformPlaneBottomWireframeOptions,
+    waveformPlaneBottomHeightScale.root,
+    waveformPlaneBottomDistortionAlgorithm.root,
+    waveformPlaneBottomSpectrumSmoothingTimeConstant.root
+  );
 
   waveformPlaneOptions.append(
-    waveformPlaneSurfaceToggle.root,
-    waveformPlaneSurfaceOptions,
-    waveformPlaneWireframeToggle.root,
-    waveformPlaneWireframeOptions,
     waveformPlanePositionMode.root,
-    waveformPlaneHeightScale.root,
-    waveformPlaneDistortionAlgorithm.root,
-    spectrumSmoothingTimeConstant.root
+    waveformPlaneTopSection,
+    waveformPlaneBottomSection
   );
 
   const setControlVisible = (element: HTMLElement, visible: boolean): void => {
@@ -347,11 +463,24 @@ export function createAudioPanel(
   };
   const syncVisualControlVisibility = (): void => {
     const planeEnabled = waveformPlaneToggle.input.checked;
-    const surfaceEnabled = planeEnabled && waveformPlaneSurfaceToggle.input.checked;
-    const wireframeEnabled = planeEnabled && waveformPlaneWireframeToggle.input.checked;
+    const topSurfaceEnabled =
+      planeEnabled && waveformPlaneTopSurfaceToggle.input.checked;
+    const topWireframeEnabled =
+      planeEnabled && waveformPlaneTopWireframeToggle.input.checked;
+    const bottomSurfaceEnabled =
+      planeEnabled && waveformPlaneBottomSurfaceToggle.input.checked;
+    const bottomWireframeEnabled =
+      planeEnabled && waveformPlaneBottomWireframeToggle.input.checked;
     setControlVisible(waveformPlaneOptions, planeEnabled);
-    setControlVisible(waveformPlaneSurfaceOptions, surfaceEnabled);
-    setControlVisible(waveformPlaneWireframeOptions, wireframeEnabled);
+    setControlVisible(waveformPlaneTopSection, planeEnabled);
+    setControlVisible(waveformPlaneBottomSection, planeEnabled);
+    setControlVisible(waveformPlaneTopSurfaceOptions, topSurfaceEnabled);
+    setControlVisible(waveformPlaneTopWireframeOptions, topWireframeEnabled);
+    setControlVisible(waveformPlaneBottomSurfaceOptions, bottomSurfaceEnabled);
+    setControlVisible(
+      waveformPlaneBottomWireframeOptions,
+      bottomWireframeEnabled
+    );
   };
 
   visualsGroup.append(starfieldToggle.root, waveformPlaneToggle.root, waveformPlaneOptions);
@@ -468,14 +597,6 @@ export function createAudioPanel(
     }
   };
 
-  const applySpectrumSmoothingTimeConstant = (value: number): void => {
-    const normalized = normalizeSpectrumSmoothingTimeConstant(value);
-    combatState.spectrumSmoothingTimeConstant = normalized;
-    if (audioAnalyserNode) {
-      audioAnalyserNode.smoothingTimeConstant = normalized;
-    }
-  };
-
   const ensureAudioAnalyser = (): void => {
     if (audioContext && audioSourceNode && audioAnalyserNode && analyserDbData) {
       return;
@@ -484,9 +605,7 @@ export function createAudioPanel(
     audioSourceNode = audioContext.createMediaElementSource(audio);
     audioAnalyserNode = audioContext.createAnalyser();
     audioAnalyserNode.fftSize = SPECTRUM_ANALYZER_FFT_SIZE;
-    audioAnalyserNode.smoothingTimeConstant = normalizeSpectrumSmoothingTimeConstant(
-      combatState.spectrumSmoothingTimeConstant
-    );
+    audioAnalyserNode.smoothingTimeConstant = DEFAULT_SPECTRUM_SMOOTHING_TIME_CONSTANT;
     audioAnalyserNode.minDecibels = SPECTRUM_ANALYZER_MIN_DB;
     audioAnalyserNode.maxDecibels = SPECTRUM_ANALYZER_MAX_DB;
     analyserDbData = new Float32Array(audioAnalyserNode.frequencyBinCount);
@@ -725,33 +844,67 @@ export function createAudioPanel(
     enemyProjectileLaserToggle.input.checked = state.enemyProjectileStyle === "lasers";
     starfieldToggle.input.checked = state.starfieldEnabled;
     waveformPlaneToggle.input.checked = state.waveformPlaneEnabled;
-    waveformPlaneSurfaceToggle.input.checked = state.waveformPlaneSurfaceEnabled;
-    waveformPlaneWireframeToggle.input.checked = state.waveformPlaneWireframeEnabled;
     waveformPlanePositionMode.input.value = state.waveformPlanePositionMode;
     enemySpawnScale.input.value = state.spawnScale.toFixed(2);
     enemyFireScale.input.value = state.fireScale.toFixed(2);
     enemySpawnScale.value.textContent = `${state.spawnScale.toFixed(2)}x`;
     enemyFireScale.value.textContent = `${state.fireScale.toFixed(2)}x`;
-    waveformPlaneHeightScale.input.value = state.waveformPlaneHeightScale.toFixed(1);
-    waveformPlaneHeightScale.value.textContent = state.waveformPlaneHeightScale.toFixed(1);
-    waveformPlaneDistortionAlgorithm.input.value = state.waveformPlaneDistortionAlgorithm;
-    spectrumSmoothingTimeConstant.input.value = state.spectrumSmoothingTimeConstant.toFixed(2);
-    spectrumSmoothingTimeConstant.value.textContent = state.spectrumSmoothingTimeConstant.toFixed(2);
-    waveformPlaneSurfaceShading.input.value = state.waveformPlaneSurfaceShading;
-    waveformPlaneSurfaceColor.input.value = normalizeHexColor(
-      state.waveformPlaneSurfaceColor,
+    waveformPlaneTopSurfaceToggle.input.checked = state.waveformPlaneTopSurfaceEnabled;
+    waveformPlaneTopWireframeToggle.input.checked = state.waveformPlaneTopWireframeEnabled;
+    waveformPlaneTopHeightScale.input.value = state.waveformPlaneTopHeightScale.toFixed(1);
+    waveformPlaneTopHeightScale.value.textContent = state.waveformPlaneTopHeightScale.toFixed(1);
+    waveformPlaneTopDistortionAlgorithm.input.value = state.waveformPlaneTopDistortionAlgorithm;
+    waveformPlaneTopSpectrumSmoothingTimeConstant.input.value =
+      state.waveformPlaneTopSpectrumSmoothingTimeConstant.toFixed(2);
+    waveformPlaneTopSpectrumSmoothingTimeConstant.value.textContent =
+      state.waveformPlaneTopSpectrumSmoothingTimeConstant.toFixed(2);
+    waveformPlaneTopSurfaceShading.input.value = state.waveformPlaneTopSurfaceShading;
+    waveformPlaneTopSurfaceColor.input.value = normalizeHexColor(
+      state.waveformPlaneTopSurfaceColor,
       DEFAULT_WAVEFORM_PLANE_SURFACE_COLOR
     );
-    waveformPlaneSurfaceColor.value.textContent = normalizeHexColor(
-      state.waveformPlaneSurfaceColor,
+    waveformPlaneTopSurfaceColor.value.textContent = normalizeHexColor(
+      state.waveformPlaneTopSurfaceColor,
       DEFAULT_WAVEFORM_PLANE_SURFACE_COLOR
     ).toUpperCase();
-    waveformPlaneWireframeColor.input.value = normalizeHexColor(
-      state.waveformPlaneWireframeColor,
+    waveformPlaneTopWireframeColor.input.value = normalizeHexColor(
+      state.waveformPlaneTopWireframeColor,
       DEFAULT_WAVEFORM_PLANE_WIREFRAME_COLOR
     );
-    waveformPlaneWireframeColor.value.textContent = normalizeHexColor(
-      state.waveformPlaneWireframeColor,
+    waveformPlaneTopWireframeColor.value.textContent = normalizeHexColor(
+      state.waveformPlaneTopWireframeColor,
+      DEFAULT_WAVEFORM_PLANE_WIREFRAME_COLOR
+    ).toUpperCase();
+    waveformPlaneBottomSurfaceToggle.input.checked =
+      state.waveformPlaneBottomSurfaceEnabled;
+    waveformPlaneBottomWireframeToggle.input.checked =
+      state.waveformPlaneBottomWireframeEnabled;
+    waveformPlaneBottomHeightScale.input.value =
+      state.waveformPlaneBottomHeightScale.toFixed(1);
+    waveformPlaneBottomHeightScale.value.textContent =
+      state.waveformPlaneBottomHeightScale.toFixed(1);
+    waveformPlaneBottomDistortionAlgorithm.input.value =
+      state.waveformPlaneBottomDistortionAlgorithm;
+    waveformPlaneBottomSpectrumSmoothingTimeConstant.input.value =
+      state.waveformPlaneBottomSpectrumSmoothingTimeConstant.toFixed(2);
+    waveformPlaneBottomSpectrumSmoothingTimeConstant.value.textContent =
+      state.waveformPlaneBottomSpectrumSmoothingTimeConstant.toFixed(2);
+    waveformPlaneBottomSurfaceShading.input.value =
+      state.waveformPlaneBottomSurfaceShading;
+    waveformPlaneBottomSurfaceColor.input.value = normalizeHexColor(
+      state.waveformPlaneBottomSurfaceColor,
+      DEFAULT_WAVEFORM_PLANE_SURFACE_COLOR
+    );
+    waveformPlaneBottomSurfaceColor.value.textContent = normalizeHexColor(
+      state.waveformPlaneBottomSurfaceColor,
+      DEFAULT_WAVEFORM_PLANE_SURFACE_COLOR
+    ).toUpperCase();
+    waveformPlaneBottomWireframeColor.input.value = normalizeHexColor(
+      state.waveformPlaneBottomWireframeColor,
+      DEFAULT_WAVEFORM_PLANE_WIREFRAME_COLOR
+    );
+    waveformPlaneBottomWireframeColor.value.textContent = normalizeHexColor(
+      state.waveformPlaneBottomWireframeColor,
       DEFAULT_WAVEFORM_PLANE_WIREFRAME_COLOR
     ).toUpperCase();
     syncVisualControlVisibility();
@@ -769,33 +922,61 @@ export function createAudioPanel(
     enemyProjectileStyle: enemyProjectileLaserToggle.input.checked ? "lasers" : "balls",
     starfieldEnabled: starfieldToggle.input.checked,
     waveformPlaneEnabled: waveformPlaneToggle.input.checked,
-    waveformPlaneSurfaceEnabled: waveformPlaneSurfaceToggle.input.checked,
-    waveformPlaneWireframeEnabled: waveformPlaneWireframeToggle.input.checked,
     waveformPlanePositionMode: normalizeWaveformPlanePositionMode(
       waveformPlanePositionMode.input.value
     ),
-    waveformPlaneHeightScale: clamp(
-      Number.isFinite(Number(waveformPlaneHeightScale.input.value))
-        ? Number(waveformPlaneHeightScale.input.value)
+    waveformPlaneTopSurfaceEnabled: waveformPlaneTopSurfaceToggle.input.checked,
+    waveformPlaneTopWireframeEnabled: waveformPlaneTopWireframeToggle.input.checked,
+    waveformPlaneTopHeightScale: clamp(
+      Number.isFinite(Number(waveformPlaneTopHeightScale.input.value))
+        ? Number(waveformPlaneTopHeightScale.input.value)
         : DEFAULT_WAVEFORM_PLANE_HEIGHT_SCALE,
       2.5,
       12
     ),
-    waveformPlaneDistortionAlgorithm: normalizeWaveformPlaneDistortionAlgorithm(
-      waveformPlaneDistortionAlgorithm.input.value
+    waveformPlaneTopDistortionAlgorithm: normalizeWaveformPlaneDistortionAlgorithm(
+      waveformPlaneTopDistortionAlgorithm.input.value
     ),
-    spectrumSmoothingTimeConstant: normalizeSpectrumSmoothingTimeConstant(
-      Number(spectrumSmoothingTimeConstant.input.value)
+    waveformPlaneTopSpectrumSmoothingTimeConstant:
+      normalizeSpectrumSmoothingTimeConstant(
+        Number(waveformPlaneTopSpectrumSmoothingTimeConstant.input.value)
+      ),
+    waveformPlaneTopSurfaceShading: normalizeWaveformPlaneSurfaceShading(
+      waveformPlaneTopSurfaceShading.input.value
     ),
-    waveformPlaneSurfaceShading: normalizeWaveformPlaneSurfaceShading(
-      waveformPlaneSurfaceShading.input.value
-    ),
-    waveformPlaneSurfaceColor: normalizeHexColor(
-      waveformPlaneSurfaceColor.input.value,
+    waveformPlaneTopSurfaceColor: normalizeHexColor(
+      waveformPlaneTopSurfaceColor.input.value,
       DEFAULT_WAVEFORM_PLANE_SURFACE_COLOR
     ),
-    waveformPlaneWireframeColor: normalizeHexColor(
-      waveformPlaneWireframeColor.input.value,
+    waveformPlaneTopWireframeColor: normalizeHexColor(
+      waveformPlaneTopWireframeColor.input.value,
+      DEFAULT_WAVEFORM_PLANE_WIREFRAME_COLOR
+    ),
+    waveformPlaneBottomSurfaceEnabled: waveformPlaneBottomSurfaceToggle.input.checked,
+    waveformPlaneBottomWireframeEnabled: waveformPlaneBottomWireframeToggle.input.checked,
+    waveformPlaneBottomHeightScale: clamp(
+      Number.isFinite(Number(waveformPlaneBottomHeightScale.input.value))
+        ? Number(waveformPlaneBottomHeightScale.input.value)
+        : DEFAULT_WAVEFORM_PLANE_HEIGHT_SCALE,
+      2.5,
+      12
+    ),
+    waveformPlaneBottomDistortionAlgorithm: normalizeWaveformPlaneDistortionAlgorithm(
+      waveformPlaneBottomDistortionAlgorithm.input.value
+    ),
+    waveformPlaneBottomSpectrumSmoothingTimeConstant:
+      normalizeSpectrumSmoothingTimeConstant(
+        Number(waveformPlaneBottomSpectrumSmoothingTimeConstant.input.value)
+      ),
+    waveformPlaneBottomSurfaceShading: normalizeWaveformPlaneSurfaceShading(
+      waveformPlaneBottomSurfaceShading.input.value
+    ),
+    waveformPlaneBottomSurfaceColor: normalizeHexColor(
+      waveformPlaneBottomSurfaceColor.input.value,
+      DEFAULT_WAVEFORM_PLANE_SURFACE_COLOR
+    ),
+    waveformPlaneBottomWireframeColor: normalizeHexColor(
+      waveformPlaneBottomWireframeColor.input.value,
       DEFAULT_WAVEFORM_PLANE_WIREFRAME_COLOR
     )
   });
@@ -824,15 +1005,65 @@ export function createAudioPanel(
     });
     handlers.onStarfieldEnabledChange(state.starfieldEnabled);
     handlers.onWaveformPlaneChange(state.waveformPlaneEnabled);
-    handlers.onWaveformPlaneSurfaceEnabledChange(state.waveformPlaneSurfaceEnabled);
-    handlers.onWaveformPlaneWireframeEnabledChange(state.waveformPlaneWireframeEnabled);
+    handlers.onWaveformPlaneSurfaceEnabledChange(
+      "top",
+      state.waveformPlaneTopSurfaceEnabled
+    );
+    handlers.onWaveformPlaneWireframeEnabledChange(
+      "top",
+      state.waveformPlaneTopWireframeEnabled
+    );
+    handlers.onWaveformPlaneSurfaceEnabledChange(
+      "bottom",
+      state.waveformPlaneBottomSurfaceEnabled
+    );
+    handlers.onWaveformPlaneWireframeEnabledChange(
+      "bottom",
+      state.waveformPlaneBottomWireframeEnabled
+    );
     handlers.onWaveformPlanePositionModeChange(state.waveformPlanePositionMode);
-    handlers.onWaveformPlaneHeightScaleChange(state.waveformPlaneHeightScale);
-    handlers.onWaveformPlaneDistortionAlgorithmChange(state.waveformPlaneDistortionAlgorithm);
-    applySpectrumSmoothingTimeConstant(state.spectrumSmoothingTimeConstant);
-    handlers.onWaveformPlaneSurfaceShadingChange(state.waveformPlaneSurfaceShading);
-    handlers.onWaveformPlaneSurfaceColorChange(state.waveformPlaneSurfaceColor);
-    handlers.onWaveformPlaneWireframeColorChange(state.waveformPlaneWireframeColor);
+    handlers.onWaveformPlaneHeightScaleChange("top", state.waveformPlaneTopHeightScale);
+    handlers.onWaveformPlaneHeightScaleChange(
+      "bottom",
+      state.waveformPlaneBottomHeightScale
+    );
+    handlers.onWaveformPlaneDistortionAlgorithmChange(
+      "top",
+      state.waveformPlaneTopDistortionAlgorithm
+    );
+    handlers.onWaveformPlaneDistortionAlgorithmChange(
+      "bottom",
+      state.waveformPlaneBottomDistortionAlgorithm
+    );
+    handlers.onWaveformPlaneSpectrumSmoothingChange(
+      "top",
+      state.waveformPlaneTopSpectrumSmoothingTimeConstant
+    );
+    handlers.onWaveformPlaneSpectrumSmoothingChange(
+      "bottom",
+      state.waveformPlaneBottomSpectrumSmoothingTimeConstant
+    );
+    handlers.onWaveformPlaneSurfaceShadingChange(
+      "top",
+      state.waveformPlaneTopSurfaceShading
+    );
+    handlers.onWaveformPlaneSurfaceShadingChange(
+      "bottom",
+      state.waveformPlaneBottomSurfaceShading
+    );
+    handlers.onWaveformPlaneSurfaceColorChange("top", state.waveformPlaneTopSurfaceColor);
+    handlers.onWaveformPlaneSurfaceColorChange(
+      "bottom",
+      state.waveformPlaneBottomSurfaceColor
+    );
+    handlers.onWaveformPlaneWireframeColorChange(
+      "top",
+      state.waveformPlaneTopWireframeColor
+    );
+    handlers.onWaveformPlaneWireframeColorChange(
+      "bottom",
+      state.waveformPlaneBottomWireframeColor
+    );
   };
 
   const hasRunAffectingChanges = (previous: UiCombatState, next: UiCombatState): boolean => {
@@ -891,35 +1122,65 @@ export function createAudioPanel(
   enemyFireScale.input.addEventListener("input", () => {
     enemyFireScale.value.textContent = `${Number(enemyFireScale.input.value).toFixed(2)}x`;
   });
-  waveformPlaneHeightScale.input.addEventListener("input", () => {
-    waveformPlaneHeightScale.value.textContent = Number(
-      waveformPlaneHeightScale.input.value
+  waveformPlaneTopHeightScale.input.addEventListener("input", () => {
+    waveformPlaneTopHeightScale.value.textContent = Number(
+      waveformPlaneTopHeightScale.input.value
+    ).toFixed(1);
+  });
+  waveformPlaneBottomHeightScale.input.addEventListener("input", () => {
+    waveformPlaneBottomHeightScale.value.textContent = Number(
+      waveformPlaneBottomHeightScale.input.value
     ).toFixed(1);
   });
   waveformPlaneToggle.input.addEventListener("change", () => {
     syncVisualControlVisibility();
   });
-  waveformPlaneSurfaceToggle.input.addEventListener("change", () => {
+  waveformPlaneTopSurfaceToggle.input.addEventListener("change", () => {
     syncVisualControlVisibility();
   });
-  waveformPlaneWireframeToggle.input.addEventListener("change", () => {
+  waveformPlaneTopWireframeToggle.input.addEventListener("change", () => {
     syncVisualControlVisibility();
   });
-  spectrumSmoothingTimeConstant.input.addEventListener("input", () => {
+  waveformPlaneBottomSurfaceToggle.input.addEventListener("change", () => {
+    syncVisualControlVisibility();
+  });
+  waveformPlaneBottomWireframeToggle.input.addEventListener("change", () => {
+    syncVisualControlVisibility();
+  });
+  waveformPlaneTopSpectrumSmoothingTimeConstant.input.addEventListener("input", () => {
     const normalized = normalizeSpectrumSmoothingTimeConstant(
-      Number(spectrumSmoothingTimeConstant.input.value)
+      Number(waveformPlaneTopSpectrumSmoothingTimeConstant.input.value)
     );
-    spectrumSmoothingTimeConstant.value.textContent = normalized.toFixed(2);
+    waveformPlaneTopSpectrumSmoothingTimeConstant.value.textContent = normalized.toFixed(2);
   });
-  waveformPlaneSurfaceColor.input.addEventListener("input", () => {
-    waveformPlaneSurfaceColor.value.textContent = normalizeHexColor(
-      waveformPlaneSurfaceColor.input.value,
+  waveformPlaneBottomSpectrumSmoothingTimeConstant.input.addEventListener("input", () => {
+    const normalized = normalizeSpectrumSmoothingTimeConstant(
+      Number(waveformPlaneBottomSpectrumSmoothingTimeConstant.input.value)
+    );
+    waveformPlaneBottomSpectrumSmoothingTimeConstant.value.textContent =
+      normalized.toFixed(2);
+  });
+  waveformPlaneTopSurfaceColor.input.addEventListener("input", () => {
+    waveformPlaneTopSurfaceColor.value.textContent = normalizeHexColor(
+      waveformPlaneTopSurfaceColor.input.value,
       DEFAULT_WAVEFORM_PLANE_SURFACE_COLOR
     ).toUpperCase();
   });
-  waveformPlaneWireframeColor.input.addEventListener("input", () => {
-    waveformPlaneWireframeColor.value.textContent = normalizeHexColor(
-      waveformPlaneWireframeColor.input.value,
+  waveformPlaneBottomSurfaceColor.input.addEventListener("input", () => {
+    waveformPlaneBottomSurfaceColor.value.textContent = normalizeHexColor(
+      waveformPlaneBottomSurfaceColor.input.value,
+      DEFAULT_WAVEFORM_PLANE_SURFACE_COLOR
+    ).toUpperCase();
+  });
+  waveformPlaneTopWireframeColor.input.addEventListener("input", () => {
+    waveformPlaneTopWireframeColor.value.textContent = normalizeHexColor(
+      waveformPlaneTopWireframeColor.input.value,
+      DEFAULT_WAVEFORM_PLANE_WIREFRAME_COLOR
+    ).toUpperCase();
+  });
+  waveformPlaneBottomWireframeColor.input.addEventListener("input", () => {
+    waveformPlaneBottomWireframeColor.value.textContent = normalizeHexColor(
+      waveformPlaneBottomWireframeColor.input.value,
       DEFAULT_WAVEFORM_PLANE_WIREFRAME_COLOR
     ).toUpperCase();
   });
