@@ -337,6 +337,10 @@ body,
 
 .audio-settings-modal {
   width: min(520px, 100%);
+  max-height: calc(100dvh - 2rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
   background: rgb(16 31 57 / 96%);
   border-radius: 0.7rem;
   box-shadow:
