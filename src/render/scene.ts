@@ -39,11 +39,6 @@ import {
 	populateWaveformPlaneSpectrumForDistortion,
 	type WaveformPlaneDistortionAlgorithm,
 } from "./waveformPlaneDistortion";
-import {
-	WAVEFORM_PLANE_POSITION_DEFAULT,
-	normalizeWaveformPlanePositionMode,
-	type WaveformPlanePositionMode,
-} from "./waveformPlanePosition";
 
 type WaveformPlaneSurfaceShading = "smooth" | "flat" | "matte" | "metallic";
 type WaveformPlaneSide = "bottom" | "top";
@@ -62,7 +57,10 @@ export type RenderScene = {
 		side: WaveformPlaneSide,
 		enabled: boolean,
 	) => void;
-	setWaveformPlanePosition: (positionMode: WaveformPlanePositionMode) => void;
+	setWaveformPlaneSideEnabled: (
+		side: WaveformPlaneSide,
+		enabled: boolean,
+	) => void;
 	setWaveformPlaneHeightScale: (
 		side: WaveformPlaneSide,
 		heightScale: number,
@@ -341,6 +339,7 @@ export function setupScene(container: HTMLElement): RenderScene {
 		wireframeMaterial: MeshStandardMaterial;
 		depthMaterial: MeshStandardMaterial;
 		meshSet: WaveformPlaneMeshSet;
+		planeEnabled: boolean;
 		surfaceEnabled: boolean;
 		wireframeEnabled: boolean;
 		amplitudeDrive: number;
@@ -643,6 +642,7 @@ export function setupScene(container: HTMLElement): RenderScene {
 				surface: surfaceMaterial,
 				wireframe: wireframeMaterial,
 			}),
+			planeEnabled: side === "bottom",
 			surfaceEnabled: WAVEFORM_PLANE_SURFACE_ENABLED_DEFAULT,
 			wireframeEnabled: WAVEFORM_PLANE_WIREFRAME_ENABLED_DEFAULT,
 			amplitudeDrive: 0,
@@ -678,27 +678,13 @@ export function setupScene(container: HTMLElement): RenderScene {
 	}
 
 	let waveformPlaneEnabled = true;
-	let waveformPlanePositionMode: WaveformPlanePositionMode =
-		WAVEFORM_PLANE_POSITION_DEFAULT;
 	let waveformPlaneHasData = true;
 	let waveformPlaneTimeSeconds = 0;
-	const isWaveformPlanePlacementVisible = (
-		placement: WaveformPlaneSide,
-	): boolean => {
-		if (waveformPlanePositionMode === "both") {
-			return true;
-		}
-		if (waveformPlanePositionMode === "top") {
-			return placement === "top";
-		}
-		return placement === "bottom";
-	};
 	const syncWaveformPlaneVisibility = (): void => {
 		const active = waveformPlaneEnabled && waveformPlaneHasData;
 		for (const planeState of waveformPlaneStateList) {
 			const meshSet = planeState.meshSet;
-			const placementVisible =
-				active && isWaveformPlanePlacementVisible(meshSet.placement);
+			const placementVisible = active && planeState.planeEnabled;
 			meshSet.surfaceMesh.visible =
 				placementVisible && planeState.surfaceEnabled;
 			meshSet.wireframeMesh.visible =
@@ -832,9 +818,7 @@ export function setupScene(container: HTMLElement): RenderScene {
 			syncWaveformPlaneVisibility();
 			if (waveformPlaneEnabled && waveformPlaneHasData) {
 				for (const planeState of waveformPlaneStateList) {
-					const placementVisible = isWaveformPlanePlacementVisible(
-						planeState.meshSet.placement,
-					);
+					const placementVisible = planeState.planeEnabled;
 					const renderable =
 						placementVisible &&
 						(planeState.surfaceEnabled || planeState.wireframeEnabled);
@@ -1243,9 +1227,9 @@ export function setupScene(container: HTMLElement): RenderScene {
 			waveformPlaneStates[normalizedSide].wireframeEnabled = enabled;
 			syncWaveformPlaneVisibility();
 		},
-		setWaveformPlanePosition(positionMode) {
-			waveformPlanePositionMode =
-				normalizeWaveformPlanePositionMode(positionMode);
+		setWaveformPlaneSideEnabled(side, enabled) {
+			const normalizedSide = normalizeWaveformPlaneSide(side);
+			waveformPlaneStates[normalizedSide].planeEnabled = enabled;
 			syncWaveformPlaneVisibility();
 		},
 		setWaveformPlaneHeightScale(side, heightScale) {

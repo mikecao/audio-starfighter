@@ -198,8 +198,8 @@ const audioPanel = createAudioPanel(uiHost, {
   onWaveformPlaneWireframeEnabledChange(side, enabled) {
     scene.setWaveformPlaneWireframeEnabled(side, enabled);
   },
-  onWaveformPlanePositionModeChange(positionMode) {
-    scene.setWaveformPlanePosition(positionMode);
+  onWaveformPlaneSideEnabledChange(side, enabled) {
+    scene.setWaveformPlaneSideEnabled(side, enabled);
   },
   onWaveformPlaneHeightScaleChange(side, heightScale) {
     scene.setWaveformPlaneHeightScale(side, heightScale);

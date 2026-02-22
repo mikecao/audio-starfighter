@@ -10,12 +10,6 @@ import {
   normalizeWaveformPlaneDistortionAlgorithm,
   type WaveformPlaneDistortionAlgorithm
 } from "../render/waveformPlaneDistortion";
-import {
-  WAVEFORM_PLANE_POSITION_DEFAULT,
-  WAVEFORM_PLANE_POSITION_OPTIONS,
-  normalizeWaveformPlanePositionMode,
-  type WaveformPlanePositionMode
-} from "../render/waveformPlanePosition";
 
 const RUN_SEED_STORAGE_KEY = "audio-starfighter.run-seed";
 
@@ -36,8 +30,9 @@ type AudioPanelHandlers = {
     side: WaveformPlaneSide,
     enabled: boolean
   ) => void;
-  onWaveformPlanePositionModeChange: (
-    positionMode: WaveformPlanePositionMode
+  onWaveformPlaneSideEnabledChange: (
+    side: WaveformPlaneSide,
+    enabled: boolean
   ) => void;
   onWaveformPlaneHeightScaleChange: (
     side: WaveformPlaneSide,
@@ -90,7 +85,8 @@ type UiCombatState = {
   enemyProjectileStyle: EnemyProjectileStyle;
   starfieldEnabled: boolean;
   waveformPlaneEnabled: boolean;
-  waveformPlanePositionMode: WaveformPlanePositionMode;
+  waveformPlaneTopEnabled: boolean;
+  waveformPlaneBottomEnabled: boolean;
   waveformPlaneTopSurfaceEnabled: boolean;
   waveformPlaneTopWireframeEnabled: boolean;
   waveformPlaneTopHeightScale: number;
@@ -127,7 +123,8 @@ const DEFAULT_COMBAT_STATE: UiCombatState = {
   enemyProjectileStyle: "balls",
   starfieldEnabled: true,
   waveformPlaneEnabled: true,
-  waveformPlanePositionMode: WAVEFORM_PLANE_POSITION_DEFAULT,
+  waveformPlaneTopEnabled: false,
+  waveformPlaneBottomEnabled: true,
   waveformPlaneTopSurfaceEnabled: false,
   waveformPlaneTopWireframeEnabled: true,
   waveformPlaneTopHeightScale: DEFAULT_WAVEFORM_PLANE_HEIGHT_SCALE,
@@ -315,88 +312,79 @@ export function createAudioPanel(
 
   const starfieldToggle = createModalToggle("Starfield", true);
   const waveformPlaneToggle = createModalToggle("Waveform Plane", true);
-  const waveformPlanePositionMode = createModalSelect(
-    "Plane Position",
-    WAVEFORM_PLANE_POSITION_OPTIONS,
-    WAVEFORM_PLANE_POSITION_DEFAULT
-  );
-  const waveformPlaneTopSurfaceToggle = createModalToggle("Top Surface", false);
-  const waveformPlaneTopWireframeToggle = createModalToggle("Top Wireframe", true);
+  const waveformPlaneTopToggle = createModalToggle("Top Plane", false);
+  const waveformPlaneBottomToggle = createModalToggle("Bottom Plane", true);
+  const waveformPlaneTopSurfaceToggle = createModalToggle("Surface", false);
+  const waveformPlaneTopWireframeToggle = createModalToggle("Wireframe", true);
   const waveformPlaneTopHeightScale = createModalRange(
-    "Top Max Height",
+    "Max Height",
     2.5,
     12,
     0.1,
     DEFAULT_WAVEFORM_PLANE_HEIGHT_SCALE
   );
   const waveformPlaneTopDistortionAlgorithm = createModalSelect(
-    "Top Distortion",
+    "Distortion",
     WAVEFORM_PLANE_DISTORTION_OPTIONS,
     WAVEFORM_PLANE_DISTORTION_DEFAULT
   );
   const waveformPlaneTopSpectrumSmoothingTimeConstant = createModalRange(
-    "Top Spectrum Smoothing",
+    "Spectrum Smoothing",
     0,
     0.95,
     0.01,
     DEFAULT_SPECTRUM_SMOOTHING_TIME_CONSTANT
   );
   const waveformPlaneTopSurfaceShading = createModalSelect(
-    "Top Surface Shading",
+    "Surface Shading",
     WAVEFORM_SURFACE_SHADING_OPTIONS,
     DEFAULT_WAVEFORM_PLANE_SURFACE_SHADING
   );
   const waveformPlaneTopSurfaceColor = createModalColor(
-    "Top Surface Color",
+    "Surface Color",
     DEFAULT_WAVEFORM_PLANE_SURFACE_COLOR
   );
   const waveformPlaneTopWireframeColor = createModalColor(
-    "Top Wireframe Color",
+    "Wireframe Color",
     DEFAULT_WAVEFORM_PLANE_WIREFRAME_COLOR
   );
-  const waveformPlaneBottomSurfaceToggle = createModalToggle("Bottom Surface", false);
-  const waveformPlaneBottomWireframeToggle = createModalToggle("Bottom Wireframe", true);
+  const waveformPlaneBottomSurfaceToggle = createModalToggle("Surface", false);
+  const waveformPlaneBottomWireframeToggle = createModalToggle("Wireframe", true);
   const waveformPlaneBottomHeightScale = createModalRange(
-    "Bottom Max Height",
+    "Max Height",
     2.5,
     12,
     0.1,
     DEFAULT_WAVEFORM_PLANE_HEIGHT_SCALE
   );
   const waveformPlaneBottomDistortionAlgorithm = createModalSelect(
-    "Bottom Distortion",
+    "Distortion",
     WAVEFORM_PLANE_DISTORTION_OPTIONS,
     WAVEFORM_PLANE_DISTORTION_DEFAULT
   );
   const waveformPlaneBottomSpectrumSmoothingTimeConstant = createModalRange(
-    "Bottom Spectrum Smoothing",
+    "Spectrum Smoothing",
     0,
     0.95,
     0.01,
     DEFAULT_SPECTRUM_SMOOTHING_TIME_CONSTANT
   );
   const waveformPlaneBottomSurfaceShading = createModalSelect(
-    "Bottom Surface Shading",
+    "Surface Shading",
     WAVEFORM_SURFACE_SHADING_OPTIONS,
     DEFAULT_WAVEFORM_PLANE_SURFACE_SHADING
   );
   const waveformPlaneBottomSurfaceColor = createModalColor(
-    "Bottom Surface Color",
+    "Surface Color",
     DEFAULT_WAVEFORM_PLANE_SURFACE_COLOR
   );
   const waveformPlaneBottomWireframeColor = createModalColor(
-    "Bottom Wireframe Color",
+    "Wireframe Color",
     DEFAULT_WAVEFORM_PLANE_WIREFRAME_COLOR
   );
 
   const waveformPlaneOptions = document.createElement("div");
   waveformPlaneOptions.className = "audio-settings-modal__nested";
-
-  const waveformPlaneTopSection = document.createElement("div");
-  waveformPlaneTopSection.className = "audio-settings-modal__nested";
-  const waveformPlaneTopHeading = document.createElement("p");
-  waveformPlaneTopHeading.className = "audio-settings-modal__subheading";
-  waveformPlaneTopHeading.textContent = "Top Plane";
 
   const waveformPlaneTopSurfaceOptions = document.createElement("div");
   waveformPlaneTopSurfaceOptions.className =
@@ -411,8 +399,10 @@ export function createAudioPanel(
     "audio-settings-modal__nested audio-settings-modal__nested--child";
   waveformPlaneTopWireframeOptions.append(waveformPlaneTopWireframeColor.root);
 
-  waveformPlaneTopSection.append(
-    waveformPlaneTopHeading,
+  const waveformPlaneTopOptions = document.createElement("div");
+  waveformPlaneTopOptions.className =
+    "audio-settings-modal__nested audio-settings-modal__nested--child";
+  waveformPlaneTopOptions.append(
     waveformPlaneTopSurfaceToggle.root,
     waveformPlaneTopSurfaceOptions,
     waveformPlaneTopWireframeToggle.root,
@@ -421,12 +411,6 @@ export function createAudioPanel(
     waveformPlaneTopDistortionAlgorithm.root,
     waveformPlaneTopSpectrumSmoothingTimeConstant.root
   );
-
-  const waveformPlaneBottomSection = document.createElement("div");
-  waveformPlaneBottomSection.className = "audio-settings-modal__nested";
-  const waveformPlaneBottomHeading = document.createElement("p");
-  waveformPlaneBottomHeading.className = "audio-settings-modal__subheading";
-  waveformPlaneBottomHeading.textContent = "Bottom Plane";
 
   const waveformPlaneBottomSurfaceOptions = document.createElement("div");
   waveformPlaneBottomSurfaceOptions.className =
@@ -441,8 +425,10 @@ export function createAudioPanel(
     "audio-settings-modal__nested audio-settings-modal__nested--child";
   waveformPlaneBottomWireframeOptions.append(waveformPlaneBottomWireframeColor.root);
 
-  waveformPlaneBottomSection.append(
-    waveformPlaneBottomHeading,
+  const waveformPlaneBottomOptions = document.createElement("div");
+  waveformPlaneBottomOptions.className =
+    "audio-settings-modal__nested audio-settings-modal__nested--child";
+  waveformPlaneBottomOptions.append(
     waveformPlaneBottomSurfaceToggle.root,
     waveformPlaneBottomSurfaceOptions,
     waveformPlaneBottomWireframeToggle.root,
@@ -453,9 +439,10 @@ export function createAudioPanel(
   );
 
   waveformPlaneOptions.append(
-    waveformPlanePositionMode.root,
-    waveformPlaneTopSection,
-    waveformPlaneBottomSection
+    waveformPlaneTopToggle.root,
+    waveformPlaneTopOptions,
+    waveformPlaneBottomToggle.root,
+    waveformPlaneBottomOptions
   );
 
   const setControlVisible = (element: HTMLElement, visible: boolean): void => {
@@ -463,17 +450,17 @@ export function createAudioPanel(
   };
   const syncVisualControlVisibility = (): void => {
     const planeEnabled = waveformPlaneToggle.input.checked;
-    const topSurfaceEnabled =
-      planeEnabled && waveformPlaneTopSurfaceToggle.input.checked;
-    const topWireframeEnabled =
-      planeEnabled && waveformPlaneTopWireframeToggle.input.checked;
+    const topPlaneEnabled = planeEnabled && waveformPlaneTopToggle.input.checked;
+    const bottomPlaneEnabled = planeEnabled && waveformPlaneBottomToggle.input.checked;
+    const topSurfaceEnabled = topPlaneEnabled && waveformPlaneTopSurfaceToggle.input.checked;
+    const topWireframeEnabled = topPlaneEnabled && waveformPlaneTopWireframeToggle.input.checked;
     const bottomSurfaceEnabled =
-      planeEnabled && waveformPlaneBottomSurfaceToggle.input.checked;
+      bottomPlaneEnabled && waveformPlaneBottomSurfaceToggle.input.checked;
     const bottomWireframeEnabled =
-      planeEnabled && waveformPlaneBottomWireframeToggle.input.checked;
+      bottomPlaneEnabled && waveformPlaneBottomWireframeToggle.input.checked;
     setControlVisible(waveformPlaneOptions, planeEnabled);
-    setControlVisible(waveformPlaneTopSection, planeEnabled);
-    setControlVisible(waveformPlaneBottomSection, planeEnabled);
+    setControlVisible(waveformPlaneTopOptions, topPlaneEnabled);
+    setControlVisible(waveformPlaneBottomOptions, bottomPlaneEnabled);
     setControlVisible(waveformPlaneTopSurfaceOptions, topSurfaceEnabled);
     setControlVisible(waveformPlaneTopWireframeOptions, topWireframeEnabled);
     setControlVisible(waveformPlaneBottomSurfaceOptions, bottomSurfaceEnabled);
@@ -844,7 +831,8 @@ export function createAudioPanel(
     enemyProjectileLaserToggle.input.checked = state.enemyProjectileStyle === "lasers";
     starfieldToggle.input.checked = state.starfieldEnabled;
     waveformPlaneToggle.input.checked = state.waveformPlaneEnabled;
-    waveformPlanePositionMode.input.value = state.waveformPlanePositionMode;
+    waveformPlaneTopToggle.input.checked = state.waveformPlaneTopEnabled;
+    waveformPlaneBottomToggle.input.checked = state.waveformPlaneBottomEnabled;
     enemySpawnScale.input.value = state.spawnScale.toFixed(2);
     enemyFireScale.input.value = state.fireScale.toFixed(2);
     enemySpawnScale.value.textContent = `${state.spawnScale.toFixed(2)}x`;
@@ -922,9 +910,8 @@ export function createAudioPanel(
     enemyProjectileStyle: enemyProjectileLaserToggle.input.checked ? "lasers" : "balls",
     starfieldEnabled: starfieldToggle.input.checked,
     waveformPlaneEnabled: waveformPlaneToggle.input.checked,
-    waveformPlanePositionMode: normalizeWaveformPlanePositionMode(
-      waveformPlanePositionMode.input.value
-    ),
+    waveformPlaneTopEnabled: waveformPlaneTopToggle.input.checked,
+    waveformPlaneBottomEnabled: waveformPlaneBottomToggle.input.checked,
     waveformPlaneTopSurfaceEnabled: waveformPlaneTopSurfaceToggle.input.checked,
     waveformPlaneTopWireframeEnabled: waveformPlaneTopWireframeToggle.input.checked,
     waveformPlaneTopHeightScale: clamp(
@@ -1005,6 +992,8 @@ export function createAudioPanel(
     });
     handlers.onStarfieldEnabledChange(state.starfieldEnabled);
     handlers.onWaveformPlaneChange(state.waveformPlaneEnabled);
+    handlers.onWaveformPlaneSideEnabledChange("top", state.waveformPlaneTopEnabled);
+    handlers.onWaveformPlaneSideEnabledChange("bottom", state.waveformPlaneBottomEnabled);
     handlers.onWaveformPlaneSurfaceEnabledChange(
       "top",
       state.waveformPlaneTopSurfaceEnabled
@@ -1021,7 +1010,6 @@ export function createAudioPanel(
       "bottom",
       state.waveformPlaneBottomWireframeEnabled
     );
-    handlers.onWaveformPlanePositionModeChange(state.waveformPlanePositionMode);
     handlers.onWaveformPlaneHeightScaleChange("top", state.waveformPlaneTopHeightScale);
     handlers.onWaveformPlaneHeightScaleChange(
       "bottom",
@@ -1133,6 +1121,12 @@ export function createAudioPanel(
     ).toFixed(1);
   });
   waveformPlaneToggle.input.addEventListener("change", () => {
+    syncVisualControlVisibility();
+  });
+  waveformPlaneTopToggle.input.addEventListener("change", () => {
+    syncVisualControlVisibility();
+  });
+  waveformPlaneBottomToggle.input.addEventListener("change", () => {
     syncVisualControlVisibility();
   });
   waveformPlaneTopSurfaceToggle.input.addEventListener("change", () => {
