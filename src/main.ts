@@ -189,6 +189,12 @@ const audioPanel = createAudioPanel(uiHost, {
   onStarfieldEnabledChange(enabled) {
     scene.setStarfieldEnabled(enabled);
   },
+  onStarfieldSpeedChange(speedScale) {
+    scene.setStarfieldSpeedScale(speedScale);
+  },
+  onStarfieldShipMovementResponseChange(responseScale) {
+    scene.setStarfieldShipMovementResponse(responseScale);
+  },
   onWaveformPlaneChange(enabled) {
     scene.setWaveformPlaneEnabled(enabled);
   },
@@ -215,6 +221,9 @@ const audioPanel = createAudioPanel(uiHost, {
   },
   onWaveformPlaneWireframeColorChange(side, colorHex) {
     scene.setWaveformPlaneWireframeColor(side, colorHex);
+  },
+  onWaveformPlaneSurfaceOpacityChange(side, opacity) {
+    scene.setWaveformPlaneSurfaceOpacity(side, opacity);
   },
   onWaveformPlaneSpectrumSmoothingChange(side, smoothingTimeConstant) {
     scene.setWaveformPlaneSpectrumSmoothing(side, smoothingTimeConstant);

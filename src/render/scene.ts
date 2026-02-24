@@ -48,6 +48,8 @@ export type RenderScene = {
 	render: () => void;
 	resize: () => void;
 	setStarfieldEnabled: (enabled: boolean) => void;
+	setStarfieldSpeedScale: (speedScale: number) => void;
+	setStarfieldShipMovementResponse: (responseScale: number) => void;
 	setWaveformPlaneEnabled: (enabled: boolean) => void;
 	setWaveformPlaneSurfaceEnabled: (
 		side: WaveformPlaneSide,
@@ -80,6 +82,10 @@ export type RenderScene = {
 	setWaveformPlaneWireframeColor: (
 		side: WaveformPlaneSide,
 		colorHex: string,
+	) => void;
+	setWaveformPlaneSurfaceOpacity: (
+		side: WaveformPlaneSide,
+		opacity: number,
 	) => void;
 	setWaveformPlaneSpectrumSmoothing: (
 		side: WaveformPlaneSide,
@@ -303,6 +309,8 @@ export function setupScene(container: HTMLElement): RenderScene {
 	scene.add(closeStars.primary);
 	scene.add(closeStars.wrap);
 	let starfieldEnabled = true;
+	let starfieldSpeedScale = STARFIELD_SPEED_SCALE_DEFAULT;
+	let starfieldShipMovementResponse = STARFIELD_SHIP_MOVEMENT_RESPONSE_DEFAULT;
 	const syncStarfieldVisibility = (): void => {
 		for (const layer of starLayers) {
 			layer.primary.visible = starfieldEnabled;
@@ -341,6 +349,7 @@ export function setupScene(container: HTMLElement): RenderScene {
 		meshSet: WaveformPlaneMeshSet;
 		planeEnabled: boolean;
 		surfaceEnabled: boolean;
+		surfaceOpacity: number;
 		wireframeEnabled: boolean;
 		amplitudeDrive: number;
 	};
@@ -406,6 +415,32 @@ export function setupScene(container: HTMLElement): RenderScene {
 			value,
 			WAVEFORM_PLANE_SPECTRUM_SMOOTHING_MIN,
 			WAVEFORM_PLANE_SPECTRUM_SMOOTHING_MAX,
+		);
+	};
+	const normalizeWaveformPlaneSurfaceOpacity = (value: number): number => {
+		if (!Number.isFinite(value)) {
+			return WAVEFORM_PLANE_SURFACE_OPACITY_DEFAULT;
+		}
+		return clamp(
+			value,
+			WAVEFORM_PLANE_SURFACE_OPACITY_MIN,
+			WAVEFORM_PLANE_SURFACE_OPACITY_MAX,
+		);
+	};
+	const normalizeStarfieldSpeedScale = (value: number): number => {
+		if (!Number.isFinite(value)) {
+			return STARFIELD_SPEED_SCALE_DEFAULT;
+		}
+		return clamp(value, STARFIELD_SPEED_SCALE_MIN, STARFIELD_SPEED_SCALE_MAX);
+	};
+	const normalizeStarfieldShipMovementResponse = (value: number): number => {
+		if (!Number.isFinite(value)) {
+			return STARFIELD_SHIP_MOVEMENT_RESPONSE_DEFAULT;
+		}
+		return clamp(
+			value,
+			STARFIELD_SHIP_MOVEMENT_RESPONSE_MIN,
+			STARFIELD_SHIP_MOVEMENT_RESPONSE_MAX,
 		);
 	};
 	const createWaveformPlaneMeshSet = (
@@ -532,6 +567,14 @@ export function setupScene(container: HTMLElement): RenderScene {
 			.multiplyScalar(WAVEFORM_PLANE_SURFACE_EMISSIVE_COLOR_SCALE);
 		state.surfaceMaterial.emissive.copy(state.surfaceEmissiveColor);
 	};
+	const applyWaveformPlaneSurfaceOpacity = (
+		state: WaveformPlaneRenderState,
+		opacity: number,
+	): void => {
+		const normalizedOpacity = normalizeWaveformPlaneSurfaceOpacity(opacity);
+		state.surfaceOpacity = normalizedOpacity;
+		state.surfaceMaterial.opacity = normalizedOpacity;
+	};
 	const applyWaveformPlaneWireframeColor = (
 		state: WaveformPlaneRenderState,
 		colorHex: string,
@@ -589,7 +632,8 @@ export function setupScene(container: HTMLElement): RenderScene {
 			roughness: 0.9,
 			metalness: 0,
 			wireframe: false,
-			transparent: false,
+			transparent: true,
+			opacity: WAVEFORM_PLANE_SURFACE_OPACITY_DEFAULT,
 			side: FrontSide,
 			depthWrite: true,
 			depthTest: true,
@@ -644,6 +688,7 @@ export function setupScene(container: HTMLElement): RenderScene {
 			}),
 			planeEnabled: side === "bottom",
 			surfaceEnabled: WAVEFORM_PLANE_SURFACE_ENABLED_DEFAULT,
+			surfaceOpacity: WAVEFORM_PLANE_SURFACE_OPACITY_DEFAULT,
 			wireframeEnabled: WAVEFORM_PLANE_WIREFRAME_ENABLED_DEFAULT,
 			amplitudeDrive: 0,
 		};
@@ -652,6 +697,10 @@ export function setupScene(container: HTMLElement): RenderScene {
 		applyWaveformPlaneDisplacement(state, state.wireframeMaterial);
 		applyWaveformPlaneDisplacement(state, state.depthMaterial);
 		applyWaveformPlaneSurfaceShading(state, WAVEFORM_PLANE_SURFACE_SHADING_DEFAULT);
+		applyWaveformPlaneSurfaceOpacity(
+			state,
+			WAVEFORM_PLANE_SURFACE_OPACITY_DEFAULT,
+		);
 		return state;
 	};
 	const waveformPlaneStates: Record<WaveformPlaneSide, WaveformPlaneRenderState> =
@@ -810,9 +859,27 @@ export function setupScene(container: HTMLElement): RenderScene {
 			shipMaterial.emissive.set("#0e7490");
 			shipMaterial.emissiveIntensity = 0.08 + intensity * 0.3;
 			if (starfieldEnabled) {
-				updateStarLayer(farStars, starTimeSeconds, snapshot.ship.y);
-				updateStarLayer(nearStars, starTimeSeconds, snapshot.ship.y);
-				updateStarLayer(closeStars, starTimeSeconds, snapshot.ship.y);
+				updateStarLayer(
+					farStars,
+					starTimeSeconds,
+					snapshot.ship.y,
+					starfieldSpeedScale,
+					starfieldShipMovementResponse,
+				);
+				updateStarLayer(
+					nearStars,
+					starTimeSeconds,
+					snapshot.ship.y,
+					starfieldSpeedScale,
+					starfieldShipMovementResponse,
+				);
+				updateStarLayer(
+					closeStars,
+					starTimeSeconds,
+					snapshot.ship.y,
+					starfieldSpeedScale,
+					starfieldShipMovementResponse,
+				);
 			}
 
 			syncWaveformPlaneVisibility();
@@ -1213,6 +1280,13 @@ export function setupScene(container: HTMLElement): RenderScene {
 			starfieldEnabled = enabled;
 			syncStarfieldVisibility();
 		},
+		setStarfieldSpeedScale(speedScale) {
+			starfieldSpeedScale = normalizeStarfieldSpeedScale(speedScale);
+		},
+		setStarfieldShipMovementResponse(responseScale) {
+			starfieldShipMovementResponse =
+				normalizeStarfieldShipMovementResponse(responseScale);
+		},
 		setWaveformPlaneEnabled(enabled) {
 			waveformPlaneEnabled = enabled;
 			syncWaveformPlaneVisibility();
@@ -1264,6 +1338,13 @@ export function setupScene(container: HTMLElement): RenderScene {
 			applyWaveformPlaneWireframeColor(
 				waveformPlaneStates[normalizedSide],
 				colorHex,
+			);
+		},
+		setWaveformPlaneSurfaceOpacity(side, opacity) {
+			const normalizedSide = normalizeWaveformPlaneSide(side);
+			applyWaveformPlaneSurfaceOpacity(
+				waveformPlaneStates[normalizedSide],
+				opacity,
 			);
 		},
 		setWaveformPlaneSpectrumSmoothing(side, smoothingTimeConstant) {
@@ -1865,10 +1946,19 @@ const WAVEFORM_PLANE_SURFACE_ENABLED_DEFAULT = false;
 const WAVEFORM_PLANE_WIREFRAME_ENABLED_DEFAULT = true;
 const WAVEFORM_PLANE_DEFAULT_SURFACE_COLOR_HEX = "#f4f4f4";
 const WAVEFORM_PLANE_DEFAULT_WIREFRAME_COLOR_HEX = "#f4f4f4";
+const WAVEFORM_PLANE_SURFACE_OPACITY_DEFAULT = 1;
+const WAVEFORM_PLANE_SURFACE_OPACITY_MIN = 0;
+const WAVEFORM_PLANE_SURFACE_OPACITY_MAX = 1;
 const WAVEFORM_PLANE_SURFACE_EMISSIVE_COLOR_SCALE = 0.085;
 const WAVEFORM_PLANE_WIREFRAME_EMISSIVE_COLOR_SCALE = 0.085;
 const WAVEFORM_SCENE_FOG_NEAR = 52;
 const WAVEFORM_SCENE_FOG_FAR = 92;
+const STARFIELD_SPEED_SCALE_DEFAULT = 1;
+const STARFIELD_SPEED_SCALE_MIN = 0;
+const STARFIELD_SPEED_SCALE_MAX = 3;
+const STARFIELD_SHIP_MOVEMENT_RESPONSE_DEFAULT = 1;
+const STARFIELD_SHIP_MOVEMENT_RESPONSE_MIN = 0;
+const STARFIELD_SHIP_MOVEMENT_RESPONSE_MAX = 2;
 const WAVEFORM_PLANE_TIME_WINDOW_SECONDS = 2.4;
 const PURPLE_PULSE_TRAVEL_DASH_RATIO = 0.9;
 const PURPLE_PULSE_MIN_DURATION_SECONDS = 0.5;
@@ -2001,10 +2091,12 @@ function updateStarLayer(
 	layer: StarLayer,
 	simTimeSeconds: number,
 	shipY: number,
+	speedScale: number,
+	shipMovementResponse: number,
 ): void {
-	const traveled = (simTimeSeconds * layer.speed) % layer.loopWidth;
+	const traveled = (simTimeSeconds * layer.speed * speedScale) % layer.loopWidth;
 	const baseX = -traveled;
-	const parallaxYOffset = shipY * layer.parallaxFactor;
+	const parallaxYOffset = shipY * layer.parallaxFactor * shipMovementResponse;
 	const driftY =
 		Math.sin(simTimeSeconds * (0.9 + layer.parallaxFactor)) *
 		layer.parallaxFactor *

@@ -21,6 +21,8 @@ type AudioPanelHandlers = {
   onStartRun: (analysis: AudioAnalysisResult, seed: number) => void | Promise<void>;
   onCombatConfigChange: (config: CombatConfigPatch) => void;
   onStarfieldEnabledChange: (enabled: boolean) => void;
+  onStarfieldSpeedChange: (speedScale: number) => void;
+  onStarfieldShipMovementResponseChange: (responseScale: number) => void;
   onWaveformPlaneChange: (enabled: boolean) => void;
   onWaveformPlaneSurfaceEnabledChange: (
     side: WaveformPlaneSide,
@@ -54,6 +56,10 @@ type AudioPanelHandlers = {
     side: WaveformPlaneSide,
     colorHex: string
   ) => void;
+  onWaveformPlaneSurfaceOpacityChange: (
+    side: WaveformPlaneSide,
+    opacity: number
+  ) => void;
   onWaveformPlaneSpectrumSmoothingChange: (
     side: WaveformPlaneSide,
     smoothingTimeConstant: number
@@ -84,10 +90,13 @@ type UiCombatState = {
   fireScale: number;
   enemyProjectileStyle: EnemyProjectileStyle;
   starfieldEnabled: boolean;
+  starfieldSpeedScale: number;
+  starfieldShipMovementResponse: number;
   waveformPlaneEnabled: boolean;
   waveformPlaneTopEnabled: boolean;
   waveformPlaneBottomEnabled: boolean;
   waveformPlaneTopSurfaceEnabled: boolean;
+  waveformPlaneTopSurfaceOpacity: number;
   waveformPlaneTopWireframeEnabled: boolean;
   waveformPlaneTopHeightScale: number;
   waveformPlaneTopDistortionAlgorithm: WaveformPlaneDistortionAlgorithm;
@@ -96,6 +105,7 @@ type UiCombatState = {
   waveformPlaneTopSurfaceColor: string;
   waveformPlaneTopWireframeColor: string;
   waveformPlaneBottomSurfaceEnabled: boolean;
+  waveformPlaneBottomSurfaceOpacity: number;
   waveformPlaneBottomWireframeEnabled: boolean;
   waveformPlaneBottomHeightScale: number;
   waveformPlaneBottomDistortionAlgorithm: WaveformPlaneDistortionAlgorithm;
@@ -110,6 +120,15 @@ const DEFAULT_SPECTRUM_SMOOTHING_TIME_CONSTANT = 0.5;
 const DEFAULT_WAVEFORM_PLANE_SURFACE_SHADING: WaveformPlaneSurfaceShading = "smooth";
 const DEFAULT_WAVEFORM_PLANE_SURFACE_COLOR = "#f4f4f4";
 const DEFAULT_WAVEFORM_PLANE_WIREFRAME_COLOR = "#f4f4f4";
+const DEFAULT_WAVEFORM_PLANE_SURFACE_OPACITY = 1;
+const DEFAULT_STARFIELD_SPEED_SCALE = 1;
+const DEFAULT_STARFIELD_SHIP_MOVEMENT_RESPONSE = 1;
+const STARFIELD_SPEED_SCALE_MIN = 0;
+const STARFIELD_SPEED_SCALE_MAX = 3;
+const STARFIELD_SHIP_MOVEMENT_RESPONSE_MIN = 0;
+const STARFIELD_SHIP_MOVEMENT_RESPONSE_MAX = 2;
+const WAVEFORM_PLANE_SURFACE_OPACITY_MIN = 0;
+const WAVEFORM_PLANE_SURFACE_OPACITY_MAX = 1;
 
 const DEFAULT_COMBAT_STATE: UiCombatState = {
   blueLaser: true,
@@ -122,10 +141,13 @@ const DEFAULT_COMBAT_STATE: UiCombatState = {
   fireScale: 1,
   enemyProjectileStyle: "balls",
   starfieldEnabled: true,
+  starfieldSpeedScale: DEFAULT_STARFIELD_SPEED_SCALE,
+  starfieldShipMovementResponse: DEFAULT_STARFIELD_SHIP_MOVEMENT_RESPONSE,
   waveformPlaneEnabled: true,
   waveformPlaneTopEnabled: false,
   waveformPlaneBottomEnabled: true,
   waveformPlaneTopSurfaceEnabled: false,
+  waveformPlaneTopSurfaceOpacity: DEFAULT_WAVEFORM_PLANE_SURFACE_OPACITY,
   waveformPlaneTopWireframeEnabled: true,
   waveformPlaneTopHeightScale: DEFAULT_WAVEFORM_PLANE_HEIGHT_SCALE,
   waveformPlaneTopDistortionAlgorithm: WAVEFORM_PLANE_DISTORTION_DEFAULT,
@@ -134,6 +156,7 @@ const DEFAULT_COMBAT_STATE: UiCombatState = {
   waveformPlaneTopSurfaceColor: DEFAULT_WAVEFORM_PLANE_SURFACE_COLOR,
   waveformPlaneTopWireframeColor: DEFAULT_WAVEFORM_PLANE_WIREFRAME_COLOR,
   waveformPlaneBottomSurfaceEnabled: false,
+  waveformPlaneBottomSurfaceOpacity: DEFAULT_WAVEFORM_PLANE_SURFACE_OPACITY,
   waveformPlaneBottomWireframeEnabled: true,
   waveformPlaneBottomHeightScale: DEFAULT_WAVEFORM_PLANE_HEIGHT_SCALE,
   waveformPlaneBottomDistortionAlgorithm: WAVEFORM_PLANE_DISTORTION_DEFAULT,
@@ -311,11 +334,35 @@ export function createAudioPanel(
   visualsGroup.appendChild(visualsLegend);
 
   const starfieldToggle = createModalToggle("Starfield", true);
+  const starfieldSpeedScale = createModalRange(
+    "Speed",
+    0,
+    3,
+    0.01,
+    DEFAULT_STARFIELD_SPEED_SCALE
+  );
+  const starfieldShipMovementResponse = createModalRange(
+    "Ship Movement Response",
+    0,
+    2,
+    0.01,
+    DEFAULT_STARFIELD_SHIP_MOVEMENT_RESPONSE
+  );
+  const starfieldOptions = document.createElement("div");
+  starfieldOptions.className = "audio-settings-modal__nested audio-settings-modal__nested--child";
+  starfieldOptions.append(starfieldSpeedScale.root, starfieldShipMovementResponse.root);
   const waveformPlaneToggle = createModalToggle("Waveform Plane", true);
   const waveformPlaneTopToggle = createModalToggle("Top Plane", false);
   const waveformPlaneBottomToggle = createModalToggle("Bottom Plane", true);
   const waveformPlaneTopSurfaceToggle = createModalToggle("Surface", false);
   const waveformPlaneTopWireframeToggle = createModalToggle("Wireframe", true);
+  const waveformPlaneTopSurfaceOpacity = createModalRange(
+    "Opacity",
+    0,
+    1,
+    0.01,
+    DEFAULT_WAVEFORM_PLANE_SURFACE_OPACITY
+  );
   const waveformPlaneTopHeightScale = createModalRange(
     "Max Height",
     2.5,
@@ -350,6 +397,13 @@ export function createAudioPanel(
   );
   const waveformPlaneBottomSurfaceToggle = createModalToggle("Surface", false);
   const waveformPlaneBottomWireframeToggle = createModalToggle("Wireframe", true);
+  const waveformPlaneBottomSurfaceOpacity = createModalRange(
+    "Opacity",
+    0,
+    1,
+    0.01,
+    DEFAULT_WAVEFORM_PLANE_SURFACE_OPACITY
+  );
   const waveformPlaneBottomHeightScale = createModalRange(
     "Max Height",
     2.5,
@@ -391,7 +445,8 @@ export function createAudioPanel(
     "audio-settings-modal__nested audio-settings-modal__nested--child";
   waveformPlaneTopSurfaceOptions.append(
     waveformPlaneTopSurfaceShading.root,
-    waveformPlaneTopSurfaceColor.root
+    waveformPlaneTopSurfaceColor.root,
+    waveformPlaneTopSurfaceOpacity.root
   );
 
   const waveformPlaneTopWireframeOptions = document.createElement("div");
@@ -417,7 +472,8 @@ export function createAudioPanel(
     "audio-settings-modal__nested audio-settings-modal__nested--child";
   waveformPlaneBottomSurfaceOptions.append(
     waveformPlaneBottomSurfaceShading.root,
-    waveformPlaneBottomSurfaceColor.root
+    waveformPlaneBottomSurfaceColor.root,
+    waveformPlaneBottomSurfaceOpacity.root
   );
 
   const waveformPlaneBottomWireframeOptions = document.createElement("div");
@@ -450,6 +506,7 @@ export function createAudioPanel(
   };
   const syncVisualControlVisibility = (): void => {
     const planeEnabled = waveformPlaneToggle.input.checked;
+    const starfieldEnabled = starfieldToggle.input.checked;
     const topPlaneEnabled = planeEnabled && waveformPlaneTopToggle.input.checked;
     const bottomPlaneEnabled = planeEnabled && waveformPlaneBottomToggle.input.checked;
     const topSurfaceEnabled = topPlaneEnabled && waveformPlaneTopSurfaceToggle.input.checked;
@@ -458,6 +515,7 @@ export function createAudioPanel(
       bottomPlaneEnabled && waveformPlaneBottomSurfaceToggle.input.checked;
     const bottomWireframeEnabled =
       bottomPlaneEnabled && waveformPlaneBottomWireframeToggle.input.checked;
+    setControlVisible(starfieldOptions, starfieldEnabled);
     setControlVisible(waveformPlaneOptions, planeEnabled);
     setControlVisible(waveformPlaneTopOptions, topPlaneEnabled);
     setControlVisible(waveformPlaneBottomOptions, bottomPlaneEnabled);
@@ -470,7 +528,12 @@ export function createAudioPanel(
     );
   };
 
-  visualsGroup.append(starfieldToggle.root, waveformPlaneToggle.root, waveformPlaneOptions);
+  visualsGroup.append(
+    starfieldToggle.root,
+    starfieldOptions,
+    waveformPlaneToggle.root,
+    waveformPlaneOptions
+  );
 
   settingsForm.append(shipGroup, enemyGroup, visualsGroup);
 
@@ -830,6 +893,12 @@ export function createAudioPanel(
     enemyGreenTriangleToggle.input.checked = state.greenTriangleEnabled;
     enemyProjectileLaserToggle.input.checked = state.enemyProjectileStyle === "lasers";
     starfieldToggle.input.checked = state.starfieldEnabled;
+    starfieldSpeedScale.input.value = state.starfieldSpeedScale.toFixed(2);
+    starfieldShipMovementResponse.input.value =
+      state.starfieldShipMovementResponse.toFixed(2);
+    starfieldSpeedScale.value.textContent = state.starfieldSpeedScale.toFixed(2);
+    starfieldShipMovementResponse.value.textContent =
+      state.starfieldShipMovementResponse.toFixed(2);
     waveformPlaneToggle.input.checked = state.waveformPlaneEnabled;
     waveformPlaneTopToggle.input.checked = state.waveformPlaneTopEnabled;
     waveformPlaneBottomToggle.input.checked = state.waveformPlaneBottomEnabled;
@@ -838,6 +907,9 @@ export function createAudioPanel(
     enemySpawnScale.value.textContent = `${state.spawnScale.toFixed(2)}x`;
     enemyFireScale.value.textContent = `${state.fireScale.toFixed(2)}x`;
     waveformPlaneTopSurfaceToggle.input.checked = state.waveformPlaneTopSurfaceEnabled;
+    waveformPlaneTopSurfaceOpacity.input.value = state.waveformPlaneTopSurfaceOpacity.toFixed(2);
+    waveformPlaneTopSurfaceOpacity.value.textContent =
+      state.waveformPlaneTopSurfaceOpacity.toFixed(2);
     waveformPlaneTopWireframeToggle.input.checked = state.waveformPlaneTopWireframeEnabled;
     waveformPlaneTopHeightScale.input.value = state.waveformPlaneTopHeightScale.toFixed(1);
     waveformPlaneTopHeightScale.value.textContent = state.waveformPlaneTopHeightScale.toFixed(1);
@@ -865,6 +937,10 @@ export function createAudioPanel(
     ).toUpperCase();
     waveformPlaneBottomSurfaceToggle.input.checked =
       state.waveformPlaneBottomSurfaceEnabled;
+    waveformPlaneBottomSurfaceOpacity.input.value =
+      state.waveformPlaneBottomSurfaceOpacity.toFixed(2);
+    waveformPlaneBottomSurfaceOpacity.value.textContent =
+      state.waveformPlaneBottomSurfaceOpacity.toFixed(2);
     waveformPlaneBottomWireframeToggle.input.checked =
       state.waveformPlaneBottomWireframeEnabled;
     waveformPlaneBottomHeightScale.input.value =
@@ -909,10 +985,17 @@ export function createAudioPanel(
     fireScale: Number(enemyFireScale.input.value),
     enemyProjectileStyle: enemyProjectileLaserToggle.input.checked ? "lasers" : "balls",
     starfieldEnabled: starfieldToggle.input.checked,
+    starfieldSpeedScale: normalizeStarfieldSpeedScale(Number(starfieldSpeedScale.input.value)),
+    starfieldShipMovementResponse: normalizeStarfieldShipMovementResponse(
+      Number(starfieldShipMovementResponse.input.value)
+    ),
     waveformPlaneEnabled: waveformPlaneToggle.input.checked,
     waveformPlaneTopEnabled: waveformPlaneTopToggle.input.checked,
     waveformPlaneBottomEnabled: waveformPlaneBottomToggle.input.checked,
     waveformPlaneTopSurfaceEnabled: waveformPlaneTopSurfaceToggle.input.checked,
+    waveformPlaneTopSurfaceOpacity: normalizeWaveformPlaneSurfaceOpacity(
+      Number(waveformPlaneTopSurfaceOpacity.input.value)
+    ),
     waveformPlaneTopWireframeEnabled: waveformPlaneTopWireframeToggle.input.checked,
     waveformPlaneTopHeightScale: clamp(
       Number.isFinite(Number(waveformPlaneTopHeightScale.input.value))
@@ -940,6 +1023,9 @@ export function createAudioPanel(
       DEFAULT_WAVEFORM_PLANE_WIREFRAME_COLOR
     ),
     waveformPlaneBottomSurfaceEnabled: waveformPlaneBottomSurfaceToggle.input.checked,
+    waveformPlaneBottomSurfaceOpacity: normalizeWaveformPlaneSurfaceOpacity(
+      Number(waveformPlaneBottomSurfaceOpacity.input.value)
+    ),
     waveformPlaneBottomWireframeEnabled: waveformPlaneBottomWireframeToggle.input.checked,
     waveformPlaneBottomHeightScale: clamp(
       Number.isFinite(Number(waveformPlaneBottomHeightScale.input.value))
@@ -991,6 +1077,8 @@ export function createAudioPanel(
       }
     });
     handlers.onStarfieldEnabledChange(state.starfieldEnabled);
+    handlers.onStarfieldSpeedChange(state.starfieldSpeedScale);
+    handlers.onStarfieldShipMovementResponseChange(state.starfieldShipMovementResponse);
     handlers.onWaveformPlaneChange(state.waveformPlaneEnabled);
     handlers.onWaveformPlaneSideEnabledChange("top", state.waveformPlaneTopEnabled);
     handlers.onWaveformPlaneSideEnabledChange("bottom", state.waveformPlaneBottomEnabled);
@@ -998,6 +1086,7 @@ export function createAudioPanel(
       "top",
       state.waveformPlaneTopSurfaceEnabled
     );
+    handlers.onWaveformPlaneSurfaceOpacityChange("top", state.waveformPlaneTopSurfaceOpacity);
     handlers.onWaveformPlaneWireframeEnabledChange(
       "top",
       state.waveformPlaneTopWireframeEnabled
@@ -1005,6 +1094,10 @@ export function createAudioPanel(
     handlers.onWaveformPlaneSurfaceEnabledChange(
       "bottom",
       state.waveformPlaneBottomSurfaceEnabled
+    );
+    handlers.onWaveformPlaneSurfaceOpacityChange(
+      "bottom",
+      state.waveformPlaneBottomSurfaceOpacity
     );
     handlers.onWaveformPlaneWireframeEnabledChange(
       "bottom",
@@ -1110,6 +1203,16 @@ export function createAudioPanel(
   enemyFireScale.input.addEventListener("input", () => {
     enemyFireScale.value.textContent = `${Number(enemyFireScale.input.value).toFixed(2)}x`;
   });
+  starfieldSpeedScale.input.addEventListener("input", () => {
+    const normalized = normalizeStarfieldSpeedScale(Number(starfieldSpeedScale.input.value));
+    starfieldSpeedScale.value.textContent = normalized.toFixed(2);
+  });
+  starfieldShipMovementResponse.input.addEventListener("input", () => {
+    const normalized = normalizeStarfieldShipMovementResponse(
+      Number(starfieldShipMovementResponse.input.value)
+    );
+    starfieldShipMovementResponse.value.textContent = normalized.toFixed(2);
+  });
   waveformPlaneTopHeightScale.input.addEventListener("input", () => {
     waveformPlaneTopHeightScale.value.textContent = Number(
       waveformPlaneTopHeightScale.input.value
@@ -1121,6 +1224,9 @@ export function createAudioPanel(
     ).toFixed(1);
   });
   waveformPlaneToggle.input.addEventListener("change", () => {
+    syncVisualControlVisibility();
+  });
+  starfieldToggle.input.addEventListener("change", () => {
     syncVisualControlVisibility();
   });
   waveformPlaneTopToggle.input.addEventListener("change", () => {
@@ -1177,6 +1283,18 @@ export function createAudioPanel(
       waveformPlaneBottomWireframeColor.input.value,
       DEFAULT_WAVEFORM_PLANE_WIREFRAME_COLOR
     ).toUpperCase();
+  });
+  waveformPlaneTopSurfaceOpacity.input.addEventListener("input", () => {
+    const normalized = normalizeWaveformPlaneSurfaceOpacity(
+      Number(waveformPlaneTopSurfaceOpacity.input.value)
+    );
+    waveformPlaneTopSurfaceOpacity.value.textContent = normalized.toFixed(2);
+  });
+  waveformPlaneBottomSurfaceOpacity.input.addEventListener("input", () => {
+    const normalized = normalizeWaveformPlaneSurfaceOpacity(
+      Number(waveformPlaneBottomSurfaceOpacity.input.value)
+    );
+    waveformPlaneBottomSurfaceOpacity.value.textContent = normalized.toFixed(2);
   });
 
   settingsSaveButton.addEventListener("click", async () => {
@@ -1663,6 +1781,31 @@ function normalizeSpectrumSmoothingTimeConstant(value: number): number {
     return DEFAULT_SPECTRUM_SMOOTHING_TIME_CONSTANT;
   }
   return clamp(value, 0, 0.95);
+}
+
+function normalizeWaveformPlaneSurfaceOpacity(value: number): number {
+  if (!Number.isFinite(value)) {
+    return DEFAULT_WAVEFORM_PLANE_SURFACE_OPACITY;
+  }
+  return clamp(value, WAVEFORM_PLANE_SURFACE_OPACITY_MIN, WAVEFORM_PLANE_SURFACE_OPACITY_MAX);
+}
+
+function normalizeStarfieldSpeedScale(value: number): number {
+  if (!Number.isFinite(value)) {
+    return DEFAULT_STARFIELD_SPEED_SCALE;
+  }
+  return clamp(value, STARFIELD_SPEED_SCALE_MIN, STARFIELD_SPEED_SCALE_MAX);
+}
+
+function normalizeStarfieldShipMovementResponse(value: number): number {
+  if (!Number.isFinite(value)) {
+    return DEFAULT_STARFIELD_SHIP_MOVEMENT_RESPONSE;
+  }
+  return clamp(
+    value,
+    STARFIELD_SHIP_MOVEMENT_RESPONSE_MIN,
+    STARFIELD_SHIP_MOVEMENT_RESPONSE_MAX
+  );
 }
 
 function db2mag(val: number): number {
