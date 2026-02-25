@@ -221,6 +221,8 @@ export function setupScene(container: HTMLElement): RenderScene {
 	const cueProjectileEmissive = new Color("#f59e0b");
 	const primaryProjectileColor = new Color("#22d3ee");
 	const primaryProjectileEmissive = new Color("#06b6d4");
+	const flakProjectileColor = new Color("#fb923c");
+	const flakProjectileEmissive = new Color("#ea580c");
 	const projectileGroup = new Group();
 	scene.add(projectileGroup);
 	const projectileMeshes: Mesh[] = [];
@@ -977,7 +979,12 @@ export function setupScene(container: HTMLElement): RenderScene {
 				mesh.position.set(projectile.x, projectile.y, projectile.z);
 				mesh.rotation.z = projectile.rotationZ;
 				const material = mesh.material as MeshStandardMaterial;
-				if (projectile.isCueShot) {
+				if (projectile.isFlak) {
+					material.color.copy(flakProjectileColor);
+					material.emissive.copy(flakProjectileEmissive);
+					material.emissiveIntensity = 1.0;
+					mesh.scale.set(0.7, 1.2, 1.2);
+				} else if (projectile.isCueShot) {
 					material.color.copy(cueProjectileColor);
 					material.emissive.copy(cueProjectileEmissive);
 					material.emissiveIntensity = 1.2;

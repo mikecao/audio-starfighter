@@ -5,6 +5,7 @@ export type ShipWeaponsConfig = {
   yellowLaser: boolean;
   greenLaser: boolean;
   purpleMissile: boolean;
+  orangeFlak: boolean;
 };
 
 export type EnemyProjectileStyle = "balls" | "lasers";
@@ -59,7 +60,8 @@ export const DEFAULT_COMBAT_CONFIG: CombatConfig = {
     blueLaser: true,
     yellowLaser: true,
     greenLaser: true,
-    purpleMissile: false
+    purpleMissile: false,
+    orangeFlak: false
   },
   enemyRoster: {
     enabledArchetypes: ["redCube"],
@@ -77,7 +79,8 @@ export function normalizeCombatConfig(
     blueLaser: patch?.shipWeapons?.blueLaser ?? base.shipWeapons.blueLaser,
     yellowLaser: patch?.shipWeapons?.yellowLaser ?? base.shipWeapons.yellowLaser,
     greenLaser: patch?.shipWeapons?.greenLaser ?? base.shipWeapons.greenLaser,
-    purpleMissile: patch?.shipWeapons?.purpleMissile ?? base.shipWeapons.purpleMissile
+    purpleMissile: patch?.shipWeapons?.purpleMissile ?? base.shipWeapons.purpleMissile,
+    orangeFlak: patch?.shipWeapons?.orangeFlak ?? base.shipWeapons.orangeFlak
   };
 
   const rosterEnabled =

@@ -84,6 +84,7 @@ type UiCombatState = {
   yellowLaser: boolean;
   greenLaser: boolean;
   purpleMissile: boolean;
+  orangeFlak: boolean;
   redCubeEnabled: boolean;
   greenTriangleEnabled: boolean;
   spawnScale: number;
@@ -135,6 +136,7 @@ const DEFAULT_COMBAT_STATE: UiCombatState = {
   yellowLaser: true,
   greenLaser: true,
   purpleMissile: false,
+  orangeFlak: false,
   redCubeEnabled: true,
   greenTriangleEnabled: false,
   spawnScale: 1,
@@ -299,11 +301,13 @@ export function createAudioPanel(
   const shipCueToggle = createModalToggle("Yellow Laser", true);
   const shipCleanupToggle = createModalToggle("Green Laser", true);
   const shipPurpleToggle = createModalToggle("Purple Missile", false);
+  const shipOrangeToggle = createModalToggle("Orange Flak", false);
   shipGroup.append(
     shipPrimaryToggle.root,
     shipCueToggle.root,
     shipCleanupToggle.root,
-    shipPurpleToggle.root
+    shipPurpleToggle.root,
+    shipOrangeToggle.root
   );
 
   const enemyGroup = document.createElement("fieldset");
@@ -889,6 +893,7 @@ export function createAudioPanel(
     shipCueToggle.input.checked = state.yellowLaser;
     shipCleanupToggle.input.checked = state.greenLaser;
     shipPurpleToggle.input.checked = state.purpleMissile;
+    shipOrangeToggle.input.checked = state.orangeFlak;
     enemyRedCubeToggle.input.checked = state.redCubeEnabled;
     enemyGreenTriangleToggle.input.checked = state.greenTriangleEnabled;
     enemyProjectileLaserToggle.input.checked = state.enemyProjectileStyle === "lasers";
@@ -979,6 +984,7 @@ export function createAudioPanel(
     yellowLaser: shipCueToggle.input.checked,
     greenLaser: shipCleanupToggle.input.checked,
     purpleMissile: shipPurpleToggle.input.checked,
+    orangeFlak: shipOrangeToggle.input.checked,
     redCubeEnabled: enemyRedCubeToggle.input.checked,
     greenTriangleEnabled: enemyGreenTriangleToggle.input.checked,
     spawnScale: Number(enemySpawnScale.input.value),
@@ -1067,7 +1073,8 @@ export function createAudioPanel(
         blueLaser: state.blueLaser,
         yellowLaser: state.yellowLaser,
         greenLaser: state.greenLaser,
-        purpleMissile: state.purpleMissile
+        purpleMissile: state.purpleMissile,
+        orangeFlak: state.orangeFlak
       },
       enemyRoster: {
         enabledArchetypes,
@@ -1158,6 +1165,9 @@ export function createAudioPanel(
       return true;
     }
     if (previous.purpleMissile !== next.purpleMissile) {
+      return true;
+    }
+    if (previous.orangeFlak !== next.orangeFlak) {
       return true;
     }
     if (previous.redCubeEnabled !== next.redCubeEnabled) {
