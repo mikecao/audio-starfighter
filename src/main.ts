@@ -62,7 +62,7 @@ uiHost.className = "ui-host";
 app.appendChild(uiHost);
 
 const scene = setupScene(sceneHost);
-scene.setWaveformPlaneEnabled(true);
+scene.setWaveformPlaneEnabled(false);
 const demoSpectrumTimeline = createDemoSpectrumTimeline();
 scene.setWaveformPlaneSpectrumTimeline(demoSpectrumTimeline);
 const sim = createSimulation();
@@ -186,17 +186,15 @@ const audioPanel = createAudioPanel(uiHost, {
     currentCombatConfig = config;
     sim.setCombatConfig(currentCombatConfig);
   },
-  onStarfieldEnabledChange(enabled) {
-    scene.setStarfieldEnabled(enabled);
+  onStageChange(stage) {
+    scene.setStarfieldEnabled(stage === "starfield");
+    scene.setWaveformPlaneEnabled(stage === "waveformPlane");
   },
   onStarfieldSpeedChange(speedScale) {
     scene.setStarfieldSpeedScale(speedScale);
   },
   onStarfieldShipMovementResponseChange(responseScale) {
     scene.setStarfieldShipMovementResponse(responseScale);
-  },
-  onWaveformPlaneChange(enabled) {
-    scene.setWaveformPlaneEnabled(enabled);
   },
   onWaveformPlaneSurfaceEnabledChange(side, enabled) {
     scene.setWaveformPlaneSurfaceEnabled(side, enabled);

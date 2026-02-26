@@ -31,7 +31,7 @@ import {
 	normalizeExplosionPower,
 	updateExplosionBurst,
 	type ExplosionBurst,
-} from "./environment/explosions";
+} from "./effects/explosions";
 import {
 	bindPurplePulseRenderable,
 	clearPurplePulseRenderable,
@@ -46,7 +46,7 @@ import {
 	setDashRatio,
 	syncPurplePulsePool,
 	type PurplePulseRenderable,
-} from "./environment/purplePulses";
+} from "./effects/purplePulses";
 import {
 	createStarLayer,
 	normalizeStarfieldShipMovementResponse,
@@ -55,13 +55,13 @@ import {
 	STARFIELD_SPEED_SCALE_DEFAULT,
 	updateStarLayer,
 	type StarLayer,
-} from "./environment/starfield";
+} from "./stages/starfield";
 import {
 	fillWaveformTextureDataWithSilence,
 	populateSpectrumTimelineTexture,
 	populateSpectrumTimelineTextureFromWaveform,
 	sampleWaveformLinear,
-} from "./environment/waveformTexture";
+} from "./stages/waveformTexture";
 import {
 	createEnemyRenderer,
 	updateEnemyRenderer,
@@ -676,7 +676,7 @@ export function setupScene(container: HTMLElement): RenderScene {
 		scene.add(planeState.meshSet.wireframeMesh);
 	}
 
-	let waveformPlaneEnabled = true;
+	let waveformPlaneEnabled = false;
 	let waveformPlaneHasData = true;
 	let waveformPlaneTimeSeconds = 0;
 	const syncWaveformPlaneVisibility = (): void => {
