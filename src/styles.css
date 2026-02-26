@@ -336,9 +336,9 @@ body,
 }
 
 .audio-settings-modal {
-  width: min(520px, 100%);
+  width: min(860px, 100%);
   max-height: calc(100dvh - 2rem);
-  overflow-y: auto;
+  overflow: hidden;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
   background: rgb(16 31 57 / 96%);
@@ -348,10 +348,13 @@ body,
     0 0 0 1px rgb(160 188 236 / 18%),
     inset 0 1px 0 rgb(206 225 255 / 6%);
   padding: 0.86rem;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 0.9rem;
 }
 
 .audio-settings-modal__header {
-  margin-bottom: 0.95rem;
+  margin-bottom: 0;
 }
 
 .audio-settings-modal__title {
@@ -366,6 +369,51 @@ body,
 .audio-settings-modal__form {
   display: grid;
   gap: 0.9rem;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 0.1rem;
+}
+
+.audio-settings-modal__layout {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 160px minmax(0, 1fr);
+  gap: 0.9rem;
+}
+
+.audio-settings-modal__sidebar {
+  min-height: 0;
+  border-right: 1px solid rgb(118 146 198 / 26%);
+  padding-right: 0.75rem;
+}
+
+.audio-settings-modal__nav {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.audio-settings-modal__nav-button {
+  border: 0;
+  border-radius: 0.35rem;
+  background: rgb(13 26 49 / 86%);
+  color: #cfe4ff;
+  font-family: var(--font-mono);
+  font-size: 0.74rem;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  text-align: left;
+  padding: 0.36rem 0.5rem;
+  cursor: pointer;
+  transition: background 130ms ease-out;
+}
+
+.audio-settings-modal__nav-button:hover {
+  background: rgb(24 43 75 / 92%);
+}
+
+.audio-settings-modal__nav-button:focus-visible {
+  outline: 1px solid rgb(150 197 255 / 86%);
+  outline-offset: 1px;
 }
 
 .audio-settings-modal__group {
@@ -478,7 +526,7 @@ body,
 }
 
 .audio-settings-modal__footer {
-  margin-top: 1rem;
+  margin-top: 0;
   display: flex;
   justify-content: flex-end;
   gap: 0.55rem;
@@ -754,5 +802,34 @@ body,
 
   .event-timeline__canvas {
     height: 68px;
+  }
+
+  .audio-settings-modal {
+    width: min(660px, 100%);
+  }
+}
+
+@media (max-width: 720px) {
+  .audio-settings-modal__layout {
+    grid-template-columns: 1fr;
+    gap: 0.7rem;
+  }
+
+  .audio-settings-modal__sidebar {
+    border-right: 0;
+    border-bottom: 1px solid rgb(118 146 198 / 24%);
+    padding-right: 0;
+    padding-bottom: 0.6rem;
+  }
+
+  .audio-settings-modal__nav {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+  }
+
+  .audio-settings-modal__nav-button {
+    flex: 1 1 30%;
+    text-align: center;
   }
 }

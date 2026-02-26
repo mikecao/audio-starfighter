@@ -284,14 +284,24 @@ export function createAudioPanel(
   settingsHeader.className = "audio-settings-modal__header";
   const settingsTitle = document.createElement("h3");
   settingsTitle.className = "audio-settings-modal__title";
-  settingsTitle.textContent = "Combat Settings";
+  settingsTitle.textContent = "Settings";
   settingsHeader.appendChild(settingsTitle);
+
+  const settingsLayout = document.createElement("div");
+  settingsLayout.className = "audio-settings-modal__layout";
+
+  const settingsSidebar = document.createElement("aside");
+  settingsSidebar.className = "audio-settings-modal__sidebar";
+  const settingsNav = document.createElement("nav");
+  settingsNav.className = "audio-settings-modal__nav";
+  settingsSidebar.appendChild(settingsNav);
 
   const settingsForm = document.createElement("div");
   settingsForm.className = "audio-settings-modal__form";
 
   const shipGroup = document.createElement("fieldset");
   shipGroup.className = "audio-settings-modal__group";
+  shipGroup.id = "audio-settings-section-ship";
   const shipLegend = document.createElement("legend");
   shipLegend.className = "audio-settings-modal__legend";
   shipLegend.textContent = "Ship";
@@ -312,6 +322,7 @@ export function createAudioPanel(
 
   const enemyGroup = document.createElement("fieldset");
   enemyGroup.className = "audio-settings-modal__group";
+  enemyGroup.id = "audio-settings-section-enemies";
   const enemyLegend = document.createElement("legend");
   enemyLegend.className = "audio-settings-modal__legend";
   enemyLegend.textContent = "Enemies";
@@ -332,6 +343,7 @@ export function createAudioPanel(
 
   const visualsGroup = document.createElement("fieldset");
   visualsGroup.className = "audio-settings-modal__group";
+  visualsGroup.id = "audio-settings-section-visuals";
   const visualsLegend = document.createElement("legend");
   visualsLegend.className = "audio-settings-modal__legend";
   visualsLegend.textContent = "Visuals";
@@ -541,6 +553,25 @@ export function createAudioPanel(
 
   settingsForm.append(shipGroup, enemyGroup, visualsGroup);
 
+  const settingsNavItems: Array<{ label: string; target: HTMLElement }> = [
+    { label: "Ship", target: shipGroup },
+    { label: "Enemies", target: enemyGroup },
+    { label: "Visuals", target: visualsGroup }
+  ];
+
+  for (const item of settingsNavItems) {
+    const navButton = document.createElement("button");
+    navButton.type = "button";
+    navButton.className = "audio-settings-modal__nav-button";
+    navButton.textContent = item.label;
+    navButton.addEventListener("click", () => {
+      item.target.scrollIntoView({ behavior: "smooth", block: "start", inline: "nearest" });
+    });
+    settingsNav.appendChild(navButton);
+  }
+
+  settingsLayout.append(settingsSidebar, settingsForm);
+
   const settingsFooter = document.createElement("div");
   settingsFooter.className = "audio-settings-modal__footer";
   const settingsCancelButton = document.createElement("button");
@@ -557,7 +588,7 @@ export function createAudioPanel(
   settingsSaveButton.textContent = "Save";
   settingsFooter.append(settingsResetButton, settingsCancelButton, settingsSaveButton);
 
-  settingsModal.append(settingsHeader, settingsForm, settingsFooter);
+  settingsModal.append(settingsHeader, settingsLayout, settingsFooter);
   settingsBackdrop.appendChild(settingsModal);
   container.appendChild(settingsBackdrop);
 
