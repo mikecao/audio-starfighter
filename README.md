@@ -4,6 +4,10 @@ Audio Starfighter is a browser-based 3D side-scrolling shooter that syncs combat
 events to analyzed audio cues. The app ingests a track, precomputes a deterministic
 run timeline, and renders a replay-style simulation aligned to playback time.
 
+## Live Demo
+
+https://audio-starfighter.vercel.app
+
 ## What It Does
 
 - Analyzes user-provided audio (`BPM`, mood, frame intensity, beat/cue timings)
