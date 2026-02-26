@@ -84,7 +84,7 @@ import {
 	normalizeWaveformPlaneDistortionAlgorithm,
 	populateWaveformPlaneSpectrumForDistortion,
 	type WaveformPlaneDistortionAlgorithm,
-} from "./waveformPlaneDistortion";
+} from "./stages/waveformPlane/distortion";
 
 type WaveformPlaneSurfaceShading = "smooth" | "flat" | "matte" | "metallic";
 type WaveformPlaneSide = "bottom" | "top";

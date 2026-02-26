@@ -9,7 +9,7 @@ import {
   WAVEFORM_PLANE_DISTORTION_OPTIONS,
   normalizeWaveformPlaneDistortionAlgorithm,
   type WaveformPlaneDistortionAlgorithm
-} from "../render/waveformPlaneDistortion";
+} from "../render/stages/waveformPlane/distortion";
 
 const RUN_SEED_STORAGE_KEY = "audio-starfighter.run-seed";
 
