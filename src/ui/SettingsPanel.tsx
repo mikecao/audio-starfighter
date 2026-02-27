@@ -65,6 +65,7 @@ function SettingsPanelInner({ bridge }: { bridge: SettingsBridge }) {
 
 	const handleRunAffecting = useCallback(
 		<K extends keyof RunAffectingState>(key: K, value: RunAffectingState[K]) => {
+			if (pendingRef.current[key] === value) return;
 			pendingRef.current = { ...pendingRef.current, [key]: value };
 			if (songLoaded) {
 				setRunDirty(true);
@@ -284,8 +285,8 @@ function SettingsPanelInner({ bridge }: { bridge: SettingsBridge }) {
 		),
 	}), [bridge]);
 
-	// ── Apply & Recompute button ──
-	useControls({
+	// ── Apply & Recompute / Close button ──
+	useControls(songLoaded ? {
 		"Apply & Recompute": button(
 			async () => {
 				setSaving(true);
@@ -300,7 +301,11 @@ function SettingsPanelInner({ bridge }: { bridge: SettingsBridge }) {
 			},
 			{ disabled: !runDirty || saving },
 		),
-	}, [runDirty, saving, bridge]);
+	} : {
+		"Close": button(() => {
+			bridge.setHidden(true);
+		}),
+	}, [songLoaded, runDirty, saving, bridge]);
 
 	return null;
 }
@@ -310,12 +315,12 @@ const LEVA_THEME = {
 		elevation1: "rgba(10, 20, 40, 0.94)",
 		elevation2: "rgba(16, 31, 57, 0.96)",
 		elevation3: "rgba(22, 42, 72, 0.90)",
-		accent1: "#5b8fff",
+		accent1: "#2c4480",
 		accent2: "#3d6fcc",
 		accent3: "#2a4f99",
 		highlight1: "#d8eaff",
 		highlight2: "#a0bcec",
-		highlight3: "#7090c0",
+		highlight3: "#e0eaff",
 	},
 	fontSizes: { root: "11px" },
 };
