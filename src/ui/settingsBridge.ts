@@ -24,6 +24,7 @@ export type SettingsHandlers = {
 	onOceanSizeChange: (size: number) => void;
 	onOceanDistortionScaleChange: (scale: number) => void;
 	onOceanAmplitudeChange: (amplitude: number) => void;
+	onOceanSpeedChange: (speed: number) => void;
 	onOceanTimeOfDayChange: (tod: OceanTimeOfDay) => void;
 };
 

@@ -157,6 +157,9 @@ const settingsBridge = createSettingsBridge(
     onOceanAmplitudeChange(amplitude) {
       scene.setOceanAmplitude(amplitude);
     },
+    onOceanSpeedChange(speed) {
+      scene.setOceanSpeed(speed);
+    },
     onOceanTimeOfDayChange(tod) {
       scene.setOceanTimeOfDay(tod);
     },

@@ -31,6 +31,7 @@ export type OceanStage = {
 	setSize: (size: number) => void;
 	setDistortionScale: (scale: number) => void;
 	setAmplitude: (amplitude: number) => void;
+	setSpeed: (speed: number) => void;
 	setTimeOfDay: (tod: OceanTimeOfDay) => void;
 };
 
@@ -43,16 +44,68 @@ export const OCEAN_DISTORTION_MAX = 8;
 export const OCEAN_AMPLITUDE_DEFAULT = 0.25;
 export const OCEAN_AMPLITUDE_MIN = 0;
 export const OCEAN_AMPLITUDE_MAX = 2;
+export const OCEAN_SPEED_DEFAULT = 4;
+export const OCEAN_SPEED_MIN = 0;
+export const OCEAN_SPEED_MAX = 10;
 
 const QUAD_WIDTH = 44;
 const QUAD_HEIGHT = 24;
 const QUAD_Z = -10;
+const SEGMENTS_X = 64;
+const SEGMENTS_Y = 48;
 
+// Vertex displacement uses the same noise as the fragment shader.
+// Only vertices below the horizon line (uv.y < 0.45) are displaced.
 const VERTEX = /* glsl */ `
+uniform float uTime;
+uniform float uAmplitude;
+uniform float uSpeed;
 varying vec2 vUv;
+
+vec2 hash2(vec2 p) {
+  p = vec2(dot(p, vec2(127.1, 311.7)), dot(p, vec2(269.5, 183.3)));
+  return -1.0 + 2.0 * fract(sin(p) * 43758.5453);
+}
+
+float noise(vec2 p) {
+  vec2 i = floor(p);
+  vec2 f = fract(p);
+  vec2 u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
+
+  vec2 ga = hash2(i + vec2(0.0, 0.0));
+  vec2 gb = hash2(i + vec2(1.0, 0.0));
+  vec2 gc = hash2(i + vec2(0.0, 1.0));
+  vec2 gd = hash2(i + vec2(1.0, 1.0));
+
+  float va = dot(ga, f - vec2(0.0, 0.0));
+  float vb = dot(gb, f - vec2(1.0, 0.0));
+  float vc = dot(gc, f - vec2(0.0, 1.0));
+  float vd = dot(gd, f - vec2(1.0, 1.0));
+
+  return va + u.x * (vb - va) + u.y * (vc - va) + u.x * u.y * (va - vb - vc + vd);
+}
+
 void main() {
   vUv = uv;
-  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  vec3 pos = position;
+
+  float horizonY = 0.45;
+  if (uv.y < horizonY) {
+    float t = uTime;
+    // How far below the horizon this vertex is (0 at horizon, 1 at bottom)
+    float belowHorizon = 1.0 - uv.y / horizonY;
+    // Scroll to match forward speed
+    float scrollX = uv.x * 6.0 + t * uSpeed * 0.5;
+    float scrollY = uv.y * 4.0 + t * 0.3;
+    // Two octaves of noise
+    float wave = noise(vec2(scrollX, scrollY)) * 0.6
+               + noise(vec2(scrollX * 2.1 + 3.7, scrollY * 2.3 - 1.2)) * 0.4;
+    // Fade displacement near horizon to keep skyline clean
+    float horizonFade = smoothstep(0.0, 0.15, belowHorizon);
+    pos.y += wave * uAmplitude * horizonFade;
+  }
+
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
 }
 `;
 
@@ -72,6 +125,7 @@ const FRAGMENT = /* glsl */ `
 uniform float uTime;
 uniform float uSize;
 uniform float uDistortion;
+uniform float uSpeed;
 uniform int uTimeOfDay;
 varying vec2 vUv;
 
@@ -213,7 +267,7 @@ void main() {
   float surfaceX = (uv.x - 0.5) * surfaceZ * 2.0;
 
   // Scroll the surface plane to convey forward speed (ship travels left to right).
-  float forwardScroll = t * 4.0;
+  float forwardScroll = t * uSpeed;
   vec2 sp = vec2(surfaceX + forwardScroll, surfaceZ);
 
   // ── Three scrolling noise layers on the surface plane ──
@@ -297,12 +351,13 @@ void main() {
 export function createOceanStage(): OceanStage {
 	const group = new Group();
 
-	const geometry = new PlaneGeometry(QUAD_WIDTH, QUAD_HEIGHT);
-	let amplitude = OCEAN_AMPLITUDE_DEFAULT;
+	const geometry = new PlaneGeometry(QUAD_WIDTH, QUAD_HEIGHT, SEGMENTS_X, SEGMENTS_Y);
 	const uniforms = {
 		uTime: { value: 0 },
 		uSize: { value: OCEAN_SIZE_DEFAULT },
 		uDistortion: { value: OCEAN_DISTORTION_DEFAULT },
+		uAmplitude: { value: OCEAN_AMPLITUDE_DEFAULT },
+		uSpeed: { value: OCEAN_SPEED_DEFAULT },
 		uTimeOfDay: { value: oceanTimeOfDayToInt(OCEAN_TIME_OF_DAY_DEFAULT) },
 	};
 	const material = new ShaderMaterial({
@@ -322,11 +377,6 @@ export function createOceanStage(): OceanStage {
 		group,
 		update(simTimeSeconds) {
 			uniforms.uTime.value = simTimeSeconds;
-			// Gentle vertical bob — slow overlapping sine waves, scaled by amplitude
-			const bob =
-				(Math.sin(simTimeSeconds * 0.3) * 0.6 +
-				Math.sin(simTimeSeconds * 0.17 + 1.0) * 0.4) * amplitude;
-			mesh.position.y = bob;
 		},
 		setSize(size) {
 			uniforms.uSize.value = Math.max(OCEAN_SIZE_MIN, Math.min(OCEAN_SIZE_MAX, size));
@@ -335,7 +385,10 @@ export function createOceanStage(): OceanStage {
 			uniforms.uDistortion.value = Math.max(OCEAN_DISTORTION_MIN, Math.min(OCEAN_DISTORTION_MAX, scale));
 		},
 		setAmplitude(value) {
-			amplitude = Math.max(OCEAN_AMPLITUDE_MIN, Math.min(OCEAN_AMPLITUDE_MAX, value));
+			uniforms.uAmplitude.value = Math.max(OCEAN_AMPLITUDE_MIN, Math.min(OCEAN_AMPLITUDE_MAX, value));
+		},
+		setSpeed(speed) {
+			uniforms.uSpeed.value = Math.max(OCEAN_SPEED_MIN, Math.min(OCEAN_SPEED_MAX, speed));
 		},
 		setTimeOfDay(tod) {
 			uniforms.uTimeOfDay.value = oceanTimeOfDayToInt(tod);

@@ -101,6 +101,7 @@ export type RenderScene = {
 	setOceanSize: (size: number) => void;
 	setOceanDistortionScale: (scale: number) => void;
 	setOceanAmplitude: (amplitude: number) => void;
+	setOceanSpeed: (speed: number) => void;
 	setOceanTimeOfDay: (tod: OceanTimeOfDay) => void;
 	setWaveformPlaneEnabled: (enabled: boolean) => void;
 	setWaveformPlaneSurfaceEnabled: (
@@ -1107,6 +1108,9 @@ export function setupScene(container: HTMLElement): RenderScene {
 		},
 		setOceanAmplitude(amplitude) {
 			oceanStage.setAmplitude(amplitude);
+		},
+		setOceanSpeed(speed) {
+			oceanStage.setSpeed(speed);
 		},
 		setOceanTimeOfDay(tod) {
 			oceanStage.setTimeOfDay(tod);

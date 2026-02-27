@@ -179,6 +179,11 @@ function SettingsPanelInner({ bridge }: { bridge: SettingsBridge }) {
 			render: (get: (p: string) => unknown) => get("Stage.Stage") === "ocean",
 			onChange: (v: number) => bridge.handlers.onOceanAmplitudeChange(v),
 		},
+		"Ocean Speed": {
+			value: 4, min: 0, max: 10, step: 0.1,
+			render: (get: (p: string) => unknown) => get("Stage.Stage") === "ocean",
+			onChange: (v: number) => bridge.handlers.onOceanSpeedChange(v),
+		},
 
 		// ── Waveform Plane: Top ──
 		"Top Plane": folder(
