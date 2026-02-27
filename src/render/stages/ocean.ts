@@ -212,7 +212,9 @@ void main() {
   float surfaceZ = (0.5 + 30.0 * dist * dist * dist) * uSize;
   float surfaceX = (uv.x - 0.5) * surfaceZ * 2.0;
 
-  vec2 sp = vec2(surfaceX, surfaceZ);
+  // Scroll the surface plane to convey forward speed (ship travels left to right).
+  float forwardScroll = t * 4.0;
+  vec2 sp = vec2(surfaceX + forwardScroll, surfaceZ);
 
   // ── Three scrolling noise layers on the surface plane ──
   vec2 scroll1 = sp * 0.8 + vec2(t * 0.6, t * 0.08);
