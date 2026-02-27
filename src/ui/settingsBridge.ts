@@ -4,7 +4,7 @@ import type { OceanTimeOfDay } from "../render/stages/ocean";
 
 export type WaveformPlaneSide = "bottom" | "top";
 export type WaveformPlaneSurfaceShading = "smooth" | "flat" | "matte" | "metallic";
-export type StageId = "starfield" | "waveformPlane" | "ocean";
+export type StageId = "starfield" | "waveformPlane" | "ocean" | "sky";
 
 export type SettingsHandlers = {
 	onCombatConfigChange: (config: CombatConfigPatch) => void;
@@ -26,6 +26,13 @@ export type SettingsHandlers = {
 	onOceanAmplitudeChange: (amplitude: number) => void;
 	onOceanSpeedChange: (speed: number) => void;
 	onOceanTimeOfDayChange: (tod: OceanTimeOfDay) => void;
+	onSkyTurbidityChange: (v: number) => void;
+	onSkyRayleighChange: (v: number) => void;
+	onSkyMieCoefficientChange: (v: number) => void;
+	onSkyMieDirectionalGChange: (v: number) => void;
+	onSkyElevationChange: (v: number) => void;
+	onSkyAzimuthChange: (v: number) => void;
+	onSkyExposureChange: (v: number) => void;
 };
 
 export type SettingsBridge = {

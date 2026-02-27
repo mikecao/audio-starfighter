@@ -136,6 +136,7 @@ function SettingsPanelInner({ bridge }: { bridge: SettingsBridge }) {
 				Starfield: "starfield" as const,
 				"Waveform Plane": "waveformPlane" as const,
 				Ocean: "ocean" as const,
+				Sky: "sky" as const,
 			},
 			onChange: (v: StageId) => bridge.handlers.onStageChange(v),
 		},
@@ -183,6 +184,43 @@ function SettingsPanelInner({ bridge }: { bridge: SettingsBridge }) {
 			value: 4, min: 0, max: 10, step: 0.1,
 			render: (get: (p: string) => unknown) => get("Stage.Stage") === "ocean",
 			onChange: (v: number) => bridge.handlers.onOceanSpeedChange(v),
+		},
+
+		// ── Sky ──
+		"Turbidity": {
+			value: 10, min: 0, max: 20, step: 0.1,
+			render: (get: (p: string) => unknown) => get("Stage.Stage") === "sky",
+			onChange: (v: number) => bridge.handlers.onSkyTurbidityChange(v),
+		},
+		"Rayleigh": {
+			value: 3, min: 0, max: 4, step: 0.001,
+			render: (get: (p: string) => unknown) => get("Stage.Stage") === "sky",
+			onChange: (v: number) => bridge.handlers.onSkyRayleighChange(v),
+		},
+		"Mie Coefficient": {
+			value: 0.005, min: 0, max: 0.1, step: 0.001,
+			render: (get: (p: string) => unknown) => get("Stage.Stage") === "sky",
+			onChange: (v: number) => bridge.handlers.onSkyMieCoefficientChange(v),
+		},
+		"Mie Directional G": {
+			value: 0.7, min: 0, max: 1, step: 0.001,
+			render: (get: (p: string) => unknown) => get("Stage.Stage") === "sky",
+			onChange: (v: number) => bridge.handlers.onSkyMieDirectionalGChange(v),
+		},
+		"Elevation": {
+			value: 2, min: 0, max: 90, step: 0.1,
+			render: (get: (p: string) => unknown) => get("Stage.Stage") === "sky",
+			onChange: (v: number) => bridge.handlers.onSkyElevationChange(v),
+		},
+		"Azimuth": {
+			value: 180, min: -180, max: 180, step: 0.1,
+			render: (get: (p: string) => unknown) => get("Stage.Stage") === "sky",
+			onChange: (v: number) => bridge.handlers.onSkyAzimuthChange(v),
+		},
+		"Exposure": {
+			value: 0.5, min: 0, max: 1, step: 0.0001,
+			render: (get: (p: string) => unknown) => get("Stage.Stage") === "sky",
+			onChange: (v: number) => bridge.handlers.onSkyExposureChange(v),
 		},
 
 		// ── Waveform Plane: Top ──

@@ -86,6 +86,7 @@ import {
 	type WaveformPlaneDistortionAlgorithm,
 } from "./stages/waveformPlane/distortion";
 import { createOceanStage, type OceanTimeOfDay } from "./stages/ocean";
+import { createSkyStage } from "./stages/sky";
 
 type WaveformPlaneSurfaceShading = "smooth" | "flat" | "matte" | "metallic";
 type WaveformPlaneSide = "bottom" | "top";
@@ -103,6 +104,14 @@ export type RenderScene = {
 	setOceanAmplitude: (amplitude: number) => void;
 	setOceanSpeed: (speed: number) => void;
 	setOceanTimeOfDay: (tod: OceanTimeOfDay) => void;
+	setSkyEnabled: (enabled: boolean) => void;
+	setSkyTurbidity: (v: number) => void;
+	setSkyRayleigh: (v: number) => void;
+	setSkyMieCoefficient: (v: number) => void;
+	setSkyMieDirectionalG: (v: number) => void;
+	setSkyElevation: (v: number) => void;
+	setSkyAzimuth: (v: number) => void;
+	setSkyExposure: (v: number) => void;
 	setWaveformPlaneEnabled: (enabled: boolean) => void;
 	setWaveformPlaneSurfaceEnabled: (
 		side: WaveformPlaneSide,
@@ -299,6 +308,14 @@ export function setupScene(container: HTMLElement): RenderScene {
 		oceanStage.group.visible = oceanEnabled;
 	};
 	syncOceanVisibility();
+
+	const skyStage = createSkyStage();
+	scene.add(skyStage.group);
+	let skyEnabled = false;
+	const syncSkyVisibility = (): void => {
+		skyStage.group.visible = skyEnabled;
+	};
+	syncSkyVisibility();
 
 	type WaveformPlaneMeshSet = {
 		placement: WaveformPlaneSide;
@@ -851,6 +868,10 @@ export function setupScene(container: HTMLElement): RenderScene {
 				oceanStage.update(starTimeSeconds, snapshot.ship.y);
 			}
 
+			if (skyEnabled) {
+				skyStage.update(starTimeSeconds, snapshot.ship.y);
+			}
+
 			syncWaveformPlaneVisibility();
 			if (waveformPlaneEnabled && waveformPlaneHasData) {
 				for (const planeState of waveformPlaneStateList) {
@@ -1114,6 +1135,31 @@ export function setupScene(container: HTMLElement): RenderScene {
 		},
 		setOceanTimeOfDay(tod) {
 			oceanStage.setTimeOfDay(tod);
+		},
+		setSkyEnabled(enabled) {
+			skyEnabled = enabled;
+			syncSkyVisibility();
+		},
+		setSkyTurbidity(v) {
+			skyStage.setTurbidity(v);
+		},
+		setSkyRayleigh(v) {
+			skyStage.setRayleigh(v);
+		},
+		setSkyMieCoefficient(v) {
+			skyStage.setMieCoefficient(v);
+		},
+		setSkyMieDirectionalG(v) {
+			skyStage.setMieDirectionalG(v);
+		},
+		setSkyElevation(v) {
+			skyStage.setElevation(v);
+		},
+		setSkyAzimuth(v) {
+			skyStage.setAzimuth(v);
+		},
+		setSkyExposure(v) {
+			skyStage.setExposure(v);
 		},
 		setWaveformPlaneEnabled(enabled) {
 			waveformPlaneEnabled = enabled;

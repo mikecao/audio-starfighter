@@ -111,6 +111,7 @@ const settingsBridge = createSettingsBridge(
       scene.setStarfieldEnabled(stage === "starfield");
       scene.setWaveformPlaneEnabled(stage === "waveformPlane");
       scene.setOceanEnabled(stage === "ocean");
+      scene.setSkyEnabled(stage === "sky");
     },
     onStarfieldSpeedChange(speedScale) {
       scene.setStarfieldSpeedScale(speedScale);
@@ -162,6 +163,27 @@ const settingsBridge = createSettingsBridge(
     },
     onOceanTimeOfDayChange(tod) {
       scene.setOceanTimeOfDay(tod);
+    },
+    onSkyTurbidityChange(v) {
+      scene.setSkyTurbidity(v);
+    },
+    onSkyRayleighChange(v) {
+      scene.setSkyRayleigh(v);
+    },
+    onSkyMieCoefficientChange(v) {
+      scene.setSkyMieCoefficient(v);
+    },
+    onSkyMieDirectionalGChange(v) {
+      scene.setSkyMieDirectionalG(v);
+    },
+    onSkyElevationChange(v) {
+      scene.setSkyElevation(v);
+    },
+    onSkyAzimuthChange(v) {
+      scene.setSkyAzimuth(v);
+    },
+    onSkyExposureChange(v) {
+      scene.setSkyExposure(v);
     },
   },
   () => audioPanel.getLatestAnalysis() !== null,
