@@ -154,7 +154,7 @@ function SettingsPanelInner({ bridge }: { bridge: SettingsBridge }) {
 
 		// ── Ocean ──
 		"Time of Day": {
-			value: "sunset" as OceanTimeOfDay,
+			value: "day" as OceanTimeOfDay,
 			options: {
 				Sunrise: "sunrise" as const,
 				Day: "day" as const,
@@ -240,45 +240,55 @@ function SettingsPanelInner({ bridge }: { bridge: SettingsBridge }) {
 		// ── Waveform Plane: Bottom ──
 		"Bottom Plane": folder(
 			{
-				Enabled: {
+				"Enabled ": {
+					label: "Enabled",
 					value: true,
 					onChange: (v: boolean) => bridge.handlers.onWaveformPlaneSideEnabledChange("bottom", v),
 				},
-				Surface: {
+				"Surface ": {
+					label: "Surface",
 					value: false,
 					onChange: (v: boolean) => bridge.handlers.onWaveformPlaneSurfaceEnabledChange("bottom", v),
 				},
-				"Surface Shading": {
+				"Surface Shading ": {
+					label: "Surface Shading",
 					value: "smooth" as WaveformPlaneSurfaceShading,
 					options: { Smooth: "smooth" as const, Flat: "flat" as const, Matte: "matte" as const, Metallic: "metallic" as const },
 					onChange: (v: WaveformPlaneSurfaceShading) => bridge.handlers.onWaveformPlaneSurfaceShadingChange("bottom", v),
 				},
-				"Surface Color": {
+				"Surface Color ": {
+					label: "Surface Color",
 					value: "#f4f4f4",
 					onChange: (v: string) => bridge.handlers.onWaveformPlaneSurfaceColorChange("bottom", v),
 				},
-				"Surface Opacity": {
+				"Surface Opacity ": {
+					label: "Surface Opacity",
 					value: 1, min: 0, max: 1, step: 0.01,
 					onChange: (v: number) => bridge.handlers.onWaveformPlaneSurfaceOpacityChange("bottom", v),
 				},
-				Wireframe: {
+				"Wireframe ": {
+					label: "Wireframe",
 					value: true,
 					onChange: (v: boolean) => bridge.handlers.onWaveformPlaneWireframeEnabledChange("bottom", v),
 				},
-				"Wireframe Color": {
+				"Wireframe Color ": {
+					label: "Wireframe Color",
 					value: "#f4f4f4",
 					onChange: (v: string) => bridge.handlers.onWaveformPlaneWireframeColorChange("bottom", v),
 				},
-				"Max Height": {
+				"Max Height ": {
+					label: "Max Height",
 					value: 6.8, min: 2.5, max: 12, step: 0.1,
 					onChange: (v: number) => bridge.handlers.onWaveformPlaneHeightScaleChange("bottom", v),
 				},
-				Distortion: {
+				"Distortion ": {
+					label: "Distortion",
 					value: "ridge" as WaveformPlaneDistortionAlgorithm,
 					options: { "Ridge Flow": "ridge" as const, "Pulse Ripple": "ripple" as const },
 					onChange: (v: WaveformPlaneDistortionAlgorithm) => bridge.handlers.onWaveformPlaneDistortionAlgorithmChange("bottom", v),
 				},
-				"Spectrum Smoothing": {
+				"Spectrum Smoothing ": {
+					label: "Spectrum Smoothing",
 					value: 0.5, min: 0, max: 0.95, step: 0.01,
 					onChange: (v: number) => bridge.handlers.onWaveformPlaneSpectrumSmoothingChange("bottom", v),
 				},
@@ -328,6 +338,7 @@ const LEVA_THEME = {
 		highlight3: "#e0eaff",
 	},
 	fontSizes: { root: "11px" },
+	sizes: { rootWidth: "340px" },
 };
 
 export function SettingsPanel({ bridge }: { bridge: SettingsBridge }) {

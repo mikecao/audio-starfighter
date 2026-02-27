@@ -14,7 +14,7 @@ export const OCEAN_TIME_OF_DAY_OPTIONS: Array<{ value: OceanTimeOfDay; label: st
 	{ value: "sunset", label: "Sunset" },
 	{ value: "night", label: "Night" },
 ];
-export const OCEAN_TIME_OF_DAY_DEFAULT: OceanTimeOfDay = "sunset";
+export const OCEAN_TIME_OF_DAY_DEFAULT: OceanTimeOfDay = "day";
 
 function oceanTimeOfDayToInt(tod: OceanTimeOfDay): number {
 	switch (tod) {
