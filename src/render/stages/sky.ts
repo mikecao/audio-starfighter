@@ -20,6 +20,7 @@ export type SkyStage = {
 	setElevation: (v: number) => void;
 	setAzimuth: (v: number) => void;
 	setExposure: (v: number) => void;
+	setHorizon: (v: number) => void;
 	setCloudCoverage: (v: number) => void;
 	setCloudDensity: (v: number) => void;
 	setCloudElevation: (v: number) => void;
@@ -55,6 +56,9 @@ export const SKY_CLOUD_DENSITY_MAX = 1;
 export const SKY_CLOUD_ELEVATION_DEFAULT = 0.5;
 export const SKY_CLOUD_ELEVATION_MIN = 0;
 export const SKY_CLOUD_ELEVATION_MAX = 1;
+export const SKY_HORIZON_DEFAULT = 0.35;
+export const SKY_HORIZON_MIN = 0;
+export const SKY_HORIZON_MAX = 1;
 
 // ── Geometry constants ──
 
@@ -99,6 +103,8 @@ uniform float uTime;
 uniform float cloudCoverage;
 uniform float cloudDensity;
 uniform float cloudElevation;
+uniform float sunAzimuthRad;
+uniform float horizon;
 
 varying vec2 vUv;
 
@@ -190,9 +196,15 @@ float fbm(vec2 p) {
 }
 
 void main() {
-	// ── Map UV to view direction on a hemisphere ──
-	float azimuthAngle = (vUv.x - 0.5) * 2.0 * PI;
-	float elevAngle = vUv.y * PI * 0.5;
+	// ── Map UV to view direction ──
+	// Horizontal: center on sun azimuth, ~120° FOV
+	float hFov = PI * 0.667;
+	float azimuthAngle = sunAzimuthRad + (vUv.x - 0.5) * hFov;
+
+	// Vertical: horizon uniform controls where elevation=0 sits on screen
+	// horizon=0 → bottom of screen is ground, horizon=1 → top is ground
+	float elevAngle = (vUv.y - horizon) * PI * 0.5;
+
 	vec3 direction = normalize(vec3(
 		cos(elevAngle) * sin(azimuthAngle),
 		sin(elevAngle),
@@ -310,6 +322,8 @@ export function createSkyStage(): SkyStage {
 		cloudCoverage: { value: SKY_CLOUD_COVERAGE_DEFAULT },
 		cloudDensity: { value: SKY_CLOUD_DENSITY_DEFAULT },
 		cloudElevation: { value: SKY_CLOUD_ELEVATION_DEFAULT },
+		sunAzimuthRad: { value: MathUtils.degToRad(azimuth) },
+		horizon: { value: SKY_HORIZON_DEFAULT },
 	};
 
 	const geometry = new PlaneGeometry(QUAD_WIDTH, QUAD_HEIGHT);
@@ -354,9 +368,13 @@ export function createSkyStage(): SkyStage {
 		setAzimuth(v) {
 			azimuth = clamp(v, SKY_AZIMUTH_MIN, SKY_AZIMUTH_MAX);
 			updateSunPosition();
+			uniforms.sunAzimuthRad.value = MathUtils.degToRad(azimuth);
 		},
 		setExposure(v) {
 			uniforms.exposure.value = clamp(v, SKY_EXPOSURE_MIN, SKY_EXPOSURE_MAX);
+		},
+		setHorizon(v) {
+			uniforms.horizon.value = clamp(v, SKY_HORIZON_MIN, SKY_HORIZON_MAX);
 		},
 		setCloudCoverage(v) {
 			uniforms.cloudCoverage.value = clamp(v, SKY_CLOUD_COVERAGE_MIN, SKY_CLOUD_COVERAGE_MAX);

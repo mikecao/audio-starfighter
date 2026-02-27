@@ -222,6 +222,11 @@ function SettingsPanelInner({ bridge }: { bridge: SettingsBridge }) {
 			render: (get: (p: string) => unknown) => get("Stage.Stage") === "sky",
 			onChange: (v: number) => bridge.handlers.onSkyExposureChange(v),
 		},
+		"Horizon": {
+			value: 0.35, min: 0, max: 1, step: 0.01,
+			render: (get: (p: string) => unknown) => get("Stage.Stage") === "sky",
+			onChange: (v: number) => bridge.handlers.onSkyHorizonChange(v),
+		},
 		"Cloud Coverage": {
 			value: 0.4, min: 0, max: 1, step: 0.01,
 			render: (get: (p: string) => unknown) => get("Stage.Stage") === "sky",

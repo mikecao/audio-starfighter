@@ -33,6 +33,7 @@ export type SettingsHandlers = {
 	onSkyElevationChange: (v: number) => void;
 	onSkyAzimuthChange: (v: number) => void;
 	onSkyExposureChange: (v: number) => void;
+	onSkyHorizonChange: (v: number) => void;
 	onSkyCloudCoverageChange: (v: number) => void;
 	onSkyCloudDensityChange: (v: number) => void;
 	onSkyCloudElevationChange: (v: number) => void;

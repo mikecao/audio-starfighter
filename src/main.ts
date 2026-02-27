@@ -185,6 +185,9 @@ const settingsBridge = createSettingsBridge(
     onSkyExposureChange(v) {
       scene.setSkyExposure(v);
     },
+    onSkyHorizonChange(v) {
+      scene.setSkyHorizon(v);
+    },
     onSkyCloudCoverageChange(v) {
       scene.setSkyCloudCoverage(v);
     },

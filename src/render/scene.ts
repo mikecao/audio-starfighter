@@ -112,6 +112,7 @@ export type RenderScene = {
 	setSkyElevation: (v: number) => void;
 	setSkyAzimuth: (v: number) => void;
 	setSkyExposure: (v: number) => void;
+	setSkyHorizon: (v: number) => void;
 	setSkyCloudCoverage: (v: number) => void;
 	setSkyCloudDensity: (v: number) => void;
 	setSkyCloudElevation: (v: number) => void;
@@ -1163,6 +1164,9 @@ export function setupScene(container: HTMLElement): RenderScene {
 		},
 		setSkyExposure(v) {
 			skyStage.setExposure(v);
+		},
+		setSkyHorizon(v) {
+			skyStage.setHorizon(v);
 		},
 		setSkyCloudCoverage(v) {
 			skyStage.setCloudCoverage(v);
