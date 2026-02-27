@@ -17,7 +17,7 @@ export default defineConfig({
             return "three-vendor";
           }
           if (id.includes("node_modules")) {
-            return "vendor";
+            return "react-vendor";
           }
           return undefined;
         }

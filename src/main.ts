@@ -11,6 +11,8 @@ import type { CombatConfigPatch } from "./game/combatConfig";
 import { createAudioPanel } from "./ui/audioPanel";
 import { createEventTimeline } from "./ui/eventTimeline";
 import { createLoadingOverlay, type LoadingPhaseTone } from "./ui/loadingOverlay";
+import { createSettingsBridge } from "./ui/settingsBridge";
+import { mountSettingsPanel } from "./ui/mountSettingsPanel";
 
 const BEST_SCORE_STORAGE_PREFIX = "audio-starfighter.best-score";
 const ENEMY_BULLET_RATIO = 0.94;
@@ -98,6 +100,75 @@ let currentRunKey: string | null = null;
 let cachedTimelineAnalysisRef: object | null = null;
 let cachedTimelineCues: Array<{ timeSeconds: number; source: "beat" | "peak" }> | null = null;
 let usingCueFallback = false;
+
+const settingsBridge = createSettingsBridge(
+  {
+    onCombatConfigChange(config) {
+      currentCombatConfig = config;
+      sim.setCombatConfig(currentCombatConfig);
+    },
+    onStageChange(stage) {
+      scene.setStarfieldEnabled(stage === "starfield");
+      scene.setWaveformPlaneEnabled(stage === "waveformPlane");
+      scene.setOceanEnabled(stage === "ocean");
+    },
+    onStarfieldSpeedChange(speedScale) {
+      scene.setStarfieldSpeedScale(speedScale);
+    },
+    onStarfieldShipMovementResponseChange(responseScale) {
+      scene.setStarfieldShipMovementResponse(responseScale);
+    },
+    onWaveformPlaneSideEnabledChange(side, enabled) {
+      scene.setWaveformPlaneSideEnabled(side, enabled);
+    },
+    onWaveformPlaneSurfaceEnabledChange(side, enabled) {
+      scene.setWaveformPlaneSurfaceEnabled(side, enabled);
+    },
+    onWaveformPlaneWireframeEnabledChange(side, enabled) {
+      scene.setWaveformPlaneWireframeEnabled(side, enabled);
+    },
+    onWaveformPlaneHeightScaleChange(side, heightScale) {
+      scene.setWaveformPlaneHeightScale(side, heightScale);
+    },
+    onWaveformPlaneSurfaceShadingChange(side, shading) {
+      scene.setWaveformPlaneSurfaceShading(side, shading);
+    },
+    onWaveformPlaneDistortionAlgorithmChange(side, algorithm) {
+      scene.setWaveformPlaneDistortionAlgorithm(side, algorithm);
+    },
+    onWaveformPlaneSurfaceColorChange(side, colorHex) {
+      scene.setWaveformPlaneSurfaceColor(side, colorHex);
+    },
+    onWaveformPlaneWireframeColorChange(side, colorHex) {
+      scene.setWaveformPlaneWireframeColor(side, colorHex);
+    },
+    onWaveformPlaneSurfaceOpacityChange(side, opacity) {
+      scene.setWaveformPlaneSurfaceOpacity(side, opacity);
+    },
+    onWaveformPlaneSpectrumSmoothingChange(side, smoothingTimeConstant) {
+      scene.setWaveformPlaneSpectrumSmoothing(side, smoothingTimeConstant);
+    },
+    onOceanSizeChange(size) {
+      scene.setOceanSize(size);
+    },
+    onOceanDistortionScaleChange(scale) {
+      scene.setOceanDistortionScale(scale);
+    },
+    onOceanAmplitudeChange(amplitude) {
+      scene.setOceanAmplitude(amplitude);
+    },
+    onOceanTimeOfDayChange(tod) {
+      scene.setOceanTimeOfDay(tod);
+    },
+  },
+  () => audioPanel.getLatestAnalysis() !== null,
+  async () => {
+    const analysis = audioPanel.getLatestAnalysis();
+    if (!analysis) return;
+    await audioPanel.triggerRecompute();
+  },
+);
+
 const audioPanel = createAudioPanel(uiHost, {
   onAnalyze(file) {
     loadingOverlay.show(
@@ -181,72 +252,21 @@ const audioPanel = createAudioPanel(uiHost, {
     } finally {
       loadingOverlay.hide();
     }
-  },
-  onCombatConfigChange(config) {
-    currentCombatConfig = config;
-    sim.setCombatConfig(currentCombatConfig);
-  },
-  onStageChange(stage) {
-    scene.setStarfieldEnabled(stage === "starfield");
-    scene.setWaveformPlaneEnabled(stage === "waveformPlane");
-    scene.setOceanEnabled(stage === "ocean");
-  },
-  onStarfieldSpeedChange(speedScale) {
-    scene.setStarfieldSpeedScale(speedScale);
-  },
-  onStarfieldShipMovementResponseChange(responseScale) {
-    scene.setStarfieldShipMovementResponse(responseScale);
-  },
-  onWaveformPlaneSurfaceEnabledChange(side, enabled) {
-    scene.setWaveformPlaneSurfaceEnabled(side, enabled);
-  },
-  onWaveformPlaneWireframeEnabledChange(side, enabled) {
-    scene.setWaveformPlaneWireframeEnabled(side, enabled);
-  },
-  onWaveformPlaneSideEnabledChange(side, enabled) {
-    scene.setWaveformPlaneSideEnabled(side, enabled);
-  },
-  onWaveformPlaneHeightScaleChange(side, heightScale) {
-    scene.setWaveformPlaneHeightScale(side, heightScale);
-  },
-  onWaveformPlaneSurfaceShadingChange(side, shading) {
-    scene.setWaveformPlaneSurfaceShading(side, shading);
-  },
-  onWaveformPlaneDistortionAlgorithmChange(side, algorithm) {
-    scene.setWaveformPlaneDistortionAlgorithm(side, algorithm);
-  },
-  onWaveformPlaneSurfaceColorChange(side, colorHex) {
-    scene.setWaveformPlaneSurfaceColor(side, colorHex);
-  },
-  onWaveformPlaneWireframeColorChange(side, colorHex) {
-    scene.setWaveformPlaneWireframeColor(side, colorHex);
-  },
-  onWaveformPlaneSurfaceOpacityChange(side, opacity) {
-    scene.setWaveformPlaneSurfaceOpacity(side, opacity);
-  },
-  onWaveformPlaneSpectrumSmoothingChange(side, smoothingTimeConstant) {
-    scene.setWaveformPlaneSpectrumSmoothing(side, smoothingTimeConstant);
-  },
-  onOceanSizeChange(size) {
-    scene.setOceanSize(size);
-  },
-  onOceanDistortionScaleChange(scale) {
-    scene.setOceanDistortionScale(scale);
-  },
-  onOceanAmplitudeChange(amplitude) {
-    scene.setOceanAmplitude(amplitude);
-  },
-  onOceanTimeOfDayChange(tod) {
-    scene.setOceanTimeOfDay(tod);
+    settingsBridge.notifySongLoadedChanged();
   },
   onToggleUi() {
     setUiHidden(!uiHidden);
+    settingsBridge.setHidden(uiHidden);
     return uiHidden;
-  }
+  },
+  onSettingsToggle() {
+    settingsBridge.setHidden(!settingsBridge.getHidden());
+  },
 });
 audioPanel.subscribeSpectrum((bins) => {
   scene.setWaveformPlaneSpectrum(bins);
 });
+mountSettingsPanel(settingsBridge);
 
 sim.setRandomSeed(DEMO_RUN_SEED);
 sim.startTrackRun(buildDemoCueTimes());
