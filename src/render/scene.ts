@@ -112,6 +112,9 @@ export type RenderScene = {
 	setSkyElevation: (v: number) => void;
 	setSkyAzimuth: (v: number) => void;
 	setSkyExposure: (v: number) => void;
+	setSkyCloudCoverage: (v: number) => void;
+	setSkyCloudDensity: (v: number) => void;
+	setSkyCloudElevation: (v: number) => void;
 	setWaveformPlaneEnabled: (enabled: boolean) => void;
 	setWaveformPlaneSurfaceEnabled: (
 		side: WaveformPlaneSide,
@@ -1160,6 +1163,15 @@ export function setupScene(container: HTMLElement): RenderScene {
 		},
 		setSkyExposure(v) {
 			skyStage.setExposure(v);
+		},
+		setSkyCloudCoverage(v) {
+			skyStage.setCloudCoverage(v);
+		},
+		setSkyCloudDensity(v) {
+			skyStage.setCloudDensity(v);
+		},
+		setSkyCloudElevation(v) {
+			skyStage.setCloudElevation(v);
 		},
 		setWaveformPlaneEnabled(enabled) {
 			waveformPlaneEnabled = enabled;

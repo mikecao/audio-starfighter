@@ -222,6 +222,21 @@ function SettingsPanelInner({ bridge }: { bridge: SettingsBridge }) {
 			render: (get: (p: string) => unknown) => get("Stage.Stage") === "sky",
 			onChange: (v: number) => bridge.handlers.onSkyExposureChange(v),
 		},
+		"Cloud Coverage": {
+			value: 0.4, min: 0, max: 1, step: 0.01,
+			render: (get: (p: string) => unknown) => get("Stage.Stage") === "sky",
+			onChange: (v: number) => bridge.handlers.onSkyCloudCoverageChange(v),
+		},
+		"Cloud Density": {
+			value: 0.4, min: 0, max: 1, step: 0.01,
+			render: (get: (p: string) => unknown) => get("Stage.Stage") === "sky",
+			onChange: (v: number) => bridge.handlers.onSkyCloudDensityChange(v),
+		},
+		"Cloud Elevation": {
+			value: 0.5, min: 0, max: 1, step: 0.01,
+			render: (get: (p: string) => unknown) => get("Stage.Stage") === "sky",
+			onChange: (v: number) => bridge.handlers.onSkyCloudElevationChange(v),
+		},
 
 		// ── Waveform Plane: Top ──
 		"Top Plane": folder(

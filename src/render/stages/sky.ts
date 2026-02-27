@@ -20,6 +20,9 @@ export type SkyStage = {
 	setElevation: (v: number) => void;
 	setAzimuth: (v: number) => void;
 	setExposure: (v: number) => void;
+	setCloudCoverage: (v: number) => void;
+	setCloudDensity: (v: number) => void;
+	setCloudElevation: (v: number) => void;
 };
 
 export const SKY_TURBIDITY_DEFAULT = 10;
@@ -43,12 +46,24 @@ export const SKY_AZIMUTH_MAX = 180;
 export const SKY_EXPOSURE_DEFAULT = 0.5;
 export const SKY_EXPOSURE_MIN = 0;
 export const SKY_EXPOSURE_MAX = 1;
+export const SKY_CLOUD_COVERAGE_DEFAULT = 0.4;
+export const SKY_CLOUD_COVERAGE_MIN = 0;
+export const SKY_CLOUD_COVERAGE_MAX = 1;
+export const SKY_CLOUD_DENSITY_DEFAULT = 0.4;
+export const SKY_CLOUD_DENSITY_MIN = 0;
+export const SKY_CLOUD_DENSITY_MAX = 1;
+export const SKY_CLOUD_ELEVATION_DEFAULT = 0.5;
+export const SKY_CLOUD_ELEVATION_MIN = 0;
+export const SKY_CLOUD_ELEVATION_MAX = 1;
 
 // ── Geometry constants ──
 
 const QUAD_WIDTH = 44;
 const QUAD_HEIGHT = 24;
 const QUAD_Z = -10;
+
+// Scale factor matching the original Three.js Sky example
+const SUN_DISTANCE = 450000;
 
 // ── Helpers ──
 
@@ -59,21 +74,10 @@ function clamp(v: number, min: number, max: number): number {
 function computeSunPosition(elevation: number, azimuth: number): Vector3 {
 	const phi = MathUtils.degToRad(90 - elevation);
 	const theta = MathUtils.degToRad(azimuth);
-	return new Vector3().setFromSphericalCoords(1, phi, theta);
+	return new Vector3().setFromSphericalCoords(SUN_DISTANCE, phi, theta);
 }
 
 // ── Shaders ──
-
-/*
- * Preetham sky model ported from Three.js Sky.js addon.
- * Adapted for a full-screen quad with an orthographic camera:
- * instead of using vWorldPosition to derive a view direction,
- * we map the quad's UV coordinates to a hemisphere of directions.
- *
- * The scattering coefficients (betaR, betaM, sunE, sunfade) depend
- * only on sun position and material params, so we compute them
- * once in the fragment shader rather than per-vertex.
- */
 
 const VERTEX = /* glsl */ `
 varying vec2 vUv;
@@ -91,6 +95,10 @@ uniform float mieCoefficient;
 uniform float mieDirectionalG;
 uniform vec3 sunPosition;
 uniform float exposure;
+uniform float uTime;
+uniform float cloudCoverage;
+uniform float cloudDensity;
+uniform float cloudElevation;
 
 varying vec2 vUv;
 
@@ -106,7 +114,7 @@ const vec3 totalRayleigh = vec3(5.804542996261093E-6, 1.3562911419845635E-5, 3.0
 const vec3 MieConst = vec3(1.8399918514433978E14, 2.7798023919660528E14, 4.0790479543861094E14);
 
 // Earth shadow hack
-const float cutoffAngle = 1.6110731556870734; // pi / 1.95
+const float cutoffAngle = 1.6110731556870734;
 const float steepness = 1.5;
 const float EE = 1000.0;
 
@@ -120,7 +128,7 @@ const float sunAngularDiameterCos = 0.999956676946448443553574619906976478926848
 const float THREE_OVER_SIXTEENPI = 0.05968310365946075;
 const float ONE_OVER_FOURPI = 0.07957747154594767;
 
-// ── Functions ──
+// ── Atmospheric functions ──
 
 float sunIntensityFn(float zenithAngleCos) {
 	zenithAngleCos = clamp(zenithAngleCos, -1.0, 1.0);
@@ -152,9 +160,37 @@ vec3 ACESFilmic(vec3 x) {
 	return clamp((x * (a * x + b)) / (x * (c * x + d) + e), 0.0, 1.0);
 }
 
+// ── Cloud noise functions ──
+
+float hash(vec2 p) {
+	float h = dot(p, vec2(127.1, 311.7));
+	return fract(sin(h) * 43758.5453123);
+}
+
+float noise(vec2 p) {
+	vec2 i = floor(p);
+	vec2 f = fract(p);
+	f = f * f * (3.0 - 2.0 * f);
+	float a = hash(i);
+	float b = hash(i + vec2(1.0, 0.0));
+	float c = hash(i + vec2(0.0, 1.0));
+	float d = hash(i + vec2(1.0, 1.0));
+	return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+}
+
+float fbm(vec2 p) {
+	float value = 0.0;
+	float amplitude = 0.5;
+	for (int i = 0; i < 5; i++) {
+		value += amplitude * noise(p);
+		p *= 2.0;
+		amplitude *= 0.5;
+	}
+	return value;
+}
+
 void main() {
 	// ── Map UV to view direction on a hemisphere ──
-	// x: full 360° azimuth, y: 0 = horizon, 1 = zenith
 	float azimuthAngle = (vUv.x - 0.5) * 2.0 * PI;
 	float elevAngle = vUv.y * PI * 0.5;
 	vec3 direction = normalize(vec3(
@@ -163,7 +199,7 @@ void main() {
 		cos(elevAngle) * cos(azimuthAngle)
 	));
 
-	// ── Scattering coefficients (per-fragment, uniform across quad) ──
+	// ── Scattering coefficients ──
 	vec3 sunDir = normalize(sunPosition);
 	float sunE = sunIntensityFn(dot(sunDir, UP));
 	float sunfade = 1.0 - clamp(1.0 - exp(sunPosition.y / 450000.0), 0.0, 1.0);
@@ -203,10 +239,49 @@ void main() {
 
 	// ── Composition ──
 	vec3 texColor = (Lin + L0) * 0.04 + vec3(0.0, 0.0003, 0.00075);
-	vec3 retColor = pow(texColor, vec3(1.0 / (1.2 + (1.2 * sunfade))));
+	vec3 skyColor = pow(texColor, vec3(1.0 / (1.2 + (1.2 * sunfade))));
+
+	// ── Clouds ──
+	if (cloudCoverage > 0.0) {
+		// Project direction onto a flat cloud plane at cloudElevation height
+		float cloudHeight = 0.1 + cloudElevation * 0.6; // normalized elevation → angle threshold
+		float dirY = max(direction.y, 0.001);
+		float cloudScale = cloudHeight / dirY;
+
+		// Cloud UV: project onto horizontal plane
+		vec2 cloudUV = direction.xz * cloudScale * 3.0;
+		cloudUV += uTime * 0.015; // slow drift
+
+		// FBM noise for cloud shape
+		float n = fbm(cloudUV * 2.5);
+		float n2 = fbm(cloudUV * 5.0 + vec2(3.7, 1.2));
+		float cloudShape = n * 0.6 + n2 * 0.4;
+
+		// Apply coverage threshold
+		float coverageThreshold = 1.0 - cloudCoverage;
+		float cloud = smoothstep(coverageThreshold, coverageThreshold + 0.3, cloudShape);
+
+		// Density controls opacity
+		cloud *= cloudDensity;
+
+		// Fade clouds near horizon to avoid hard cutoff
+		float horizonFade = smoothstep(0.0, 0.15, direction.y);
+		cloud *= horizonFade;
+
+		// Cloud lighting: brighter on the sun-facing side
+		float sunDot = dot(sunDir, direction) * 0.5 + 0.5;
+		vec3 cloudBright = vec3(1.0, 0.98, 0.95);
+		vec3 cloudDark = vec3(0.6, 0.62, 0.68);
+		vec3 cloudColor = mix(cloudDark, cloudBright, sunDot * sunfade);
+
+		// Sun-lit highlight on cloud edges
+		cloudColor += Fex * sunfade * 0.3 * pow(sunDot, 4.0);
+
+		skyColor = mix(skyColor, cloudColor, cloud);
+	}
 
 	// ── Tone mapping + exposure ──
-	retColor *= exposure;
+	vec3 retColor = skyColor * exposure;
 	retColor = ACESFilmic(retColor);
 
 	// ── sRGB conversion ──
@@ -231,6 +306,10 @@ export function createSkyStage(): SkyStage {
 		mieDirectionalG: { value: SKY_MIE_DIRECTIONAL_G_DEFAULT },
 		sunPosition: { value: computeSunPosition(elevation, azimuth) },
 		exposure: { value: SKY_EXPOSURE_DEFAULT },
+		uTime: { value: 0 },
+		cloudCoverage: { value: SKY_CLOUD_COVERAGE_DEFAULT },
+		cloudDensity: { value: SKY_CLOUD_DENSITY_DEFAULT },
+		cloudElevation: { value: SKY_CLOUD_ELEVATION_DEFAULT },
 	};
 
 	const geometry = new PlaneGeometry(QUAD_WIDTH, QUAD_HEIGHT);
@@ -253,8 +332,8 @@ export function createSkyStage(): SkyStage {
 
 	return {
 		group,
-		update(_simTimeSeconds, _shipY) {
-			// Sky is static — no per-frame animation needed
+		update(simTimeSeconds) {
+			uniforms.uTime.value = simTimeSeconds;
 		},
 		setTurbidity(v) {
 			uniforms.turbidity.value = clamp(v, SKY_TURBIDITY_MIN, SKY_TURBIDITY_MAX);
@@ -278,6 +357,15 @@ export function createSkyStage(): SkyStage {
 		},
 		setExposure(v) {
 			uniforms.exposure.value = clamp(v, SKY_EXPOSURE_MIN, SKY_EXPOSURE_MAX);
+		},
+		setCloudCoverage(v) {
+			uniforms.cloudCoverage.value = clamp(v, SKY_CLOUD_COVERAGE_MIN, SKY_CLOUD_COVERAGE_MAX);
+		},
+		setCloudDensity(v) {
+			uniforms.cloudDensity.value = clamp(v, SKY_CLOUD_DENSITY_MIN, SKY_CLOUD_DENSITY_MAX);
+		},
+		setCloudElevation(v) {
+			uniforms.cloudElevation.value = clamp(v, SKY_CLOUD_ELEVATION_MIN, SKY_CLOUD_ELEVATION_MAX);
 		},
 	};
 }

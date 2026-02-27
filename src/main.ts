@@ -185,6 +185,15 @@ const settingsBridge = createSettingsBridge(
     onSkyExposureChange(v) {
       scene.setSkyExposure(v);
     },
+    onSkyCloudCoverageChange(v) {
+      scene.setSkyCloudCoverage(v);
+    },
+    onSkyCloudDensityChange(v) {
+      scene.setSkyCloudDensity(v);
+    },
+    onSkyCloudElevationChange(v) {
+      scene.setSkyCloudElevation(v);
+    },
   },
   () => audioPanel.getLatestAnalysis() !== null,
   async () => {
