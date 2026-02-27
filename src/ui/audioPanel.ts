@@ -10,12 +10,26 @@ import {
   normalizeWaveformPlaneDistortionAlgorithm,
   type WaveformPlaneDistortionAlgorithm
 } from "../render/stages/waveformPlane/distortion";
+import {
+  OCEAN_SIZE_DEFAULT,
+  OCEAN_SIZE_MIN,
+  OCEAN_SIZE_MAX,
+  OCEAN_DISTORTION_DEFAULT,
+  OCEAN_DISTORTION_MIN,
+  OCEAN_DISTORTION_MAX,
+  OCEAN_AMPLITUDE_DEFAULT,
+  OCEAN_AMPLITUDE_MIN,
+  OCEAN_AMPLITUDE_MAX,
+  OCEAN_TIME_OF_DAY_DEFAULT,
+  OCEAN_TIME_OF_DAY_OPTIONS,
+  type OceanTimeOfDay
+} from "../render/stages/ocean";
 
 const RUN_SEED_STORAGE_KEY = "audio-starfighter.run-seed";
 
 type WaveformPlaneSurfaceShading = "smooth" | "flat" | "matte" | "metallic";
 type WaveformPlaneSide = "bottom" | "top";
-type StageId = "starfield" | "waveformPlane";
+type StageId = "starfield" | "waveformPlane" | "ocean";
 
 type AudioPanelHandlers = {
   onAnalyze: (file: File) => Promise<AudioAnalysisResult>;
@@ -64,6 +78,10 @@ type AudioPanelHandlers = {
     side: WaveformPlaneSide,
     smoothingTimeConstant: number
   ) => void;
+  onOceanSizeChange: (size: number) => void;
+  onOceanDistortionScaleChange: (scale: number) => void;
+  onOceanAmplitudeChange: (amplitude: number) => void;
+  onOceanTimeOfDayChange: (tod: OceanTimeOfDay) => void;
   onToggleUi: () => boolean;
 };
 
@@ -113,6 +131,10 @@ type UiCombatState = {
   waveformPlaneBottomSurfaceShading: WaveformPlaneSurfaceShading;
   waveformPlaneBottomSurfaceColor: string;
   waveformPlaneBottomWireframeColor: string;
+  oceanSize: number;
+  oceanDistortionScale: number;
+  oceanAmplitude: number;
+  oceanTimeOfDay: OceanTimeOfDay;
 };
 
 const DEFAULT_WAVEFORM_PLANE_HEIGHT_SCALE = 6.8;
@@ -164,7 +186,11 @@ const DEFAULT_COMBAT_STATE: UiCombatState = {
   waveformPlaneBottomSpectrumSmoothingTimeConstant: DEFAULT_SPECTRUM_SMOOTHING_TIME_CONSTANT,
   waveformPlaneBottomSurfaceShading: DEFAULT_WAVEFORM_PLANE_SURFACE_SHADING,
   waveformPlaneBottomSurfaceColor: DEFAULT_WAVEFORM_PLANE_SURFACE_COLOR,
-  waveformPlaneBottomWireframeColor: DEFAULT_WAVEFORM_PLANE_WIREFRAME_COLOR
+  waveformPlaneBottomWireframeColor: DEFAULT_WAVEFORM_PLANE_WIREFRAME_COLOR,
+  oceanSize: OCEAN_SIZE_DEFAULT,
+  oceanDistortionScale: OCEAN_DISTORTION_DEFAULT,
+  oceanAmplitude: OCEAN_AMPLITUDE_DEFAULT,
+  oceanTimeOfDay: OCEAN_TIME_OF_DAY_DEFAULT
 };
 
 const SPECTRUM_ANALYZER_FFT_SIZE = 1024;
@@ -193,7 +219,8 @@ const WAVEFORM_SURFACE_SHADING_OPTIONS: Array<{
 ];
 const STAGE_OPTIONS: Array<{ value: StageId; label: string }> = [
   { value: "starfield", label: "Starfield" },
-  { value: "waveformPlane", label: "Waveform Plane" }
+  { value: "waveformPlane", label: "Waveform Plane" },
+  { value: "ocean", label: "Ocean" }
 ];
 
 export function createAudioPanel(
@@ -534,8 +561,10 @@ export function createAudioPanel(
       bottomPlaneEnabled && waveformPlaneBottomSurfaceToggle.input.checked;
     const bottomWireframeEnabled =
       bottomPlaneEnabled && waveformPlaneBottomWireframeToggle.input.checked;
+    const oceanStageEnabled = stage === "ocean";
     setControlVisible(starfieldOptions, starfieldEnabled);
     setControlVisible(waveformPlaneOptions, planeEnabled);
+    setControlVisible(oceanOptions, oceanStageEnabled);
     setControlVisible(waveformPlaneTopOptions, topPlaneEnabled);
     setControlVisible(waveformPlaneBottomOptions, bottomPlaneEnabled);
     setControlVisible(waveformPlaneTopSurfaceOptions, topSurfaceEnabled);
@@ -547,10 +576,41 @@ export function createAudioPanel(
     );
   };
 
+  const oceanTimeOfDay = createModalSelect(
+    "Time of Day",
+    OCEAN_TIME_OF_DAY_OPTIONS,
+    OCEAN_TIME_OF_DAY_DEFAULT
+  );
+  const oceanSize = createModalRange(
+    "Size",
+    OCEAN_SIZE_MIN,
+    OCEAN_SIZE_MAX,
+    0.01,
+    OCEAN_SIZE_DEFAULT
+  );
+  const oceanDistortionScale = createModalRange(
+    "Distortion Scale",
+    OCEAN_DISTORTION_MIN,
+    OCEAN_DISTORTION_MAX,
+    0.1,
+    OCEAN_DISTORTION_DEFAULT
+  );
+  const oceanAmplitude = createModalRange(
+    "Amplitude",
+    OCEAN_AMPLITUDE_MIN,
+    OCEAN_AMPLITUDE_MAX,
+    0.01,
+    OCEAN_AMPLITUDE_DEFAULT
+  );
+  const oceanOptions = document.createElement("div");
+  oceanOptions.className = "audio-settings-modal__nested audio-settings-modal__nested--child";
+  oceanOptions.append(oceanTimeOfDay.root, oceanSize.root, oceanDistortionScale.root, oceanAmplitude.root);
+
   stageGroup.append(
     stageSelect.root,
     starfieldOptions,
-    waveformPlaneOptions
+    waveformPlaneOptions,
+    oceanOptions
   );
 
   settingsForm.append(shipGroup, enemyGroup, stageGroup);
@@ -1008,6 +1068,13 @@ export function createAudioPanel(
       state.waveformPlaneBottomWireframeColor,
       DEFAULT_WAVEFORM_PLANE_WIREFRAME_COLOR
     ).toUpperCase();
+    oceanTimeOfDay.input.value = state.oceanTimeOfDay;
+    oceanSize.input.value = state.oceanSize.toFixed(2);
+    oceanSize.value.textContent = state.oceanSize.toFixed(2);
+    oceanDistortionScale.input.value = state.oceanDistortionScale.toFixed(1);
+    oceanDistortionScale.value.textContent = state.oceanDistortionScale.toFixed(1);
+    oceanAmplitude.input.value = state.oceanAmplitude.toFixed(2);
+    oceanAmplitude.value.textContent = state.oceanAmplitude.toFixed(2);
     syncVisualControlVisibility();
   };
 
@@ -1088,7 +1155,11 @@ export function createAudioPanel(
     waveformPlaneBottomWireframeColor: normalizeHexColor(
       waveformPlaneBottomWireframeColor.input.value,
       DEFAULT_WAVEFORM_PLANE_WIREFRAME_COLOR
-    )
+    ),
+    oceanSize: normalizeOceanSize(Number(oceanSize.input.value)),
+    oceanDistortionScale: normalizeOceanDistortionScale(Number(oceanDistortionScale.input.value)),
+    oceanAmplitude: normalizeOceanAmplitude(Number(oceanAmplitude.input.value)),
+    oceanTimeOfDay: normalizeOceanTimeOfDay(oceanTimeOfDay.input.value)
   });
 
   const publishCombatState = (state: UiCombatState): void => {
@@ -1182,6 +1253,10 @@ export function createAudioPanel(
       "bottom",
       state.waveformPlaneBottomWireframeColor
     );
+    handlers.onOceanSizeChange(state.oceanSize);
+    handlers.onOceanDistortionScaleChange(state.oceanDistortionScale);
+    handlers.onOceanAmplitudeChange(state.oceanAmplitude);
+    handlers.onOceanTimeOfDayChange(state.oceanTimeOfDay);
   };
 
   const hasRunAffectingChanges = (previous: UiCombatState, next: UiCombatState): boolean => {
@@ -1262,6 +1337,18 @@ export function createAudioPanel(
     waveformPlaneBottomHeightScale.value.textContent = Number(
       waveformPlaneBottomHeightScale.input.value
     ).toFixed(1);
+  });
+  oceanSize.input.addEventListener("input", () => {
+    const normalized = normalizeOceanSize(Number(oceanSize.input.value));
+    oceanSize.value.textContent = normalized.toFixed(2);
+  });
+  oceanDistortionScale.input.addEventListener("input", () => {
+    const normalized = normalizeOceanDistortionScale(Number(oceanDistortionScale.input.value));
+    oceanDistortionScale.value.textContent = normalized.toFixed(1);
+  });
+  oceanAmplitude.input.addEventListener("input", () => {
+    const normalized = normalizeOceanAmplitude(Number(oceanAmplitude.input.value));
+    oceanAmplitude.value.textContent = normalized.toFixed(2);
   });
   stageSelect.input.addEventListener("change", () => {
     syncVisualControlVisibility();
@@ -1831,6 +1918,7 @@ function normalizeStageId(value: string): StageId {
   switch (value) {
     case "starfield":
     case "waveformPlane":
+    case "ocean":
       return value;
     default:
       return DEFAULT_STAGE;
@@ -1853,6 +1941,38 @@ function normalizeStarfieldShipMovementResponse(value: number): number {
     STARFIELD_SHIP_MOVEMENT_RESPONSE_MIN,
     STARFIELD_SHIP_MOVEMENT_RESPONSE_MAX
   );
+}
+
+function normalizeOceanSize(value: number): number {
+  if (!Number.isFinite(value)) {
+    return OCEAN_SIZE_DEFAULT;
+  }
+  return clamp(value, OCEAN_SIZE_MIN, OCEAN_SIZE_MAX);
+}
+
+function normalizeOceanDistortionScale(value: number): number {
+  if (!Number.isFinite(value)) {
+    return OCEAN_DISTORTION_DEFAULT;
+  }
+  return clamp(value, OCEAN_DISTORTION_MIN, OCEAN_DISTORTION_MAX);
+}
+
+function normalizeOceanAmplitude(value: number): number {
+  if (!Number.isFinite(value)) {
+    return OCEAN_AMPLITUDE_DEFAULT;
+  }
+  return clamp(value, OCEAN_AMPLITUDE_MIN, OCEAN_AMPLITUDE_MAX);
+}
+
+const OCEAN_TIME_OF_DAY_VALUES = new Set<string>(
+  OCEAN_TIME_OF_DAY_OPTIONS.map((o) => o.value)
+);
+
+function normalizeOceanTimeOfDay(value: string): OceanTimeOfDay {
+  if (OCEAN_TIME_OF_DAY_VALUES.has(value)) {
+    return value as OceanTimeOfDay;
+  }
+  return OCEAN_TIME_OF_DAY_DEFAULT;
 }
 
 function db2mag(val: number): number {

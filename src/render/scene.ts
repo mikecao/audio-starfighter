@@ -85,6 +85,7 @@ import {
 	populateWaveformPlaneSpectrumForDistortion,
 	type WaveformPlaneDistortionAlgorithm,
 } from "./stages/waveformPlane/distortion";
+import { createOceanStage, type OceanTimeOfDay } from "./stages/ocean";
 
 type WaveformPlaneSurfaceShading = "smooth" | "flat" | "matte" | "metallic";
 type WaveformPlaneSide = "bottom" | "top";
@@ -96,6 +97,11 @@ export type RenderScene = {
 	setStarfieldEnabled: (enabled: boolean) => void;
 	setStarfieldSpeedScale: (speedScale: number) => void;
 	setStarfieldShipMovementResponse: (responseScale: number) => void;
+	setOceanEnabled: (enabled: boolean) => void;
+	setOceanSize: (size: number) => void;
+	setOceanDistortionScale: (scale: number) => void;
+	setOceanAmplitude: (amplitude: number) => void;
+	setOceanTimeOfDay: (tod: OceanTimeOfDay) => void;
 	setWaveformPlaneEnabled: (enabled: boolean) => void;
 	setWaveformPlaneSurfaceEnabled: (
 		side: WaveformPlaneSide,
@@ -284,6 +290,14 @@ export function setupScene(container: HTMLElement): RenderScene {
 		}
 	};
 	syncStarfieldVisibility();
+
+	const oceanStage = createOceanStage();
+	scene.add(oceanStage.group);
+	let oceanEnabled = false;
+	const syncOceanVisibility = (): void => {
+		oceanStage.group.visible = oceanEnabled;
+	};
+	syncOceanVisibility();
 
 	type WaveformPlaneMeshSet = {
 		placement: WaveformPlaneSide;
@@ -832,6 +846,10 @@ export function setupScene(container: HTMLElement): RenderScene {
 				);
 			}
 
+			if (oceanEnabled) {
+				oceanStage.update(starTimeSeconds, snapshot.ship.y);
+			}
+
 			syncWaveformPlaneVisibility();
 			if (waveformPlaneEnabled && waveformPlaneHasData) {
 				for (const planeState of waveformPlaneStateList) {
@@ -1076,6 +1094,22 @@ export function setupScene(container: HTMLElement): RenderScene {
 		setStarfieldShipMovementResponse(responseScale) {
 			starfieldShipMovementResponse =
 				normalizeStarfieldShipMovementResponse(responseScale);
+		},
+		setOceanEnabled(enabled) {
+			oceanEnabled = enabled;
+			syncOceanVisibility();
+		},
+		setOceanSize(size) {
+			oceanStage.setSize(size);
+		},
+		setOceanDistortionScale(scale) {
+			oceanStage.setDistortionScale(scale);
+		},
+		setOceanAmplitude(amplitude) {
+			oceanStage.setAmplitude(amplitude);
+		},
+		setOceanTimeOfDay(tod) {
+			oceanStage.setTimeOfDay(tod);
 		},
 		setWaveformPlaneEnabled(enabled) {
 			waveformPlaneEnabled = enabled;

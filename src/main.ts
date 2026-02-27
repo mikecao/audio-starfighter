@@ -189,6 +189,7 @@ const audioPanel = createAudioPanel(uiHost, {
   onStageChange(stage) {
     scene.setStarfieldEnabled(stage === "starfield");
     scene.setWaveformPlaneEnabled(stage === "waveformPlane");
+    scene.setOceanEnabled(stage === "ocean");
   },
   onStarfieldSpeedChange(speedScale) {
     scene.setStarfieldSpeedScale(speedScale);
@@ -225,6 +226,18 @@ const audioPanel = createAudioPanel(uiHost, {
   },
   onWaveformPlaneSpectrumSmoothingChange(side, smoothingTimeConstant) {
     scene.setWaveformPlaneSpectrumSmoothing(side, smoothingTimeConstant);
+  },
+  onOceanSizeChange(size) {
+    scene.setOceanSize(size);
+  },
+  onOceanDistortionScaleChange(scale) {
+    scene.setOceanDistortionScale(scale);
+  },
+  onOceanAmplitudeChange(amplitude) {
+    scene.setOceanAmplitude(amplitude);
+  },
+  onOceanTimeOfDayChange(tod) {
+    scene.setOceanTimeOfDay(tod);
   },
   onToggleUi() {
     setUiHidden(!uiHidden);
