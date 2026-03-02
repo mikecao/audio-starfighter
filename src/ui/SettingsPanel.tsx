@@ -1,9 +1,9 @@
 import { useControls, folder, button, Leva } from "leva";
 import { useRef, useState, useEffect, useCallback, useSyncExternalStore } from "react";
-import type { SettingsBridge, StageId, WaveformPlaneSide, WaveformPlaneSurfaceShading } from "./settingsBridge";
+import type { SettingsBridge, SceneListEntry, StagePresetId } from "./settingsBridge";
+import type { SceneKind } from "../render/scenes/types";
 import type { EnemyArchetypeId, EnemyProjectileStyle } from "../game/combatConfig";
-import type { WaveformPlaneDistortionAlgorithm } from "../render/stages/waveformPlane/distortion";
-import type { OceanTimeOfDay } from "../render/stages/ocean";
+import { getSceneControlSchema, SCENE_KIND_LABELS } from "./sceneControlSchemas";
 
 type RunAffectingState = {
 	blueLaser: boolean;
@@ -52,10 +52,61 @@ function buildCombatConfig(state: RunAffectingState) {
 	};
 }
 
+const ALL_SCENE_KINDS: SceneKind[] = ["starfield", "grid", "ocean", "sky"];
+
+function SceneInstanceControls({
+	scene,
+	bridge,
+	allowRemove,
+}: {
+	scene: SceneListEntry;
+	bridge: SettingsBridge;
+	allowRemove: boolean;
+}) {
+	const schema = getSceneControlSchema(scene.kind);
+	const label = SCENE_KIND_LABELS[scene.kind];
+	const folderName = `${label} (${scene.id})`;
+
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	const controls: Record<string, any> = {};
+
+	for (const [settingKey, def] of Object.entries(schema)) {
+		controls[def.label] = {
+			...def.levaConfig,
+			onChange: (v: unknown) => {
+				bridge.handlers.onSceneSettingChange(scene.id, settingKey, v);
+			},
+		};
+	}
+
+	if (allowRemove) {
+		controls["Remove"] = button(() => {
+			bridge.handlers.onRemoveScene(scene.id);
+		});
+	}
+
+	useControls({ [folderName]: folder(controls, { collapsed: true }) }, [
+		scene.id,
+		bridge,
+	]);
+
+	return null;
+}
+
 function SettingsPanelInner({ bridge }: { bridge: SettingsBridge }) {
 	const songLoaded = useSyncExternalStore(
 		bridge.subscribeSongLoaded,
 		bridge.isSongLoaded,
+	);
+
+	const scenes = useSyncExternalStore(
+		bridge.subscribeSceneList,
+		bridge.getActiveScenes,
+	);
+
+	const preset = useSyncExternalStore(
+		bridge.subscribeSceneList,
+		bridge.getActivePreset,
 	);
 
 	const [runDirty, setRunDirty] = useState(false);
@@ -128,235 +179,38 @@ function SettingsPanelInner({ bridge }: { bridge: SettingsBridge }) {
 		},
 	}), [handleRunAffecting]);
 
-	// ── Stage ──
-	useControls("Stage", () => ({
-		Stage: {
-			value: "starfield" as StageId,
-			options: {
-				Starfield: "starfield" as const,
-				"Waveform Plane": "waveformPlane" as const,
-				Ocean: "ocean" as const,
-				Sky: "sky" as const,
-			},
-			onChange: (v: StageId) => bridge.handlers.onStageChange(v),
-		},
+	// ── Stage Preset + Add Scene ──
+	const [addKind, setAddKind] = useState<SceneKind>("starfield");
 
-		// ── Starfield ──
-		"Speed": {
-			value: 1, min: 0, max: 3, step: 0.01,
-			render: (get: (p: string) => unknown) => get("Stage.Stage") === "starfield",
-			onChange: (v: number) => bridge.handlers.onStarfieldSpeedChange(v),
-		},
-		"Ship Movement Response": {
-			value: 1, min: 0, max: 2, step: 0.01,
-			render: (get: (p: string) => unknown) => get("Stage.Stage") === "starfield",
-			onChange: (v: number) => bridge.handlers.onStarfieldShipMovementResponseChange(v),
-		},
-
-		// ── Ocean ──
-		"Time of Day": {
-			value: "day" as OceanTimeOfDay,
-			options: {
-				Sunrise: "sunrise" as const,
-				Day: "day" as const,
-				Sunset: "sunset" as const,
-				Night: "night" as const,
+	useControls("Stage", () => {
+		const kindOptions: Record<string, SceneKind> = {};
+		for (const k of ALL_SCENE_KINDS) {
+			kindOptions[SCENE_KIND_LABELS[k]] = k;
+		}
+		return {
+			Stage: {
+				value: "space" as StagePresetId,
+				options: {
+					Space: "space" as const,
+					"\u003CCustom\u003E": "custom" as const,
+				},
+				onChange: (v: StagePresetId) => bridge.handlers.onPresetChange(v),
 			},
-			render: (get: (p: string) => unknown) => get("Stage.Stage") === "ocean",
-			onChange: (v: OceanTimeOfDay) => bridge.handlers.onOceanTimeOfDayChange(v),
-		},
-		"Ocean Size": {
-			value: 0.7, min: 0.1, max: 3, step: 0.01,
-			render: (get: (p: string) => unknown) => get("Stage.Stage") === "ocean",
-			onChange: (v: number) => bridge.handlers.onOceanSizeChange(v),
-		},
-		"Distortion Scale": {
-			value: 3.1, min: 0, max: 8, step: 0.1,
-			render: (get: (p: string) => unknown) => get("Stage.Stage") === "ocean",
-			onChange: (v: number) => bridge.handlers.onOceanDistortionScaleChange(v),
-		},
-		"Amplitude": {
-			value: 0.25, min: 0, max: 2, step: 0.01,
-			render: (get: (p: string) => unknown) => get("Stage.Stage") === "ocean",
-			onChange: (v: number) => bridge.handlers.onOceanAmplitudeChange(v),
-		},
-		"Ocean Speed": {
-			value: 4, min: 0, max: 10, step: 0.1,
-			render: (get: (p: string) => unknown) => get("Stage.Stage") === "ocean",
-			onChange: (v: number) => bridge.handlers.onOceanSpeedChange(v),
-		},
-
-		// ── Sky ──
-		"Turbidity": {
-			value: 10, min: 0, max: 20, step: 0.1,
-			render: (get: (p: string) => unknown) => get("Stage.Stage") === "sky",
-			onChange: (v: number) => bridge.handlers.onSkyTurbidityChange(v),
-		},
-		"Rayleigh": {
-			value: 3, min: 0, max: 4, step: 0.001,
-			render: (get: (p: string) => unknown) => get("Stage.Stage") === "sky",
-			onChange: (v: number) => bridge.handlers.onSkyRayleighChange(v),
-		},
-		"Mie Coefficient": {
-			value: 0.005, min: 0, max: 0.1, step: 0.001,
-			render: (get: (p: string) => unknown) => get("Stage.Stage") === "sky",
-			onChange: (v: number) => bridge.handlers.onSkyMieCoefficientChange(v),
-		},
-		"Mie Directional G": {
-			value: 0.7, min: 0, max: 1, step: 0.001,
-			render: (get: (p: string) => unknown) => get("Stage.Stage") === "sky",
-			onChange: (v: number) => bridge.handlers.onSkyMieDirectionalGChange(v),
-		},
-		"Elevation": {
-			value: 2, min: 0, max: 90, step: 0.1,
-			render: (get: (p: string) => unknown) => get("Stage.Stage") === "sky",
-			onChange: (v: number) => bridge.handlers.onSkyElevationChange(v),
-		},
-		"Azimuth": {
-			value: 180, min: -180, max: 180, step: 0.1,
-			render: (get: (p: string) => unknown) => get("Stage.Stage") === "sky",
-			onChange: (v: number) => bridge.handlers.onSkyAzimuthChange(v),
-		},
-		"Exposure": {
-			value: 0.5, min: 0, max: 1, step: 0.0001,
-			render: (get: (p: string) => unknown) => get("Stage.Stage") === "sky",
-			onChange: (v: number) => bridge.handlers.onSkyExposureChange(v),
-		},
-		"Horizon": {
-			value: 0.35, min: 0, max: 1, step: 0.01,
-			render: (get: (p: string) => unknown) => get("Stage.Stage") === "sky",
-			onChange: (v: number) => bridge.handlers.onSkyHorizonChange(v),
-		},
-		"Cloud Coverage": {
-			value: 0.4, min: 0, max: 1, step: 0.01,
-			render: (get: (p: string) => unknown) => get("Stage.Stage") === "sky",
-			onChange: (v: number) => bridge.handlers.onSkyCloudCoverageChange(v),
-		},
-		"Cloud Density": {
-			value: 0.4, min: 0, max: 1, step: 0.01,
-			render: (get: (p: string) => unknown) => get("Stage.Stage") === "sky",
-			onChange: (v: number) => bridge.handlers.onSkyCloudDensityChange(v),
-		},
-		"Cloud Elevation": {
-			value: 0.5, min: 0, max: 1, step: 0.01,
-			render: (get: (p: string) => unknown) => get("Stage.Stage") === "sky",
-			onChange: (v: number) => bridge.handlers.onSkyCloudElevationChange(v),
-		},
-
-		// ── Waveform Plane: Top ──
-		"Top Plane": folder(
-			{
-				Enabled: {
-					value: false,
-					onChange: (v: boolean) => bridge.handlers.onWaveformPlaneSideEnabledChange("top", v),
+			"Add Scene": folder({
+				"Scene Type": {
+					value: addKind,
+					options: kindOptions,
+					onChange: (v: SceneKind) => setAddKind(v),
 				},
-				Surface: {
-					value: false,
-					onChange: (v: boolean) => bridge.handlers.onWaveformPlaneSurfaceEnabledChange("top", v),
-				},
-				"Surface Shading": {
-					value: "smooth" as WaveformPlaneSurfaceShading,
-					options: { Smooth: "smooth" as const, Flat: "flat" as const, Matte: "matte" as const, Metallic: "metallic" as const },
-					onChange: (v: WaveformPlaneSurfaceShading) => bridge.handlers.onWaveformPlaneSurfaceShadingChange("top", v),
-				},
-				"Surface Color": {
-					value: "#f4f4f4",
-					onChange: (v: string) => bridge.handlers.onWaveformPlaneSurfaceColorChange("top", v),
-				},
-				"Surface Opacity": {
-					value: 1, min: 0, max: 1, step: 0.01,
-					onChange: (v: number) => bridge.handlers.onWaveformPlaneSurfaceOpacityChange("top", v),
-				},
-				Wireframe: {
-					value: true,
-					onChange: (v: boolean) => bridge.handlers.onWaveformPlaneWireframeEnabledChange("top", v),
-				},
-				"Wireframe Color": {
-					value: "#f4f4f4",
-					onChange: (v: string) => bridge.handlers.onWaveformPlaneWireframeColorChange("top", v),
-				},
-				"Max Height": {
-					value: 6.8, min: 2.5, max: 12, step: 0.1,
-					onChange: (v: number) => bridge.handlers.onWaveformPlaneHeightScaleChange("top", v),
-				},
-				Distortion: {
-					value: "ridge" as WaveformPlaneDistortionAlgorithm,
-					options: { "Ridge Flow": "ridge" as const, "Pulse Ripple": "ripple" as const },
-					onChange: (v: WaveformPlaneDistortionAlgorithm) => bridge.handlers.onWaveformPlaneDistortionAlgorithmChange("top", v),
-				},
-				"Spectrum Smoothing": {
-					value: 0.5, min: 0, max: 0.95, step: 0.01,
-					onChange: (v: number) => bridge.handlers.onWaveformPlaneSpectrumSmoothingChange("top", v),
-				},
-			},
-			{
-				collapsed: true,
-				render: (get: (p: string) => unknown) => get("Stage.Stage") === "waveformPlane",
-			},
-		),
-
-		// ── Waveform Plane: Bottom ──
-		"Bottom Plane": folder(
-			{
-				"Enabled ": {
-					label: "Enabled",
-					value: true,
-					onChange: (v: boolean) => bridge.handlers.onWaveformPlaneSideEnabledChange("bottom", v),
-				},
-				"Surface ": {
-					label: "Surface",
-					value: false,
-					onChange: (v: boolean) => bridge.handlers.onWaveformPlaneSurfaceEnabledChange("bottom", v),
-				},
-				"Surface Shading ": {
-					label: "Surface Shading",
-					value: "smooth" as WaveformPlaneSurfaceShading,
-					options: { Smooth: "smooth" as const, Flat: "flat" as const, Matte: "matte" as const, Metallic: "metallic" as const },
-					onChange: (v: WaveformPlaneSurfaceShading) => bridge.handlers.onWaveformPlaneSurfaceShadingChange("bottom", v),
-				},
-				"Surface Color ": {
-					label: "Surface Color",
-					value: "#f4f4f4",
-					onChange: (v: string) => bridge.handlers.onWaveformPlaneSurfaceColorChange("bottom", v),
-				},
-				"Surface Opacity ": {
-					label: "Surface Opacity",
-					value: 1, min: 0, max: 1, step: 0.01,
-					onChange: (v: number) => bridge.handlers.onWaveformPlaneSurfaceOpacityChange("bottom", v),
-				},
-				"Wireframe ": {
-					label: "Wireframe",
-					value: true,
-					onChange: (v: boolean) => bridge.handlers.onWaveformPlaneWireframeEnabledChange("bottom", v),
-				},
-				"Wireframe Color ": {
-					label: "Wireframe Color",
-					value: "#f4f4f4",
-					onChange: (v: string) => bridge.handlers.onWaveformPlaneWireframeColorChange("bottom", v),
-				},
-				"Max Height ": {
-					label: "Max Height",
-					value: 6.8, min: 2.5, max: 12, step: 0.1,
-					onChange: (v: number) => bridge.handlers.onWaveformPlaneHeightScaleChange("bottom", v),
-				},
-				"Distortion ": {
-					label: "Distortion",
-					value: "ridge" as WaveformPlaneDistortionAlgorithm,
-					options: { "Ridge Flow": "ridge" as const, "Pulse Ripple": "ripple" as const },
-					onChange: (v: WaveformPlaneDistortionAlgorithm) => bridge.handlers.onWaveformPlaneDistortionAlgorithmChange("bottom", v),
-				},
-				"Spectrum Smoothing ": {
-					label: "Spectrum Smoothing",
-					value: 0.5, min: 0, max: 0.95, step: 0.01,
-					onChange: (v: number) => bridge.handlers.onWaveformPlaneSpectrumSmoothingChange("bottom", v),
-				},
-			},
-			{
-				collapsed: true,
-				render: (get: (p: string) => unknown) => get("Stage.Stage") === "waveformPlane",
-			},
-		),
-	}), [bridge]);
+				"Add": button(() => {
+					bridge.handlers.onAddScene(addKind);
+				}),
+			}, {
+				collapsed: false,
+				render: (get: (p: string) => unknown) => get("Stage.Stage") === "custom",
+			}),
+		};
+	}, [bridge, preset, addKind]);
 
 	// ── Apply & Recompute / Close button ──
 	useControls(songLoaded ? {
@@ -380,7 +234,21 @@ function SettingsPanelInner({ bridge }: { bridge: SettingsBridge }) {
 		}),
 	}, [songLoaded, runDirty, saving, bridge]);
 
-	return null;
+	// ── Per-instance scene controls ──
+	const isCustom = preset === "custom";
+
+	return (
+		<>
+			{scenes.map((scene) => (
+				<SceneInstanceControls
+					key={scene.id}
+					scene={scene}
+					bridge={bridge}
+					allowRemove={isCustom}
+				/>
+			))}
+		</>
+	);
 }
 
 const LEVA_THEME = {

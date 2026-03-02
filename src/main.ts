@@ -64,9 +64,9 @@ uiHost.className = "ui-host";
 app.appendChild(uiHost);
 
 const scene = setupScene(sceneHost);
-scene.setWaveformPlaneEnabled(false);
+const sceneManager = scene.getSceneManager();
 const demoSpectrumTimeline = createDemoSpectrumTimeline();
-scene.setWaveformPlaneSpectrumTimeline(demoSpectrumTimeline);
+sceneManager.setGridSpectrumTimeline(demoSpectrumTimeline);
 const sim = createSimulation();
 sim.setCombatConfig(currentCombatConfig);
 sim.setEnemyBulletRatio(ENEMY_BULLET_RATIO);
@@ -107,95 +107,17 @@ const settingsBridge = createSettingsBridge(
       currentCombatConfig = config;
       sim.setCombatConfig(currentCombatConfig);
     },
-    onStageChange(stage) {
-      scene.setStarfieldEnabled(stage === "starfield");
-      scene.setWaveformPlaneEnabled(stage === "waveformPlane");
-      scene.setOceanEnabled(stage === "ocean");
-      scene.setSkyEnabled(stage === "sky");
+    onPresetChange(preset) {
+      sceneManager.activatePreset(preset);
     },
-    onStarfieldSpeedChange(speedScale) {
-      scene.setStarfieldSpeedScale(speedScale);
+    onAddScene(kind) {
+      return sceneManager.addScene(kind);
     },
-    onStarfieldShipMovementResponseChange(responseScale) {
-      scene.setStarfieldShipMovementResponse(responseScale);
+    onRemoveScene(sceneId) {
+      sceneManager.removeScene(sceneId);
     },
-    onWaveformPlaneSideEnabledChange(side, enabled) {
-      scene.setWaveformPlaneSideEnabled(side, enabled);
-    },
-    onWaveformPlaneSurfaceEnabledChange(side, enabled) {
-      scene.setWaveformPlaneSurfaceEnabled(side, enabled);
-    },
-    onWaveformPlaneWireframeEnabledChange(side, enabled) {
-      scene.setWaveformPlaneWireframeEnabled(side, enabled);
-    },
-    onWaveformPlaneHeightScaleChange(side, heightScale) {
-      scene.setWaveformPlaneHeightScale(side, heightScale);
-    },
-    onWaveformPlaneSurfaceShadingChange(side, shading) {
-      scene.setWaveformPlaneSurfaceShading(side, shading);
-    },
-    onWaveformPlaneDistortionAlgorithmChange(side, algorithm) {
-      scene.setWaveformPlaneDistortionAlgorithm(side, algorithm);
-    },
-    onWaveformPlaneSurfaceColorChange(side, colorHex) {
-      scene.setWaveformPlaneSurfaceColor(side, colorHex);
-    },
-    onWaveformPlaneWireframeColorChange(side, colorHex) {
-      scene.setWaveformPlaneWireframeColor(side, colorHex);
-    },
-    onWaveformPlaneSurfaceOpacityChange(side, opacity) {
-      scene.setWaveformPlaneSurfaceOpacity(side, opacity);
-    },
-    onWaveformPlaneSpectrumSmoothingChange(side, smoothingTimeConstant) {
-      scene.setWaveformPlaneSpectrumSmoothing(side, smoothingTimeConstant);
-    },
-    onOceanSizeChange(size) {
-      scene.setOceanSize(size);
-    },
-    onOceanDistortionScaleChange(scale) {
-      scene.setOceanDistortionScale(scale);
-    },
-    onOceanAmplitudeChange(amplitude) {
-      scene.setOceanAmplitude(amplitude);
-    },
-    onOceanSpeedChange(speed) {
-      scene.setOceanSpeed(speed);
-    },
-    onOceanTimeOfDayChange(tod) {
-      scene.setOceanTimeOfDay(tod);
-    },
-    onSkyTurbidityChange(v) {
-      scene.setSkyTurbidity(v);
-    },
-    onSkyRayleighChange(v) {
-      scene.setSkyRayleigh(v);
-    },
-    onSkyMieCoefficientChange(v) {
-      scene.setSkyMieCoefficient(v);
-    },
-    onSkyMieDirectionalGChange(v) {
-      scene.setSkyMieDirectionalG(v);
-    },
-    onSkyElevationChange(v) {
-      scene.setSkyElevation(v);
-    },
-    onSkyAzimuthChange(v) {
-      scene.setSkyAzimuth(v);
-    },
-    onSkyExposureChange(v) {
-      scene.setSkyExposure(v);
-    },
-    onSkyHorizonChange(v) {
-      scene.setSkyHorizon(v);
-    },
-    onSkyCloudCoverageChange(v) {
-      scene.setSkyCloudCoverage(v);
-    },
-    onSkyCloudDensityChange(v) {
-      scene.setSkyCloudDensity(v);
-    },
-    onSkyCloudElevationChange(v) {
-      scene.setSkyCloudElevation(v);
+    onSceneSettingChange(sceneId, key, value) {
+      sceneManager.setSceneSetting(sceneId, key, value);
     },
   },
   () => audioPanel.getLatestAnalysis() !== null,
@@ -204,6 +126,21 @@ const settingsBridge = createSettingsBridge(
     if (!analysis) return;
     await audioPanel.triggerRecompute();
   },
+  (() => {
+    let cached: ReadonlyArray<{ id: string; kind: import("./render/scenes/types").SceneKind }> = [];
+    let lastVersion = -1;
+    let version = 0;
+    sceneManager.subscribe(() => { version++; });
+    return () => {
+      if (version !== lastVersion) {
+        cached = sceneManager.getActiveScenes().map((s) => ({ id: s.id, kind: s.kind }));
+        lastVersion = version;
+      }
+      return cached;
+    };
+  })(),
+  () => sceneManager.getActivePreset(),
+  (cb) => sceneManager.subscribe(cb),
 );
 
 const audioPanel = createAudioPanel(uiHost, {
@@ -231,7 +168,7 @@ const audioPanel = createAudioPanel(uiHost, {
     });
   },
   async onStartRun(analysis, seed) {
-    scene.setWaveformPlaneSpectrumTimeline(analysis.spectrum);
+    sceneManager.setGridSpectrumTimeline(analysis.spectrum);
     loadingOverlay.show(
       "Preparing Synced Run",
       "Configuring simulation...",
@@ -301,7 +238,7 @@ const audioPanel = createAudioPanel(uiHost, {
   },
 });
 audioPanel.subscribeSpectrum((bins) => {
-  scene.setWaveformPlaneSpectrum(bins);
+  sceneManager.setGridSpectrum(bins);
 });
 mountSettingsPanel(settingsBridge);
 
@@ -408,10 +345,10 @@ function animate(frameTimeMs: number): void {
   latestSnapshot = snapshot;
   lastSimTimeSeconds = snapshot.simTimeSeconds;
   const audioPlaybackTimeSeconds = audioPanel.getAudioPlaybackTime();
-  scene.setWaveformPlaneTime(snapshot.simTimeSeconds);
+  sceneManager.setGridTime(snapshot.simTimeSeconds);
   audioPanel.updateReactiveSpectrum(!uiHidden);
   if (analysis && analysis !== appliedAnalysisRef) {
-    scene.setWaveformPlaneSpectrumTimeline(analysis.spectrum);
+    sceneManager.setGridSpectrumTimeline(analysis.spectrum);
     const runTimeline = buildRunTimelineEvents(analysis);
     sim.setMoodProfile(analysis.mood.label);
     sim.setCombatConfig(currentCombatConfig);
@@ -425,7 +362,7 @@ function animate(frameTimeMs: number): void {
     currentRunKey = buildBestScoreKey(analysis.fileName, 7);
     currentBestScore = loadBestScore(currentRunKey);
   } else if (!analysis && appliedAnalysisRef !== null) {
-    scene.setWaveformPlaneSpectrumTimeline(demoSpectrumTimeline);
+    sceneManager.setGridSpectrumTimeline(demoSpectrumTimeline);
     appliedAnalysisRef = null;
   }
 

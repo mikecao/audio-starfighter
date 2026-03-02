@@ -1,48 +1,26 @@
 import type { CombatConfigPatch } from "../game/combatConfig";
-import type { WaveformPlaneDistortionAlgorithm } from "../render/stages/waveformPlane/distortion";
-import type { OceanTimeOfDay } from "../render/stages/ocean";
+import type { SceneKind } from "../render/scenes/types";
+import type { StagePresetId } from "../render/scenes/sceneManager";
 
-export type WaveformPlaneSide = "bottom" | "top";
-export type WaveformPlaneSurfaceShading = "smooth" | "flat" | "matte" | "metallic";
-export type StageId = "starfield" | "waveformPlane" | "ocean" | "sky";
+export type { SceneKind, StagePresetId };
+
+export type SceneListEntry = { id: string; kind: SceneKind };
 
 export type SettingsHandlers = {
 	onCombatConfigChange: (config: CombatConfigPatch) => void;
-	onStageChange: (stage: StageId) => void;
-	onStarfieldSpeedChange: (speedScale: number) => void;
-	onStarfieldShipMovementResponseChange: (responseScale: number) => void;
-	onWaveformPlaneSideEnabledChange: (side: WaveformPlaneSide, enabled: boolean) => void;
-	onWaveformPlaneSurfaceEnabledChange: (side: WaveformPlaneSide, enabled: boolean) => void;
-	onWaveformPlaneWireframeEnabledChange: (side: WaveformPlaneSide, enabled: boolean) => void;
-	onWaveformPlaneHeightScaleChange: (side: WaveformPlaneSide, heightScale: number) => void;
-	onWaveformPlaneSurfaceShadingChange: (side: WaveformPlaneSide, shading: WaveformPlaneSurfaceShading) => void;
-	onWaveformPlaneDistortionAlgorithmChange: (side: WaveformPlaneSide, algorithm: WaveformPlaneDistortionAlgorithm) => void;
-	onWaveformPlaneSurfaceColorChange: (side: WaveformPlaneSide, colorHex: string) => void;
-	onWaveformPlaneWireframeColorChange: (side: WaveformPlaneSide, colorHex: string) => void;
-	onWaveformPlaneSurfaceOpacityChange: (side: WaveformPlaneSide, opacity: number) => void;
-	onWaveformPlaneSpectrumSmoothingChange: (side: WaveformPlaneSide, smoothingTimeConstant: number) => void;
-	onOceanSizeChange: (size: number) => void;
-	onOceanDistortionScaleChange: (scale: number) => void;
-	onOceanAmplitudeChange: (amplitude: number) => void;
-	onOceanSpeedChange: (speed: number) => void;
-	onOceanTimeOfDayChange: (tod: OceanTimeOfDay) => void;
-	onSkyTurbidityChange: (v: number) => void;
-	onSkyRayleighChange: (v: number) => void;
-	onSkyMieCoefficientChange: (v: number) => void;
-	onSkyMieDirectionalGChange: (v: number) => void;
-	onSkyElevationChange: (v: number) => void;
-	onSkyAzimuthChange: (v: number) => void;
-	onSkyExposureChange: (v: number) => void;
-	onSkyHorizonChange: (v: number) => void;
-	onSkyCloudCoverageChange: (v: number) => void;
-	onSkyCloudDensityChange: (v: number) => void;
-	onSkyCloudElevationChange: (v: number) => void;
+	onPresetChange: (preset: StagePresetId) => void;
+	onAddScene: (kind: SceneKind) => string;
+	onRemoveScene: (sceneId: string) => void;
+	onSceneSettingChange: (sceneId: string, key: string, value: unknown) => void;
 };
 
 export type SettingsBridge = {
 	handlers: SettingsHandlers;
 	isSongLoaded: () => boolean;
 	requestRecompute: () => Promise<void>;
+	getActiveScenes: () => ReadonlyArray<SceneListEntry>;
+	getActivePreset: () => StagePresetId;
+	subscribeSceneList: (cb: () => void) => () => void;
 	subscribeSongLoaded: (cb: () => void) => () => void;
 	notifySongLoadedChanged: () => void;
 	setHidden: (hidden: boolean) => void;
@@ -54,6 +32,9 @@ export function createSettingsBridge(
 	handlers: SettingsHandlers,
 	isSongLoaded: () => boolean,
 	requestRecompute: () => Promise<void>,
+	getActiveScenes: () => ReadonlyArray<SceneListEntry>,
+	getActivePreset: () => StagePresetId,
+	subscribeSceneList: (cb: () => void) => () => void,
 ): SettingsBridge {
 	const songListeners = new Set<() => void>();
 	const hiddenListeners = new Set<(hidden: boolean) => void>();
@@ -63,6 +44,9 @@ export function createSettingsBridge(
 		handlers,
 		isSongLoaded,
 		requestRecompute,
+		getActiveScenes,
+		getActivePreset,
+		subscribeSceneList,
 		subscribeSongLoaded(cb) {
 			songListeners.add(cb);
 			return () => { songListeners.delete(cb); };

@@ -3,20 +3,15 @@ import {
 	AmbientLight,
 	BoxGeometry,
 	Color,
-	DataTexture,
 	DirectionalLight,
 	DoubleSide,
 	Fog,
-	FrontSide,
 	Group,
-	LinearFilter,
 	MeshBasicMaterial,
 	Mesh,
 	MeshStandardMaterial,
 	OrthographicCamera,
-	PlaneGeometry,
 	PointLight,
-	RGBAFormat,
 	RingGeometry,
 	Scene,
 	SphereGeometry,
@@ -24,7 +19,6 @@ import {
 	Vector3,
 	WebGLRenderer,
 } from "three";
-import type { SpectrumTimeline } from "../audio/types";
 import type { SimulationSnapshot } from "../game/sim";
 import {
 	createExplosionBurst,
@@ -48,21 +42,6 @@ import {
 	type PurplePulseRenderable,
 } from "./effects/purplePulses";
 import {
-	createStarLayer,
-	normalizeStarfieldShipMovementResponse,
-	normalizeStarfieldSpeedScale,
-	STARFIELD_SHIP_MOVEMENT_RESPONSE_DEFAULT,
-	STARFIELD_SPEED_SCALE_DEFAULT,
-	updateStarLayer,
-	type StarLayer,
-} from "./stages/starfield";
-import {
-	fillWaveformTextureDataWithSilence,
-	populateSpectrumTimelineTexture,
-	populateSpectrumTimelineTextureFromWaveform,
-	sampleWaveformLinear,
-} from "./stages/waveformTexture";
-import {
 	createEnemyRenderer,
 	updateEnemyRenderer,
 } from "./enemies/enemyRenderer";
@@ -78,94 +57,17 @@ import {
 	createPlayerProjectileRenderer,
 	updatePlayerProjectileRenderer,
 } from "./weapons/playerProjectiles";
-import {
-	WAVEFORM_PLANE_DISTORTION_DEFAULT,
-	buildWaveformPlaneDisplacementHeader,
-	normalizeWaveformPlaneDistortionAlgorithm,
-	populateWaveformPlaneSpectrumForDistortion,
-	type WaveformPlaneDistortionAlgorithm,
-} from "./stages/waveformPlane/distortion";
-import { createOceanStage, type OceanTimeOfDay } from "./stages/ocean";
-import { createSkyStage } from "./stages/sky";
-
-type WaveformPlaneSurfaceShading = "smooth" | "flat" | "matte" | "metallic";
-type WaveformPlaneSide = "bottom" | "top";
+import { createSceneManager, type SceneManager } from "./scenes/sceneManager";
 
 export type RenderScene = {
 	update: (snapshot: SimulationSnapshot, alpha: number) => void;
 	render: () => void;
 	resize: () => void;
-	setStarfieldEnabled: (enabled: boolean) => void;
-	setStarfieldSpeedScale: (speedScale: number) => void;
-	setStarfieldShipMovementResponse: (responseScale: number) => void;
-	setOceanEnabled: (enabled: boolean) => void;
-	setOceanSize: (size: number) => void;
-	setOceanDistortionScale: (scale: number) => void;
-	setOceanAmplitude: (amplitude: number) => void;
-	setOceanSpeed: (speed: number) => void;
-	setOceanTimeOfDay: (tod: OceanTimeOfDay) => void;
-	setSkyEnabled: (enabled: boolean) => void;
-	setSkyTurbidity: (v: number) => void;
-	setSkyRayleigh: (v: number) => void;
-	setSkyMieCoefficient: (v: number) => void;
-	setSkyMieDirectionalG: (v: number) => void;
-	setSkyElevation: (v: number) => void;
-	setSkyAzimuth: (v: number) => void;
-	setSkyExposure: (v: number) => void;
-	setSkyHorizon: (v: number) => void;
-	setSkyCloudCoverage: (v: number) => void;
-	setSkyCloudDensity: (v: number) => void;
-	setSkyCloudElevation: (v: number) => void;
-	setWaveformPlaneEnabled: (enabled: boolean) => void;
-	setWaveformPlaneSurfaceEnabled: (
-		side: WaveformPlaneSide,
-		enabled: boolean,
-	) => void;
-	setWaveformPlaneWireframeEnabled: (
-		side: WaveformPlaneSide,
-		enabled: boolean,
-	) => void;
-	setWaveformPlaneSideEnabled: (
-		side: WaveformPlaneSide,
-		enabled: boolean,
-	) => void;
-	setWaveformPlaneHeightScale: (
-		side: WaveformPlaneSide,
-		heightScale: number,
-	) => void;
-	setWaveformPlaneSurfaceShading: (
-		side: WaveformPlaneSide,
-		shading: WaveformPlaneSurfaceShading,
-	) => void;
-	setWaveformPlaneDistortionAlgorithm: (
-		side: WaveformPlaneSide,
-		algorithm: WaveformPlaneDistortionAlgorithm,
-	) => void;
-	setWaveformPlaneSurfaceColor: (
-		side: WaveformPlaneSide,
-		colorHex: string,
-	) => void;
-	setWaveformPlaneWireframeColor: (
-		side: WaveformPlaneSide,
-		colorHex: string,
-	) => void;
-	setWaveformPlaneSurfaceOpacity: (
-		side: WaveformPlaneSide,
-		opacity: number,
-	) => void;
-	setWaveformPlaneSpectrumSmoothing: (
-		side: WaveformPlaneSide,
-		smoothingTimeConstant: number,
-	) => void;
-	setWaveformPlaneSpectrum: (spectrumBins: Float32Array | null) => void;
-	setWaveformPlaneSpectrumTimeline: (timeline: SpectrumTimeline | null) => void;
-	setWaveformPlaneData: (
-		waveformLeft: Float32Array,
-		waveformRight: Float32Array,
-	) => void;
-	clearWaveformPlaneData: () => void;
-	setWaveformPlaneTime: (timeSeconds: number) => void;
+	getSceneManager: () => SceneManager;
 };
+
+const SCENE_FOG_NEAR = 52;
+const SCENE_FOG_FAR = 92;
 
 export function setupScene(container: HTMLElement): RenderScene {
 	const FIXED_RENDER_WIDTH = 1920;
@@ -179,8 +81,8 @@ export function setupScene(container: HTMLElement): RenderScene {
 	scene.background = currentBg;
 	const sceneFog = new Fog(
 		currentBg.clone(),
-		WAVEFORM_SCENE_FOG_NEAR,
-		WAVEFORM_SCENE_FOG_FAR,
+		SCENE_FOG_NEAR,
+		SCENE_FOG_FAR,
 	);
 	scene.fog = sceneFog;
 
@@ -284,500 +186,8 @@ export function setupScene(container: HTMLElement): RenderScene {
 	const ringColor = new Color();
 	const sparkColor = new Color();
 
-	const closeStars = createStarLayer(130, 0xe0f2fe, 10.5, 0.12, 0.56);
-	const nearStars = createStarLayer(220, 0x93c5fd, 6.6, 0.08, 0.34);
-	const farStars = createStarLayer(150, 0x334155, 3.1, 0.05, 0.14);
-	const starLayers = [farStars, nearStars, closeStars];
-	scene.add(farStars.primary);
-	scene.add(farStars.wrap);
-	scene.add(nearStars.primary);
-	scene.add(nearStars.wrap);
-	scene.add(closeStars.primary);
-	scene.add(closeStars.wrap);
-	let starfieldEnabled = true;
-	let starfieldSpeedScale = STARFIELD_SPEED_SCALE_DEFAULT;
-	let starfieldShipMovementResponse = STARFIELD_SHIP_MOVEMENT_RESPONSE_DEFAULT;
-	const syncStarfieldVisibility = (): void => {
-		for (const layer of starLayers) {
-			layer.primary.visible = starfieldEnabled;
-			layer.wrap.visible = starfieldEnabled;
-		}
-	};
-	syncStarfieldVisibility();
-
-	const oceanStage = createOceanStage();
-	scene.add(oceanStage.group);
-	let oceanEnabled = false;
-	const syncOceanVisibility = (): void => {
-		oceanStage.group.visible = oceanEnabled;
-	};
-	syncOceanVisibility();
-
-	const skyStage = createSkyStage();
-	scene.add(skyStage.group);
-	let skyEnabled = false;
-	const syncSkyVisibility = (): void => {
-		skyStage.group.visible = skyEnabled;
-	};
-	syncSkyVisibility();
-
-	type WaveformPlaneMeshSet = {
-		placement: WaveformPlaneSide;
-		depthMesh: Mesh;
-		surfaceMesh: Mesh;
-		wireframeMesh: Mesh;
-	};
-	type WaveformPlaneRenderState = {
-		side: WaveformPlaneSide;
-		displacementUniforms: {
-			uTimeSeconds: { value: number };
-			uHeightScale: { value: number };
-			uAmplitudeDrive: { value: number };
-			uSpectrumTex: { value: DataTexture };
-		};
-		distortionAlgorithm: WaveformPlaneDistortionAlgorithm;
-		spectrumSmoothingTimeConstant: number;
-		spectrumTextureData: Uint8Array;
-		spectrumTexture: DataTexture;
-		spectrumShaped: Float32Array;
-		sourceSpectrumSmoothed: Float32Array;
-		surfaceBaseColor: Color;
-		surfaceEmissiveColor: Color;
-		wireframeBaseColor: Color;
-		wireframeEmissiveColor: Color;
-		surfaceMaterial: MeshStandardMaterial;
-		wireframeMaterial: MeshStandardMaterial;
-		depthMaterial: MeshStandardMaterial;
-		meshSet: WaveformPlaneMeshSet;
-		planeEnabled: boolean;
-		surfaceEnabled: boolean;
-		surfaceOpacity: number;
-		wireframeEnabled: boolean;
-		amplitudeDrive: number;
-	};
-	const waveformPlaneBeginNormal = `
-      float heightN = computeHeight(uv);
-      float steppedHeightN = floor(heightN * 8.0 + 0.5) / 8.0;
-      float depthCurveN = pow(clamp(uv.y, 0.0, 1.0), 1.95);
-      float depthMappedN = pow(clamp(uv.y, 0.0, 1.0), 1.55);
-      float widthScaleN = mix(1.0, 0.44, depthCurveN);
-      float heightAttenuationN = 1.0 - depthCurveN * 0.58;
-      float baseXN = mix(-${(WAVEFORM_PLANE_WIDTH * 0.5).toFixed(6)}, ${(WAVEFORM_PLANE_WIDTH * 0.5).toFixed(6)}, uv.x);
-      float baseYN = mix(-${(WAVEFORM_PLANE_HEIGHT * 0.5).toFixed(6)}, ${(WAVEFORM_PLANE_HEIGHT * 0.5).toFixed(6)}, depthMappedN);
-      float baseZN = steppedHeightN * heightAttenuationN;
-      float uvStepXN = ${Math.max(1 / Math.max(WAVEFORM_PLANE_SEGMENTS_X, 1), 1e-5).toFixed(6)};
-      float uvStepYN = ${Math.max(1 / Math.max(WAVEFORM_PLANE_SEGMENTS_Y, 1), 1e-5).toFixed(6)};
-      vec2 uvXN = vec2(min(1.0, uv.x + uvStepXN), uv.y);
-      vec2 uvYN = vec2(uv.x, min(1.0, uv.y + uvStepYN));
-      float hXN = floor(computeHeight(uvXN) * 8.0 + 0.5) / 8.0;
-      float hYN = floor(computeHeight(uvYN) * 8.0 + 0.5) / 8.0;
-      float depthCurveYN = pow(clamp(uvYN.y, 0.0, 1.0), 1.95);
-      float depthMappedYN = pow(clamp(uvYN.y, 0.0, 1.0), 1.55);
-      float widthScaleYN = mix(1.0, 0.44, depthCurveYN);
-      float heightAttenuationYN = 1.0 - depthCurveYN * 0.58;
-      float xXN = mix(-${(WAVEFORM_PLANE_WIDTH * 0.5).toFixed(6)}, ${(WAVEFORM_PLANE_WIDTH * 0.5).toFixed(6)}, uvXN.x) * widthScaleN;
-      float yXN = baseYN;
-      float zXN = hXN * heightAttenuationN;
-      float xYN = baseXN * widthScaleYN;
-      float yYN = mix(-${(WAVEFORM_PLANE_HEIGHT * 0.5).toFixed(6)}, ${(WAVEFORM_PLANE_HEIGHT * 0.5).toFixed(6)}, depthMappedYN);
-      float zYN = hYN * heightAttenuationYN;
-      vec3 tangentXN = vec3(xXN - baseXN * widthScaleN, yXN - baseYN, zXN - baseZN);
-      vec3 tangentYN = vec3(xYN - baseXN * widthScaleN, yYN - baseYN, zYN - baseZN);
-      vec3 objectNormal = normalize(cross(tangentXN, tangentYN));
-  `;
-	const waveformPlaneBeginVertex = `
-      float heightV = computeHeight(uv);
-      float steppedHeightV = floor(heightV * 8.0 + 0.5) / 8.0;
-      float depthCurveV = pow(clamp(uv.y, 0.0, 1.0), 1.95);
-      float depthMappedV = pow(clamp(uv.y, 0.0, 1.0), 1.55);
-      float widthScaleV = mix(1.0, 0.44, depthCurveV);
-      float heightAttenuationV = 1.0 - depthCurveV * 0.58;
-      float baseXV = mix(-${(WAVEFORM_PLANE_WIDTH * 0.5).toFixed(6)}, ${(WAVEFORM_PLANE_WIDTH * 0.5).toFixed(6)}, uv.x);
-      float baseYV = mix(-${(WAVEFORM_PLANE_HEIGHT * 0.5).toFixed(6)}, ${(WAVEFORM_PLANE_HEIGHT * 0.5).toFixed(6)}, depthMappedV);
-      float baseZV = steppedHeightV * heightAttenuationV;
-      vec3 transformed = vec3(baseXV * widthScaleV, baseYV, position.z + baseZV);
-  `;
-	const waveformPlaneGeometry = new PlaneGeometry(
-		WAVEFORM_PLANE_WIDTH,
-		WAVEFORM_PLANE_HEIGHT,
-		WAVEFORM_PLANE_SEGMENTS_X,
-		WAVEFORM_PLANE_SEGMENTS_Y,
-	);
-	const normalizeWaveformPlaneSide = (side: WaveformPlaneSide): WaveformPlaneSide =>
-		side === "top" ? "top" : "bottom";
-	const normalizeWaveformPlaneColor = (
-		colorHex: string,
-		fallback: string,
-	): string => (/^#[0-9a-f]{6}$/i.test(colorHex) ? colorHex : fallback);
-	const normalizeWaveformPlaneSpectrumSmoothing = (value: number): number => {
-		if (!Number.isFinite(value)) {
-			return WAVEFORM_PLANE_SPECTRUM_SMOOTHING_DEFAULT;
-		}
-		return clamp(
-			value,
-			WAVEFORM_PLANE_SPECTRUM_SMOOTHING_MIN,
-			WAVEFORM_PLANE_SPECTRUM_SMOOTHING_MAX,
-		);
-	};
-	const normalizeWaveformPlaneSurfaceOpacity = (value: number): number => {
-		if (!Number.isFinite(value)) {
-			return WAVEFORM_PLANE_SURFACE_OPACITY_DEFAULT;
-		}
-		return clamp(
-			value,
-			WAVEFORM_PLANE_SURFACE_OPACITY_MIN,
-			WAVEFORM_PLANE_SURFACE_OPACITY_MAX,
-		);
-	};
-	const createWaveformPlaneMeshSet = (
-		placement: WaveformPlaneSide,
-		positionY: number,
-		rotationX: number,
-		materials: {
-			depth: MeshStandardMaterial;
-			surface: MeshStandardMaterial;
-			wireframe: MeshStandardMaterial;
-		},
-	): WaveformPlaneMeshSet => {
-		const depthMesh = new Mesh(waveformPlaneGeometry, materials.depth);
-		depthMesh.position.set(0, positionY, WAVEFORM_PLANE_Z);
-		depthMesh.rotation.x = rotationX;
-		depthMesh.rotation.y = 0;
-		depthMesh.rotation.z = 0;
-		depthMesh.renderOrder = -2;
-
-		const surfaceMesh = new Mesh(waveformPlaneGeometry, materials.surface);
-		surfaceMesh.position.set(0, positionY, WAVEFORM_PLANE_Z);
-		surfaceMesh.rotation.x = rotationX;
-		surfaceMesh.rotation.y = 0;
-		surfaceMesh.rotation.z = 0;
-		surfaceMesh.renderOrder = -1;
-
-		const wireframeMesh = new Mesh(waveformPlaneGeometry, materials.wireframe);
-		wireframeMesh.position.set(0, positionY, WAVEFORM_PLANE_Z);
-		wireframeMesh.rotation.x = rotationX;
-		wireframeMesh.rotation.y = 0;
-		wireframeMesh.rotation.z = 0;
-		wireframeMesh.renderOrder = 0;
-
-		return {
-			placement,
-			depthMesh,
-			surfaceMesh,
-			wireframeMesh,
-		};
-	};
-	const applyWaveformPlaneDisplacement = (
-		state: WaveformPlaneRenderState,
-		material: MeshStandardMaterial,
-	): void => {
-		material.onBeforeCompile = (shader) => {
-			Object.assign(shader.uniforms, state.displacementUniforms);
-			const displacementHeader = buildWaveformPlaneDisplacementHeader(
-				state.distortionAlgorithm,
-				Math.max(1 / (WAVEFORM_PLANE_SPECTRUM_BIN_COUNT - 1), 1e-5),
-			);
-			shader.vertexShader = `${displacementHeader}\n${shader.vertexShader}`;
-			shader.vertexShader = shader.vertexShader.replace(
-				"#include <beginnormal_vertex>",
-				waveformPlaneBeginNormal,
-			);
-			shader.vertexShader = shader.vertexShader.replace(
-				"#include <begin_vertex>",
-				waveformPlaneBeginVertex,
-			);
-		};
-		material.customProgramCacheKey = () =>
-			`waveform-plane-displacement-v8-${state.side}-${state.distortionAlgorithm}`;
-	};
-	const applyWaveformPlaneSurfaceShading = (
-		state: WaveformPlaneRenderState,
-		shading: WaveformPlaneSurfaceShading,
-	): void => {
-		const normalizedShading: WaveformPlaneSurfaceShading =
-			shading === "flat" ||
-			shading === "matte" ||
-			shading === "metallic" ||
-			shading === "smooth"
-				? shading
-				: WAVEFORM_PLANE_SURFACE_SHADING_DEFAULT;
-		if (normalizedShading === "flat") {
-			state.surfaceMaterial.flatShading = true;
-			state.surfaceMaterial.roughness = 0.88;
-			state.surfaceMaterial.metalness = 0.02;
-			state.surfaceMaterial.emissiveIntensity = 0.14;
-		} else if (normalizedShading === "matte") {
-			state.surfaceMaterial.flatShading = false;
-			state.surfaceMaterial.roughness = 1;
-			state.surfaceMaterial.metalness = 0;
-			state.surfaceMaterial.emissiveIntensity = 0.1;
-		} else if (normalizedShading === "metallic") {
-			state.surfaceMaterial.flatShading = false;
-			state.surfaceMaterial.roughness = 0.24;
-			state.surfaceMaterial.metalness = 0.58;
-			state.surfaceMaterial.emissiveIntensity = 0.11;
-		} else {
-			state.surfaceMaterial.flatShading = false;
-			state.surfaceMaterial.roughness = 0.9;
-			state.surfaceMaterial.metalness = 0;
-			state.surfaceMaterial.emissiveIntensity = 0.14;
-		}
-		state.surfaceMaterial.needsUpdate = true;
-	};
-	const applyWaveformPlaneDistortionAlgorithm = (
-		state: WaveformPlaneRenderState,
-		algorithm: WaveformPlaneDistortionAlgorithm,
-	): void => {
-		const normalizedAlgorithm =
-			normalizeWaveformPlaneDistortionAlgorithm(algorithm);
-		if (normalizedAlgorithm === state.distortionAlgorithm) {
-			return;
-		}
-		state.distortionAlgorithm = normalizedAlgorithm;
-		state.surfaceMaterial.needsUpdate = true;
-		state.wireframeMaterial.needsUpdate = true;
-		state.depthMaterial.needsUpdate = true;
-	};
-	const applyWaveformPlaneSurfaceColor = (
-		state: WaveformPlaneRenderState,
-		colorHex: string,
-	): void => {
-		const normalizedColor = normalizeWaveformPlaneColor(
-			colorHex,
-			WAVEFORM_PLANE_DEFAULT_SURFACE_COLOR_HEX,
-		);
-		state.surfaceBaseColor.set(normalizedColor);
-		state.surfaceMaterial.color.copy(state.surfaceBaseColor);
-		state.surfaceEmissiveColor
-			.copy(state.surfaceBaseColor)
-			.multiplyScalar(WAVEFORM_PLANE_SURFACE_EMISSIVE_COLOR_SCALE);
-		state.surfaceMaterial.emissive.copy(state.surfaceEmissiveColor);
-	};
-	const applyWaveformPlaneSurfaceOpacity = (
-		state: WaveformPlaneRenderState,
-		opacity: number,
-	): void => {
-		const normalizedOpacity = normalizeWaveformPlaneSurfaceOpacity(opacity);
-		state.surfaceOpacity = normalizedOpacity;
-		state.surfaceMaterial.opacity = normalizedOpacity;
-	};
-	const applyWaveformPlaneWireframeColor = (
-		state: WaveformPlaneRenderState,
-		colorHex: string,
-	): void => {
-		const normalizedColor = normalizeWaveformPlaneColor(
-			colorHex,
-			WAVEFORM_PLANE_DEFAULT_WIREFRAME_COLOR_HEX,
-		);
-		state.wireframeBaseColor.set(normalizedColor);
-		state.wireframeMaterial.color.copy(state.wireframeBaseColor);
-		state.wireframeEmissiveColor
-			.copy(state.wireframeBaseColor)
-			.multiplyScalar(WAVEFORM_PLANE_WIREFRAME_EMISSIVE_COLOR_SCALE);
-		state.wireframeMaterial.emissive.copy(state.wireframeEmissiveColor);
-	};
-	const createWaveformPlaneState = (
-		side: WaveformPlaneSide,
-		positionY: number,
-		rotationX: number,
-	): WaveformPlaneRenderState => {
-		const spectrumTextureData = new Uint8Array(
-			WAVEFORM_PLANE_SPECTRUM_BIN_COUNT * 4,
-		);
-		for (let i = 0; i < spectrumTextureData.length; i += 4) {
-			spectrumTextureData[i] = 0;
-			spectrumTextureData[i + 1] = 0;
-			spectrumTextureData[i + 2] = 0;
-			spectrumTextureData[i + 3] = 255;
-		}
-		const spectrumTexture = new DataTexture(
-			spectrumTextureData,
-			WAVEFORM_PLANE_SPECTRUM_BIN_COUNT,
-			1,
-			RGBAFormat,
-		);
-		spectrumTexture.magFilter = LinearFilter;
-		spectrumTexture.minFilter = LinearFilter;
-		spectrumTexture.needsUpdate = true;
-		const spectrumShaped = new Float32Array(WAVEFORM_PLANE_SPECTRUM_BIN_COUNT);
-		const displacementUniforms = {
-			uTimeSeconds: { value: 0 },
-			uHeightScale: { value: WAVEFORM_PLANE_HEIGHT_SCALE_DEFAULT },
-			uAmplitudeDrive: { value: 0 },
-			uSpectrumTex: { value: spectrumTexture },
-		};
-
-		const surfaceBaseColor = new Color(WAVEFORM_PLANE_DEFAULT_SURFACE_COLOR_HEX);
-		const surfaceEmissiveColor = surfaceBaseColor
-			.clone()
-			.multiplyScalar(WAVEFORM_PLANE_SURFACE_EMISSIVE_COLOR_SCALE);
-		const surfaceMaterial = new MeshStandardMaterial({
-			color: surfaceBaseColor.clone(),
-			emissive: surfaceEmissiveColor.clone(),
-			emissiveIntensity: 0.14,
-			roughness: 0.9,
-			metalness: 0,
-			wireframe: false,
-			transparent: true,
-			opacity: WAVEFORM_PLANE_SURFACE_OPACITY_DEFAULT,
-			side: FrontSide,
-			depthWrite: true,
-			depthTest: true,
-		});
-		const wireframeBaseColor = new Color(
-			WAVEFORM_PLANE_DEFAULT_WIREFRAME_COLOR_HEX,
-		);
-		const wireframeEmissiveColor = wireframeBaseColor
-			.clone()
-			.multiplyScalar(WAVEFORM_PLANE_WIREFRAME_EMISSIVE_COLOR_SCALE);
-		const wireframeMaterial = new MeshStandardMaterial({
-			color: wireframeBaseColor.clone(),
-			emissive: wireframeEmissiveColor.clone(),
-			emissiveIntensity: 0.14,
-			roughness: 0.9,
-			metalness: 0,
-			wireframe: true,
-			transparent: false,
-			side: FrontSide,
-			depthWrite: false,
-			depthTest: true,
-		});
-		const depthMaterial = surfaceMaterial.clone();
-		depthMaterial.wireframe = false;
-		depthMaterial.colorWrite = false;
-		depthMaterial.transparent = false;
-		depthMaterial.side = FrontSide;
-		depthMaterial.fog = false;
-		depthMaterial.depthWrite = true;
-		depthMaterial.depthTest = true;
-
-		const state: WaveformPlaneRenderState = {
-			side,
-			displacementUniforms,
-			distortionAlgorithm: WAVEFORM_PLANE_DISTORTION_DEFAULT,
-			spectrumSmoothingTimeConstant: WAVEFORM_PLANE_SPECTRUM_SMOOTHING_DEFAULT,
-			spectrumTextureData,
-			spectrumTexture,
-			spectrumShaped,
-			sourceSpectrumSmoothed: new Float32Array(0),
-			surfaceBaseColor,
-			surfaceEmissiveColor,
-			wireframeBaseColor,
-			wireframeEmissiveColor,
-			surfaceMaterial,
-			wireframeMaterial,
-			depthMaterial,
-			meshSet: createWaveformPlaneMeshSet(side, positionY, rotationX, {
-				depth: depthMaterial,
-				surface: surfaceMaterial,
-				wireframe: wireframeMaterial,
-			}),
-			planeEnabled: side === "bottom",
-			surfaceEnabled: WAVEFORM_PLANE_SURFACE_ENABLED_DEFAULT,
-			surfaceOpacity: WAVEFORM_PLANE_SURFACE_OPACITY_DEFAULT,
-			wireframeEnabled: WAVEFORM_PLANE_WIREFRAME_ENABLED_DEFAULT,
-			amplitudeDrive: 0,
-		};
-
-		applyWaveformPlaneDisplacement(state, state.surfaceMaterial);
-		applyWaveformPlaneDisplacement(state, state.wireframeMaterial);
-		applyWaveformPlaneDisplacement(state, state.depthMaterial);
-		applyWaveformPlaneSurfaceShading(state, WAVEFORM_PLANE_SURFACE_SHADING_DEFAULT);
-		applyWaveformPlaneSurfaceOpacity(
-			state,
-			WAVEFORM_PLANE_SURFACE_OPACITY_DEFAULT,
-		);
-		return state;
-	};
-	const waveformPlaneStates: Record<WaveformPlaneSide, WaveformPlaneRenderState> =
-		{
-			bottom: createWaveformPlaneState(
-				"bottom",
-				WAVEFORM_PLANE_BOTTOM_Y,
-				WAVEFORM_PLANE_BOTTOM_ROTATION_X,
-			),
-			top: createWaveformPlaneState(
-				"top",
-				WAVEFORM_PLANE_TOP_Y,
-				WAVEFORM_PLANE_TOP_ROTATION_X,
-			),
-		};
-	const waveformPlaneStateList = [
-		waveformPlaneStates.bottom,
-		waveformPlaneStates.top,
-	];
-	for (const planeState of waveformPlaneStateList) {
-		scene.add(planeState.meshSet.depthMesh);
-		scene.add(planeState.meshSet.surfaceMesh);
-		scene.add(planeState.meshSet.wireframeMesh);
-	}
-
-	let waveformPlaneEnabled = false;
-	let waveformPlaneHasData = true;
-	let waveformPlaneTimeSeconds = 0;
-	const syncWaveformPlaneVisibility = (): void => {
-		const active = waveformPlaneEnabled && waveformPlaneHasData;
-		for (const planeState of waveformPlaneStateList) {
-			const meshSet = planeState.meshSet;
-			const placementVisible = active && planeState.planeEnabled;
-			meshSet.surfaceMesh.visible =
-				placementVisible && planeState.surfaceEnabled;
-			meshSet.wireframeMesh.visible =
-				placementVisible && planeState.wireframeEnabled;
-			meshSet.depthMesh.visible =
-				placementVisible &&
-				planeState.wireframeEnabled &&
-				!planeState.surfaceEnabled;
-		}
-	};
-	const updateWaveformPlaneSpectrumForState = (
-		state: WaveformPlaneRenderState,
-		spectrumBins: Float32Array,
-	): void => {
-		if (state.sourceSpectrumSmoothed.length !== spectrumBins.length) {
-			state.sourceSpectrumSmoothed = new Float32Array(spectrumBins.length);
-		}
-		const smoothing = normalizeWaveformPlaneSpectrumSmoothing(
-			state.spectrumSmoothingTimeConstant,
-		);
-		const blend = clamp(1 - smoothing, 0.02, 1);
-		for (let i = 0; i < spectrumBins.length; i += 1) {
-			const target = clamp(spectrumBins[i] ?? 0, 0, 1);
-			state.sourceSpectrumSmoothed[i] +=
-				(target - state.sourceSpectrumSmoothed[i]) * blend;
-		}
-
-		const metrics = populateWaveformPlaneSpectrumForDistortion({
-			algorithm: state.distortionAlgorithm,
-			sourceBins: state.sourceSpectrumSmoothed,
-			targetBins: state.spectrumShaped,
-			sampleLinear: sampleWaveformLinear,
-		});
-		state.amplitudeDrive = metrics.amplitudeDrive;
-		for (let i = 0; i < WAVEFORM_PLANE_SPECTRUM_BIN_COUNT; i += 1) {
-			const encoded = Math.round(clamp(state.spectrumShaped[i], 0, 1) * 255);
-			const offset = i * 4;
-			state.spectrumTextureData[offset] = encoded;
-			state.spectrumTextureData[offset + 1] = encoded;
-			state.spectrumTextureData[offset + 2] = encoded;
-			state.spectrumTextureData[offset + 3] = 255;
-		}
-		state.spectrumTexture.needsUpdate = true;
-	};
-	const resetWaveformPlaneSpectrumState = (state: WaveformPlaneRenderState): void => {
-		state.amplitudeDrive = 0;
-		state.sourceSpectrumSmoothed.fill(0);
-		for (let i = 0; i < WAVEFORM_PLANE_SPECTRUM_BIN_COUNT; i += 1) {
-			state.spectrumShaped[i] = 0;
-			const offset = i * 4;
-			state.spectrumTextureData[offset] = 0;
-			state.spectrumTextureData[offset + 1] = 0;
-			state.spectrumTextureData[offset + 2] = 0;
-			state.spectrumTextureData[offset + 3] = 255;
-		}
-		state.spectrumTexture.needsUpdate = true;
-	};
-	syncWaveformPlaneVisibility();
+	// ── Scene Manager ──
+	const sceneManager = createSceneManager(scene);
 
 	function resize(): void {
 		const width = container.clientWidth;
@@ -820,7 +230,7 @@ export function setupScene(container: HTMLElement): RenderScene {
 
 	return {
 		update(snapshot) {
-			const starTimeSeconds = snapshot.simTimeSeconds;
+			const simTimeSeconds = snapshot.simTimeSeconds;
 			shipMesh.position.set(snapshot.ship.x, snapshot.ship.y, snapshot.ship.z);
 			const deltaY = hasPreviousShipY ? snapshot.ship.y - previousShipY : 0;
 			const deltaTime = hasPreviousShipY
@@ -844,54 +254,9 @@ export function setupScene(container: HTMLElement): RenderScene {
 			sceneFog.color.copy(currentBg);
 			shipMaterial.emissive.set("#0e7490");
 			shipMaterial.emissiveIntensity = 0.08 + intensity * 0.3;
-			if (starfieldEnabled) {
-				updateStarLayer(
-					farStars,
-					starTimeSeconds,
-					snapshot.ship.y,
-					starfieldSpeedScale,
-					starfieldShipMovementResponse,
-				);
-				updateStarLayer(
-					nearStars,
-					starTimeSeconds,
-					snapshot.ship.y,
-					starfieldSpeedScale,
-					starfieldShipMovementResponse,
-				);
-				updateStarLayer(
-					closeStars,
-					starTimeSeconds,
-					snapshot.ship.y,
-					starfieldSpeedScale,
-					starfieldShipMovementResponse,
-				);
-			}
 
-			if (oceanEnabled) {
-				oceanStage.update(starTimeSeconds, snapshot.ship.y);
-			}
-
-			if (skyEnabled) {
-				skyStage.update(starTimeSeconds, snapshot.ship.y);
-			}
-
-			syncWaveformPlaneVisibility();
-			if (waveformPlaneEnabled && waveformPlaneHasData) {
-				for (const planeState of waveformPlaneStateList) {
-					const placementVisible = planeState.planeEnabled;
-					const renderable =
-						placementVisible &&
-						(planeState.surfaceEnabled || planeState.wireframeEnabled);
-					if (!renderable) {
-						continue;
-					}
-					planeState.displacementUniforms.uTimeSeconds.value =
-						waveformPlaneTimeSeconds;
-					planeState.displacementUniforms.uAmplitudeDrive.value =
-						planeState.amplitudeDrive;
-				}
-			}
+			// ── Update all active scenes ──
+			sceneManager.updateAll(simTimeSeconds, snapshot.ship.y);
 
 			updateEnemyRenderer(enemyRenderer, snapshot.enemies, intensity);
 			updatePlayerProjectileRenderer(
@@ -1110,167 +475,8 @@ export function setupScene(container: HTMLElement): RenderScene {
 			renderer.render(scene, camera);
 		},
 		resize,
-		setStarfieldEnabled(enabled) {
-			starfieldEnabled = enabled;
-			syncStarfieldVisibility();
-		},
-		setStarfieldSpeedScale(speedScale) {
-			starfieldSpeedScale = normalizeStarfieldSpeedScale(speedScale);
-		},
-		setStarfieldShipMovementResponse(responseScale) {
-			starfieldShipMovementResponse =
-				normalizeStarfieldShipMovementResponse(responseScale);
-		},
-		setOceanEnabled(enabled) {
-			oceanEnabled = enabled;
-			syncOceanVisibility();
-		},
-		setOceanSize(size) {
-			oceanStage.setSize(size);
-		},
-		setOceanDistortionScale(scale) {
-			oceanStage.setDistortionScale(scale);
-		},
-		setOceanAmplitude(amplitude) {
-			oceanStage.setAmplitude(amplitude);
-		},
-		setOceanSpeed(speed) {
-			oceanStage.setSpeed(speed);
-		},
-		setOceanTimeOfDay(tod) {
-			oceanStage.setTimeOfDay(tod);
-		},
-		setSkyEnabled(enabled) {
-			skyEnabled = enabled;
-			syncSkyVisibility();
-		},
-		setSkyTurbidity(v) {
-			skyStage.setTurbidity(v);
-		},
-		setSkyRayleigh(v) {
-			skyStage.setRayleigh(v);
-		},
-		setSkyMieCoefficient(v) {
-			skyStage.setMieCoefficient(v);
-		},
-		setSkyMieDirectionalG(v) {
-			skyStage.setMieDirectionalG(v);
-		},
-		setSkyElevation(v) {
-			skyStage.setElevation(v);
-		},
-		setSkyAzimuth(v) {
-			skyStage.setAzimuth(v);
-		},
-		setSkyExposure(v) {
-			skyStage.setExposure(v);
-		},
-		setSkyHorizon(v) {
-			skyStage.setHorizon(v);
-		},
-		setSkyCloudCoverage(v) {
-			skyStage.setCloudCoverage(v);
-		},
-		setSkyCloudDensity(v) {
-			skyStage.setCloudDensity(v);
-		},
-		setSkyCloudElevation(v) {
-			skyStage.setCloudElevation(v);
-		},
-		setWaveformPlaneEnabled(enabled) {
-			waveformPlaneEnabled = enabled;
-			syncWaveformPlaneVisibility();
-		},
-		setWaveformPlaneSurfaceEnabled(side, enabled) {
-			const normalizedSide = normalizeWaveformPlaneSide(side);
-			waveformPlaneStates[normalizedSide].surfaceEnabled = enabled;
-			syncWaveformPlaneVisibility();
-		},
-		setWaveformPlaneWireframeEnabled(side, enabled) {
-			const normalizedSide = normalizeWaveformPlaneSide(side);
-			waveformPlaneStates[normalizedSide].wireframeEnabled = enabled;
-			syncWaveformPlaneVisibility();
-		},
-		setWaveformPlaneSideEnabled(side, enabled) {
-			const normalizedSide = normalizeWaveformPlaneSide(side);
-			waveformPlaneStates[normalizedSide].planeEnabled = enabled;
-			syncWaveformPlaneVisibility();
-		},
-		setWaveformPlaneHeightScale(side, heightScale) {
-			const normalizedSide = normalizeWaveformPlaneSide(side);
-			const state = waveformPlaneStates[normalizedSide];
-			const nextHeightScale = clamp(
-				Number.isFinite(heightScale)
-					? heightScale
-					: WAVEFORM_PLANE_HEIGHT_SCALE_DEFAULT,
-				WAVEFORM_PLANE_HEIGHT_SCALE_MIN,
-				WAVEFORM_PLANE_HEIGHT_SCALE_MAX,
-			);
-			state.displacementUniforms.uHeightScale.value = nextHeightScale;
-		},
-		setWaveformPlaneSurfaceShading(side, shading) {
-			const normalizedSide = normalizeWaveformPlaneSide(side);
-			applyWaveformPlaneSurfaceShading(waveformPlaneStates[normalizedSide], shading);
-		},
-		setWaveformPlaneDistortionAlgorithm(side, algorithm) {
-			const normalizedSide = normalizeWaveformPlaneSide(side);
-			applyWaveformPlaneDistortionAlgorithm(
-				waveformPlaneStates[normalizedSide],
-				algorithm,
-			);
-		},
-		setWaveformPlaneSurfaceColor(side, colorHex) {
-			const normalizedSide = normalizeWaveformPlaneSide(side);
-			applyWaveformPlaneSurfaceColor(waveformPlaneStates[normalizedSide], colorHex);
-		},
-		setWaveformPlaneWireframeColor(side, colorHex) {
-			const normalizedSide = normalizeWaveformPlaneSide(side);
-			applyWaveformPlaneWireframeColor(
-				waveformPlaneStates[normalizedSide],
-				colorHex,
-			);
-		},
-		setWaveformPlaneSurfaceOpacity(side, opacity) {
-			const normalizedSide = normalizeWaveformPlaneSide(side);
-			applyWaveformPlaneSurfaceOpacity(
-				waveformPlaneStates[normalizedSide],
-				opacity,
-			);
-		},
-		setWaveformPlaneSpectrumSmoothing(side, smoothingTimeConstant) {
-			const normalizedSide = normalizeWaveformPlaneSide(side);
-			waveformPlaneStates[normalizedSide].spectrumSmoothingTimeConstant =
-				normalizeWaveformPlaneSpectrumSmoothing(smoothingTimeConstant);
-		},
-		setWaveformPlaneSpectrum(spectrumBins) {
-			if (!spectrumBins || spectrumBins.length === 0) {
-				for (const planeState of waveformPlaneStateList) {
-					resetWaveformPlaneSpectrumState(planeState);
-				}
-				return;
-			}
-
-			for (const planeState of waveformPlaneStateList) {
-				updateWaveformPlaneSpectrumForState(planeState, spectrumBins);
-			}
-		},
-		setWaveformPlaneSpectrumTimeline(timeline) {
-			void timeline;
-			waveformPlaneHasData = true;
-			syncWaveformPlaneVisibility();
-		},
-		setWaveformPlaneData(waveformLeft, waveformRight) {
-			void waveformLeft;
-			void waveformRight;
-			waveformPlaneHasData = true;
-			syncWaveformPlaneVisibility();
-		},
-		clearWaveformPlaneData() {
-			waveformPlaneHasData = false;
-			syncWaveformPlaneVisibility();
-		},
-		setWaveformPlaneTime(timeSeconds) {
-			waveformPlaneTimeSeconds = Math.max(0, timeSeconds);
+		getSceneManager() {
+			return sceneManager;
 		},
 	};
 }
@@ -1302,38 +508,6 @@ type ExplosionPalette = {
 
 const ARCADE_CORE_SCALE_MULTIPLIER = 2.35;
 const ARCADE_RING_MAX_SCALE = 7.2;
-const WAVEFORM_PLANE_SPECTRUM_BIN_COUNT = 192;
-const WAVEFORM_PLANE_TIMELINE_SAMPLES = 4096;
-const WAVEFORM_PLANE_TEXTURE_BINS = 64;
-const WAVEFORM_PLANE_WIDTH = 120;
-const WAVEFORM_PLANE_HEIGHT = 90;
-const WAVEFORM_PLANE_SEGMENTS_X = 56;
-const WAVEFORM_PLANE_SEGMENTS_Y = 42;
-const WAVEFORM_PLANE_Z = -28;
-const WAVEFORM_PLANE_BOTTOM_Y = -15.8;
-const WAVEFORM_PLANE_TOP_Y = 15.8;
-const WAVEFORM_PLANE_BOTTOM_ROTATION_X = -1.21;
-const WAVEFORM_PLANE_TOP_ROTATION_X = 1.21;
-const WAVEFORM_PLANE_HEIGHT_SCALE_DEFAULT = 6.8;
-const WAVEFORM_PLANE_HEIGHT_SCALE_MIN = 2.5;
-const WAVEFORM_PLANE_HEIGHT_SCALE_MAX = 12;
-const WAVEFORM_PLANE_SPECTRUM_SMOOTHING_DEFAULT = 0.5;
-const WAVEFORM_PLANE_SPECTRUM_SMOOTHING_MIN = 0;
-const WAVEFORM_PLANE_SPECTRUM_SMOOTHING_MAX = 0.95;
-const WAVEFORM_PLANE_SURFACE_SHADING_DEFAULT: WaveformPlaneSurfaceShading =
-	"smooth";
-const WAVEFORM_PLANE_SURFACE_ENABLED_DEFAULT = false;
-const WAVEFORM_PLANE_WIREFRAME_ENABLED_DEFAULT = true;
-const WAVEFORM_PLANE_DEFAULT_SURFACE_COLOR_HEX = "#f4f4f4";
-const WAVEFORM_PLANE_DEFAULT_WIREFRAME_COLOR_HEX = "#f4f4f4";
-const WAVEFORM_PLANE_SURFACE_OPACITY_DEFAULT = 1;
-const WAVEFORM_PLANE_SURFACE_OPACITY_MIN = 0;
-const WAVEFORM_PLANE_SURFACE_OPACITY_MAX = 1;
-const WAVEFORM_PLANE_SURFACE_EMISSIVE_COLOR_SCALE = 0.085;
-const WAVEFORM_PLANE_WIREFRAME_EMISSIVE_COLOR_SCALE = 0.085;
-const WAVEFORM_SCENE_FOG_NEAR = 52;
-const WAVEFORM_SCENE_FOG_FAR = 92;
-const WAVEFORM_PLANE_TIME_WINDOW_SECONDS = 2.4;
 const EXPLOSION_PALETTES: ExplosionPalette[] = [
 	{
 		coreStart: new Color("#f472b6"),
@@ -1381,10 +555,6 @@ const EXPLOSION_PALETTES: ExplosionPalette[] = [
 
 function clamp01(value: number): number {
 	return Math.max(0, Math.min(1, value));
-}
-
-function clamp(value: number, min: number, max: number): number {
-	return Math.max(min, Math.min(max, value));
 }
 
 function clamp01Signed(value: number, maxAbs: number): number {
