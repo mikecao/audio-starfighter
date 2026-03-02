@@ -19,97 +19,59 @@ const STARFIELD_SCHEMA: SceneControlSchema = {
 };
 
 const GRID_SCHEMA: SceneControlSchema = {
-	"top.sideEnabled": {
-		label: "Top Enabled",
+	sideEnabled: {
+		label: "Enabled",
+		levaConfig: { value: true },
+	},
+	surfaceEnabled: {
+		label: "Surface",
 		levaConfig: { value: false },
 	},
-	"top.surfaceEnabled": {
-		label: "Top Surface",
-		levaConfig: { value: false },
-	},
-	"top.surfaceShading": {
-		label: "Top Surface Shading",
+	surfaceShading: {
+		label: "Surface Shading",
 		levaConfig: {
 			value: "smooth",
 			options: { Smooth: "smooth", Flat: "flat", Matte: "matte", Metallic: "metallic" },
 		},
 	},
-	"top.surfaceColor": {
-		label: "Top Surface Color",
+	surfaceColor: {
+		label: "Surface Color",
 		levaConfig: { value: "#f4f4f4" },
 	},
-	"top.surfaceOpacity": {
-		label: "Top Surface Opacity",
+	surfaceOpacity: {
+		label: "Surface Opacity",
 		levaConfig: { value: 1, min: 0, max: 1, step: 0.01 },
 	},
-	"top.wireframeEnabled": {
-		label: "Top Wireframe",
+	wireframeEnabled: {
+		label: "Wireframe",
 		levaConfig: { value: true },
 	},
-	"top.wireframeColor": {
-		label: "Top Wireframe Color",
+	wireframeColor: {
+		label: "Wireframe Color",
 		levaConfig: { value: "#f4f4f4" },
 	},
-	"top.heightScale": {
-		label: "Top Max Height",
+	heightScale: {
+		label: "Max Height",
 		levaConfig: { value: 6.8, min: 2.5, max: 12, step: 0.1 },
 	},
-	"top.distortionAlgorithm": {
-		label: "Top Distortion",
+	distortionAlgorithm: {
+		label: "Distortion",
 		levaConfig: {
 			value: "ridge",
 			options: { "Ridge Flow": "ridge", "Pulse Ripple": "ripple" },
 		},
 	},
-	"top.spectrumSmoothing": {
-		label: "Top Spectrum Smoothing",
+	spectrumSmoothing: {
+		label: "Spectrum Smoothing",
 		levaConfig: { value: 0.5, min: 0, max: 0.95, step: 0.01 },
 	},
-	"bottom.sideEnabled": {
-		label: "Bottom Enabled",
-		levaConfig: { value: true },
+	positionY: {
+		label: "Position Y",
+		levaConfig: { value: -15.8, min: -30, max: 30, step: 0.1 },
 	},
-	"bottom.surfaceEnabled": {
-		label: "Bottom Surface",
-		levaConfig: { value: false },
-	},
-	"bottom.surfaceShading": {
-		label: "Bottom Surface Shading",
-		levaConfig: {
-			value: "smooth",
-			options: { Smooth: "smooth", Flat: "flat", Matte: "matte", Metallic: "metallic" },
-		},
-	},
-	"bottom.surfaceColor": {
-		label: "Bottom Surface Color",
-		levaConfig: { value: "#f4f4f4" },
-	},
-	"bottom.surfaceOpacity": {
-		label: "Bottom Surface Opacity",
-		levaConfig: { value: 1, min: 0, max: 1, step: 0.01 },
-	},
-	"bottom.wireframeEnabled": {
-		label: "Bottom Wireframe",
-		levaConfig: { value: true },
-	},
-	"bottom.wireframeColor": {
-		label: "Bottom Wireframe Color",
-		levaConfig: { value: "#f4f4f4" },
-	},
-	"bottom.heightScale": {
-		label: "Bottom Max Height",
-		levaConfig: { value: 6.8, min: 2.5, max: 12, step: 0.1 },
-	},
-	"bottom.distortionAlgorithm": {
-		label: "Bottom Distortion",
-		levaConfig: {
-			value: "ridge",
-			options: { "Ridge Flow": "ridge", "Pulse Ripple": "ripple" },
-		},
-	},
-	"bottom.spectrumSmoothing": {
-		label: "Bottom Spectrum Smoothing",
-		levaConfig: { value: 0.5, min: 0, max: 0.95, step: 0.01 },
+	rotationX: {
+		label: "Rotation X",
+		levaConfig: { value: -1.21, min: -3.15, max: 3.15, step: 0.01 },
 	},
 };
 

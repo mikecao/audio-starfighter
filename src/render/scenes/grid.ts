@@ -28,10 +28,12 @@ const GRID_HEIGHT = 90;
 const GRID_SEGMENTS_X = 56;
 const GRID_SEGMENTS_Y = 42;
 const GRID_Z = -28;
-const GRID_BOTTOM_Y = -15.8;
-const GRID_TOP_Y = 15.8;
-const GRID_BOTTOM_ROTATION_X = -1.21;
-const GRID_TOP_ROTATION_X = 1.21;
+const GRID_DEFAULT_POSITION_Y = -15.8;
+const GRID_DEFAULT_ROTATION_X = -1.21;
+const GRID_POSITION_Y_MIN = -30;
+const GRID_POSITION_Y_MAX = 30;
+const GRID_ROTATION_X_MIN = -3.15;
+const GRID_ROTATION_X_MAX = 3.15;
 const GRID_HEIGHT_SCALE_DEFAULT = 6.8;
 const GRID_HEIGHT_SCALE_MIN = 2.5;
 const GRID_HEIGHT_SCALE_MAX = 12;
@@ -51,18 +53,15 @@ const GRID_WIREFRAME_EMISSIVE_COLOR_SCALE = 0.085;
 
 // ── Types ──
 
-export type GridSide = "bottom" | "top";
 export type GridSurfaceShading = "smooth" | "flat" | "matte" | "metallic";
 
 type GridMeshSet = {
-	placement: GridSide;
 	depthMesh: Mesh;
 	surfaceMesh: Mesh;
 	wireframeMesh: Mesh;
 };
 
-type GridSideRenderState = {
-	side: GridSide;
+type GridRenderState = {
 	displacementUniforms: {
 		uTimeSeconds: { value: number };
 		uHeightScale: { value: number };
@@ -156,14 +155,10 @@ function normalizeSurfaceOpacity(value: number): number {
 	return clamp(value, GRID_SURFACE_OPACITY_MIN, GRID_SURFACE_OPACITY_MAX);
 }
 
-function normalizeSide(side: string): GridSide {
-	return side === "top" ? "top" : "bottom";
-}
-
-// ── Per-side helpers ──
+// ── Render state helpers ──
 
 function applyDisplacement(
-	state: GridSideRenderState,
+	state: GridRenderState,
 	material: MeshStandardMaterial,
 ): void {
 	material.onBeforeCompile = (shader) => {
@@ -183,11 +178,11 @@ function applyDisplacement(
 		);
 	};
 	material.customProgramCacheKey = () =>
-		`grid-displacement-v8-${state.side}-${state.distortionAlgorithm}`;
+		`grid-displacement-v8-${state.distortionAlgorithm}`;
 }
 
 function applySurfaceShading(
-	state: GridSideRenderState,
+	state: GridRenderState,
 	shading: GridSurfaceShading,
 ): void {
 	const normalizedShading: GridSurfaceShading =
@@ -219,7 +214,7 @@ function applySurfaceShading(
 }
 
 function applyDistortionAlgorithm(
-	state: GridSideRenderState,
+	state: GridRenderState,
 	algorithm: WaveformPlaneDistortionAlgorithm,
 ): void {
 	const normalizedAlgorithm = normalizeWaveformPlaneDistortionAlgorithm(algorithm);
@@ -230,7 +225,7 @@ function applyDistortionAlgorithm(
 	state.depthMaterial.needsUpdate = true;
 }
 
-function applySurfaceColor(state: GridSideRenderState, colorHex: string): void {
+function applySurfaceColor(state: GridRenderState, colorHex: string): void {
 	const color = normalizeColor(colorHex, GRID_DEFAULT_SURFACE_COLOR_HEX);
 	state.surfaceBaseColor.set(color);
 	state.surfaceMaterial.color.copy(state.surfaceBaseColor);
@@ -238,13 +233,13 @@ function applySurfaceColor(state: GridSideRenderState, colorHex: string): void {
 	state.surfaceMaterial.emissive.copy(state.surfaceEmissiveColor);
 }
 
-function applySurfaceOpacity(state: GridSideRenderState, opacity: number): void {
+function applySurfaceOpacity(state: GridRenderState, opacity: number): void {
 	const normalized = normalizeSurfaceOpacity(opacity);
 	state.surfaceOpacity = normalized;
 	state.surfaceMaterial.opacity = normalized;
 }
 
-function applyWireframeColor(state: GridSideRenderState, colorHex: string): void {
+function applyWireframeColor(state: GridRenderState, colorHex: string): void {
 	const color = normalizeColor(colorHex, GRID_DEFAULT_WIREFRAME_COLOR_HEX);
 	state.wireframeBaseColor.set(color);
 	state.wireframeMaterial.color.copy(state.wireframeBaseColor);
@@ -254,7 +249,6 @@ function applyWireframeColor(state: GridSideRenderState, colorHex: string): void
 
 function createMeshSet(
 	geometry: PlaneGeometry,
-	placement: GridSide,
 	positionY: number,
 	rotationX: number,
 	materials: {
@@ -284,15 +278,14 @@ function createMeshSet(
 	wireframeMesh.rotation.z = 0;
 	wireframeMesh.renderOrder = 0;
 
-	return { placement, depthMesh, surfaceMesh, wireframeMesh };
+	return { depthMesh, surfaceMesh, wireframeMesh };
 }
 
-function createSideState(
+function createRenderState(
 	geometry: PlaneGeometry,
-	side: GridSide,
 	positionY: number,
 	rotationX: number,
-): GridSideRenderState {
+): GridRenderState {
 	const spectrumTextureData = new Uint8Array(GRID_SPECTRUM_BIN_COUNT * 4);
 	for (let i = 0; i < spectrumTextureData.length; i += 4) {
 		spectrumTextureData[i] = 0;
@@ -359,8 +352,7 @@ function createSideState(
 	depthMaterial.depthWrite = true;
 	depthMaterial.depthTest = true;
 
-	const state: GridSideRenderState = {
-		side,
+	const state: GridRenderState = {
 		displacementUniforms,
 		distortionAlgorithm: WAVEFORM_PLANE_DISTORTION_DEFAULT,
 		spectrumSmoothingTimeConstant: GRID_SPECTRUM_SMOOTHING_DEFAULT,
@@ -375,12 +367,12 @@ function createSideState(
 		surfaceMaterial,
 		wireframeMaterial,
 		depthMaterial,
-		meshSet: createMeshSet(geometry, side, positionY, rotationX, {
+		meshSet: createMeshSet(geometry, positionY, rotationX, {
 			depth: depthMaterial,
 			surface: surfaceMaterial,
 			wireframe: wireframeMaterial,
 		}),
-		planeEnabled: side === "bottom",
+		planeEnabled: true,
 		surfaceEnabled: GRID_SURFACE_ENABLED_DEFAULT,
 		surfaceOpacity: GRID_SURFACE_OPACITY_DEFAULT,
 		wireframeEnabled: GRID_WIREFRAME_ENABLED_DEFAULT,
@@ -395,8 +387,8 @@ function createSideState(
 	return state;
 }
 
-function updateSpectrumForSide(
-	state: GridSideRenderState,
+function updateSpectrum(
+	state: GridRenderState,
 	spectrumBins: Float32Array,
 ): void {
 	if (state.sourceSpectrumSmoothed.length !== spectrumBins.length) {
@@ -428,7 +420,7 @@ function updateSpectrumForSide(
 	state.spectrumTexture.needsUpdate = true;
 }
 
-function resetSpectrumState(state: GridSideRenderState): void {
+function resetSpectrum(state: GridRenderState): void {
 	state.amplitudeDrive = 0;
 	state.sourceSpectrumSmoothed.fill(0);
 	for (let i = 0; i < GRID_SPECTRUM_BIN_COUNT; i += 1) {
@@ -442,85 +434,46 @@ function resetSpectrumState(state: GridSideRenderState): void {
 	state.spectrumTexture.needsUpdate = true;
 }
 
+// ── Mesh positioning ──
+
+function setMeshPositionY(meshSet: GridMeshSet, y: number): void {
+	meshSet.depthMesh.position.y = y;
+	meshSet.surfaceMesh.position.y = y;
+	meshSet.wireframeMesh.position.y = y;
+}
+
+function setMeshRotationX(meshSet: GridMeshSet, rx: number): void {
+	meshSet.depthMesh.rotation.x = rx;
+	meshSet.surfaceMesh.rotation.x = rx;
+	meshSet.wireframeMesh.rotation.x = rx;
+}
+
 // ── Grid Scene Factory ──
 
 export function createGridScene(id: string): SceneInstance & GridSceneExtensions {
 	const group = new Group();
 	const geometry = new PlaneGeometry(GRID_WIDTH, GRID_HEIGHT, GRID_SEGMENTS_X, GRID_SEGMENTS_Y);
 
-	const bottomState = createSideState(geometry, "bottom", GRID_BOTTOM_Y, GRID_BOTTOM_ROTATION_X);
-	const topState = createSideState(geometry, "top", GRID_TOP_Y, GRID_TOP_ROTATION_X);
-	const sideStates: Record<GridSide, GridSideRenderState> = { bottom: bottomState, top: topState };
-	const sideStateList = [bottomState, topState];
+	const state = createRenderState(geometry, GRID_DEFAULT_POSITION_Y, GRID_DEFAULT_ROTATION_X);
+	let positionY = GRID_DEFAULT_POSITION_Y;
+	let rotationX = GRID_DEFAULT_ROTATION_X;
 
-	for (const state of sideStateList) {
-		group.add(state.meshSet.depthMesh);
-		group.add(state.meshSet.surfaceMesh);
-		group.add(state.meshSet.wireframeMesh);
-	}
+	group.add(state.meshSet.depthMesh);
+	group.add(state.meshSet.surfaceMesh);
+	group.add(state.meshSet.wireframeMesh);
 
 	let hasData = true;
 	let timeSeconds = 0;
 
 	const syncVisibility = (): void => {
-		for (const state of sideStateList) {
-			const meshSet = state.meshSet;
-			const placementVisible = hasData && state.planeEnabled;
-			meshSet.surfaceMesh.visible = placementVisible && state.surfaceEnabled;
-			meshSet.wireframeMesh.visible = placementVisible && state.wireframeEnabled;
-			meshSet.depthMesh.visible =
-				placementVisible && state.wireframeEnabled && !state.surfaceEnabled;
-		}
+		const meshSet = state.meshSet;
+		const visible = hasData && state.planeEnabled;
+		meshSet.surfaceMesh.visible = visible && state.surfaceEnabled;
+		meshSet.wireframeMesh.visible = visible && state.wireframeEnabled;
+		meshSet.depthMesh.visible = visible && state.wireframeEnabled && !state.surfaceEnabled;
 	};
 
 	syncVisibility();
-
-	const setSideSetting = (side: GridSide, prop: string, value: unknown): boolean => {
-		const state = sideStates[side];
-		switch (prop) {
-			case "sideEnabled":
-				state.planeEnabled = !!value;
-				syncVisibility();
-				return true;
-			case "surfaceEnabled":
-				state.surfaceEnabled = !!value;
-				syncVisibility();
-				return true;
-			case "wireframeEnabled":
-				state.wireframeEnabled = !!value;
-				syncVisibility();
-				return true;
-			case "heightScale": {
-				const next = clamp(
-					Number.isFinite(value as number) ? (value as number) : GRID_HEIGHT_SCALE_DEFAULT,
-					GRID_HEIGHT_SCALE_MIN,
-					GRID_HEIGHT_SCALE_MAX,
-				);
-				state.displacementUniforms.uHeightScale.value = next;
-				return true;
-			}
-			case "surfaceShading":
-				applySurfaceShading(state, value as GridSurfaceShading);
-				return true;
-			case "distortionAlgorithm":
-				applyDistortionAlgorithm(state, value as WaveformPlaneDistortionAlgorithm);
-				return true;
-			case "surfaceColor":
-				applySurfaceColor(state, value as string);
-				return true;
-			case "wireframeColor":
-				applyWireframeColor(state, value as string);
-				return true;
-			case "surfaceOpacity":
-				applySurfaceOpacity(state, value as number);
-				return true;
-			case "spectrumSmoothing":
-				state.spectrumSmoothingTimeConstant = normalizeSpectrumSmoothing(value as number);
-				return true;
-			default:
-				return false;
-		}
-	};
 
 	return {
 		id,
@@ -529,52 +482,103 @@ export function createGridScene(id: string): SceneInstance & GridSceneExtensions
 		update(_simTimeSeconds, _shipY) {
 			syncVisibility();
 			if (!hasData) return;
-			for (const state of sideStateList) {
-				if (!state.planeEnabled) continue;
-				if (!state.surfaceEnabled && !state.wireframeEnabled) continue;
-				state.displacementUniforms.uTimeSeconds.value = timeSeconds;
-				state.displacementUniforms.uAmplitudeDrive.value = state.amplitudeDrive;
-			}
+			if (!state.planeEnabled) return;
+			if (!state.surfaceEnabled && !state.wireframeEnabled) return;
+			state.displacementUniforms.uTimeSeconds.value = timeSeconds;
+			state.displacementUniforms.uAmplitudeDrive.value = state.amplitudeDrive;
 		},
 		set(key, value) {
-			const dotIndex = key.indexOf(".");
-			if (dotIndex > 0) {
-				const side = normalizeSide(key.slice(0, dotIndex));
-				const prop = key.slice(dotIndex + 1);
-				return setSideSetting(side, prop, value);
+			switch (key) {
+				case "sideEnabled":
+					state.planeEnabled = !!value;
+					syncVisibility();
+					return true;
+				case "surfaceEnabled":
+					state.surfaceEnabled = !!value;
+					syncVisibility();
+					return true;
+				case "wireframeEnabled":
+					state.wireframeEnabled = !!value;
+					syncVisibility();
+					return true;
+				case "heightScale": {
+					const next = clamp(
+						Number.isFinite(value as number) ? (value as number) : GRID_HEIGHT_SCALE_DEFAULT,
+						GRID_HEIGHT_SCALE_MIN,
+						GRID_HEIGHT_SCALE_MAX,
+					);
+					state.displacementUniforms.uHeightScale.value = next;
+					return true;
+				}
+				case "surfaceShading":
+					applySurfaceShading(state, value as GridSurfaceShading);
+					return true;
+				case "distortionAlgorithm":
+					applyDistortionAlgorithm(state, value as WaveformPlaneDistortionAlgorithm);
+					return true;
+				case "surfaceColor":
+					applySurfaceColor(state, value as string);
+					return true;
+				case "wireframeColor":
+					applyWireframeColor(state, value as string);
+					return true;
+				case "surfaceOpacity":
+					applySurfaceOpacity(state, value as number);
+					return true;
+				case "spectrumSmoothing":
+					state.spectrumSmoothingTimeConstant = normalizeSpectrumSmoothing(value as number);
+					return true;
+				case "positionY": {
+					const py = clamp(
+						Number.isFinite(value as number) ? (value as number) : GRID_DEFAULT_POSITION_Y,
+						GRID_POSITION_Y_MIN,
+						GRID_POSITION_Y_MAX,
+					);
+					positionY = py;
+					setMeshPositionY(state.meshSet, py);
+					return true;
+				}
+				case "rotationX": {
+					const rx = clamp(
+						Number.isFinite(value as number) ? (value as number) : GRID_DEFAULT_ROTATION_X,
+						GRID_ROTATION_X_MIN,
+						GRID_ROTATION_X_MAX,
+					);
+					rotationX = rx;
+					setMeshRotationX(state.meshSet, rx);
+					return true;
+				}
+				default:
+					return false;
 			}
-			return false;
 		},
 		getSettings() {
-			const result: Record<string, unknown> = {};
-			for (const state of sideStateList) {
-				const prefix = state.side;
-				result[`${prefix}.sideEnabled`] = state.planeEnabled;
-				result[`${prefix}.surfaceEnabled`] = state.surfaceEnabled;
-				result[`${prefix}.wireframeEnabled`] = state.wireframeEnabled;
-				result[`${prefix}.heightScale`] = state.displacementUniforms.uHeightScale.value;
-				result[`${prefix}.surfaceOpacity`] = state.surfaceOpacity;
-				result[`${prefix}.spectrumSmoothing`] = state.spectrumSmoothingTimeConstant;
-			}
-			return result;
+			return {
+				sideEnabled: state.planeEnabled,
+				surfaceEnabled: state.surfaceEnabled,
+				wireframeEnabled: state.wireframeEnabled,
+				heightScale: state.displacementUniforms.uHeightScale.value,
+				surfaceOpacity: state.surfaceOpacity,
+				spectrumSmoothing: state.spectrumSmoothingTimeConstant,
+				positionY,
+				rotationX,
+			};
 		},
 		dispose() {
 			geometry.dispose();
-			for (const state of sideStateList) {
-				state.surfaceMaterial.dispose();
-				state.wireframeMaterial.dispose();
-				state.depthMaterial.dispose();
-				state.spectrumTexture.dispose();
-			}
+			state.surfaceMaterial.dispose();
+			state.wireframeMaterial.dispose();
+			state.depthMaterial.dispose();
+			state.spectrumTexture.dispose();
 		},
 
 		// Grid-specific extensions
 		setSpectrum(spectrumBins) {
 			if (!spectrumBins || spectrumBins.length === 0) {
-				for (const state of sideStateList) resetSpectrumState(state);
+				resetSpectrum(state);
 				return;
 			}
-			for (const state of sideStateList) updateSpectrumForSide(state, spectrumBins);
+			updateSpectrum(state, spectrumBins);
 		},
 		setSpectrumTimeline(_timeline: SpectrumTimeline | null) {
 			hasData = true;
