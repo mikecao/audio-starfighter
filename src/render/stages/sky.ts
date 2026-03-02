@@ -333,11 +333,11 @@ export function createSkyStage(): SkyStage {
 		uniforms,
 		side: DoubleSide,
 		transparent: false,
-		depthWrite: true,
+		depthWrite: false,
 	});
 	const mesh = new Mesh(geometry, material);
 	mesh.position.set(0, 0, QUAD_Z);
-	mesh.renderOrder = -10;
+	mesh.renderOrder = -20;
 	group.add(mesh);
 
 	function updateSunPosition(): void {

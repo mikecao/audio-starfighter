@@ -180,7 +180,7 @@ function SettingsPanelInner({ bridge }: { bridge: SettingsBridge }) {
 	}), [handleRunAffecting]);
 
 	// ── Stage Preset + Add Scene ──
-	const [addKind, setAddKind] = useState<SceneKind>("starfield");
+	const addKindRef = useRef<SceneKind>("starfield");
 
 	useControls("Stage", () => {
 		const kindOptions: Record<string, SceneKind> = {};
@@ -198,19 +198,19 @@ function SettingsPanelInner({ bridge }: { bridge: SettingsBridge }) {
 			},
 			"Add Scene": folder({
 				"Scene Type": {
-					value: addKind,
+					value: "starfield" as SceneKind,
 					options: kindOptions,
-					onChange: (v: SceneKind) => setAddKind(v),
+					onChange: (v: SceneKind) => { addKindRef.current = v; },
 				},
 				"Add": button(() => {
-					bridge.handlers.onAddScene(addKind);
+					bridge.handlers.onAddScene(addKindRef.current);
 				}),
 			}, {
 				collapsed: false,
 				render: (get: (p: string) => unknown) => get("Stage.Stage") === "custom",
 			}),
 		};
-	}, [bridge, preset, addKind]);
+	}, [bridge]);
 
 	// ── Apply & Recompute / Close button ──
 	useControls(songLoaded ? {

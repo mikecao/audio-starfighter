@@ -243,16 +243,7 @@ void main() {
   //  SKY
   // ════════════════════════════════════════════════════════════════════
   if (uv.y > horizonY) {
-    float skyT = (uv.y - horizonY) / (1.0 - horizonY);
-
-    vec3 sky = mix(horizonCol, midCol, smoothstep(0.0, 0.25, skyT));
-    sky = mix(sky, zenithCol, smoothstep(0.25, 1.0, skyT));
-
-    // Glow band right at horizon
-    sky += horizonGlowBand * smoothstep(0.08, 0.0, skyT);
-
-    gl_FragColor = vec4(sky, 1.0);
-    return;
+    discard;
   }
 
   // ════════════════════════════════════════════════════════════════════
@@ -365,12 +356,12 @@ export function createOceanStage(): OceanStage {
 		fragmentShader: FRAGMENT,
 		uniforms,
 		side: DoubleSide,
-		transparent: false,
+		transparent: true,
 		depthWrite: true,
 	});
 	const mesh = new Mesh(geometry, material);
 	mesh.position.set(0, 0, QUAD_Z);
-	mesh.renderOrder = -10;
+	mesh.renderOrder = -15;
 	group.add(mesh);
 
 	return {
