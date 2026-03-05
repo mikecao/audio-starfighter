@@ -12,6 +12,7 @@ export type SettingsHandlers = {
 	onAddScene: (kind: SceneKind) => string;
 	onRemoveScene: (sceneId: string) => void;
 	onSceneSettingChange: (sceneId: string, key: string, value: unknown) => void;
+	onEffectSettingChange: (key: string, value: unknown) => void;
 };
 
 export type SettingsBridge = {

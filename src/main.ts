@@ -119,6 +119,9 @@ const settingsBridge = createSettingsBridge(
     onSceneSettingChange(sceneId, key, value) {
       sceneManager.setSceneSetting(sceneId, key, value);
     },
+    onEffectSettingChange(key, value) {
+      scene.setEffectSetting(key, value);
+    },
   },
   () => audioPanel.getLatestAnalysis() !== null,
   async () => {

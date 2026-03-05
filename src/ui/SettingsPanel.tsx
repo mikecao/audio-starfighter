@@ -53,6 +53,13 @@ function buildCombatConfig(state: RunAffectingState) {
 }
 
 const ALL_SCENE_KINDS: SceneKind[] = ["starfield", "grid", "ocean", "sky"];
+const DEFAULT_BLOOM_SETTINGS = {
+	enabled: true,
+	threshold: 0,
+	strength: 1.5,
+	radius: 0,
+	exposure: 1,
+};
 
 function SceneInstanceControls({
 	scene,
@@ -211,6 +218,44 @@ function SettingsPanelInner({ bridge }: { bridge: SettingsBridge }) {
 			}),
 		};
 	}, [bridge]);
+
+	// ── Effects ──
+	useControls("Effects", () => ({
+		Bloom: folder({
+			Enabled: {
+				value: DEFAULT_BLOOM_SETTINGS.enabled,
+				onChange: (v: boolean) => bridge.handlers.onEffectSettingChange("bloom.enabled", v),
+			},
+			Threshold: {
+				value: DEFAULT_BLOOM_SETTINGS.threshold,
+				min: 0,
+				max: 1,
+				step: 0.001,
+				onChange: (v: number) => bridge.handlers.onEffectSettingChange("bloom.threshold", v),
+			},
+			Strength: {
+				value: DEFAULT_BLOOM_SETTINGS.strength,
+				min: 0,
+				max: 3,
+				step: 0.01,
+				onChange: (v: number) => bridge.handlers.onEffectSettingChange("bloom.strength", v),
+			},
+			Radius: {
+				value: DEFAULT_BLOOM_SETTINGS.radius,
+				min: 0,
+				max: 1,
+				step: 0.001,
+				onChange: (v: number) => bridge.handlers.onEffectSettingChange("bloom.radius", v),
+			},
+			Exposure: {
+				value: DEFAULT_BLOOM_SETTINGS.exposure,
+				min: 0,
+				max: 2,
+				step: 0.01,
+				onChange: (v: number) => bridge.handlers.onEffectSettingChange("bloom.exposure", v),
+			},
+		}, { collapsed: false }),
+	}), [bridge]);
 
 	// ── Apply & Recompute / Close button ──
 	useControls(songLoaded ? {

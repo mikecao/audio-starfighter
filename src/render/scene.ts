@@ -15,10 +15,14 @@ import {
 	RingGeometry,
 	Scene,
 	SphereGeometry,
+	ReinhardToneMapping,
 	Vector2,
 	Vector3,
 	WebGLRenderer,
 } from "three";
+import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
+import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
+import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
 import type { SimulationSnapshot } from "../game/sim";
 import {
 	createExplosionBurst,
@@ -63,11 +67,18 @@ export type RenderScene = {
 	update: (snapshot: SimulationSnapshot, alpha: number) => void;
 	render: () => void;
 	resize: () => void;
+	setEffectSetting: (key: string, value: unknown) => boolean;
 	getSceneManager: () => SceneManager;
 };
 
 const SCENE_FOG_NEAR = 52;
 const SCENE_FOG_FAR = 92;
+const BLOOM_DEFAULT_THRESHOLD = 0;
+const BLOOM_DEFAULT_STRENGTH = 1.5;
+const BLOOM_DEFAULT_RADIUS = 0;
+const BLOOM_DEFAULT_EXPOSURE = 1;
+const BLOOM_MAX_STRENGTH = 3;
+const BLOOM_MAX_EXPOSURE = 2;
 
 export function setupScene(container: HTMLElement): RenderScene {
 	const FIXED_RENDER_WIDTH = 1920;
@@ -91,10 +102,30 @@ export function setupScene(container: HTMLElement): RenderScene {
 	camera.lookAt(new Vector3(0, 0, 0));
 
 	const renderer = new WebGLRenderer({ antialias: true });
+	renderer.toneMapping = ReinhardToneMapping;
+	renderer.toneMappingExposure = Math.pow(BLOOM_DEFAULT_EXPOSURE, 4);
 	renderer.setPixelRatio(1);
 	renderer.setSize(FIXED_RENDER_WIDTH, FIXED_RENDER_HEIGHT, false);
 	renderer.domElement.classList.add("main-scene-canvas");
 	container.appendChild(renderer.domElement);
+	const composer = new EffectComposer(renderer);
+	composer.setPixelRatio(1);
+	composer.setSize(FIXED_RENDER_WIDTH, FIXED_RENDER_HEIGHT);
+	composer.addPass(new RenderPass(scene, camera));
+	const bloomPass = new UnrealBloomPass(
+		new Vector2(FIXED_RENDER_WIDTH, FIXED_RENDER_HEIGHT),
+		BLOOM_DEFAULT_STRENGTH,
+		BLOOM_DEFAULT_RADIUS,
+		BLOOM_DEFAULT_THRESHOLD,
+	);
+	composer.addPass(bloomPass);
+	const bloomSettings = {
+		enabled: true,
+		threshold: BLOOM_DEFAULT_THRESHOLD,
+		strength: BLOOM_DEFAULT_STRENGTH,
+		radius: BLOOM_DEFAULT_RADIUS,
+		exposure: BLOOM_DEFAULT_EXPOSURE,
+	};
 	const meshLineResolution = new Vector2(
 		FIXED_RENDER_WIDTH,
 		FIXED_RENDER_HEIGHT,
@@ -472,9 +503,46 @@ export function setupScene(container: HTMLElement): RenderScene {
 			}
 		},
 		render() {
+			if (bloomSettings.enabled) {
+				composer.render();
+				return;
+			}
 			renderer.render(scene, camera);
 		},
 		resize,
+		setEffectSetting(key, value) {
+			if (key === "bloom.enabled") {
+				if (typeof value !== "boolean") {
+					return false;
+				}
+				bloomSettings.enabled = value;
+				return true;
+			}
+			if (typeof value !== "number" || !Number.isFinite(value)) {
+				return false;
+			}
+			if (key === "bloom.threshold") {
+				bloomSettings.threshold = clamp(value, 0, 1);
+				bloomPass.threshold = bloomSettings.threshold;
+				return true;
+			}
+			if (key === "bloom.strength") {
+				bloomSettings.strength = clamp(value, 0, BLOOM_MAX_STRENGTH);
+				bloomPass.strength = bloomSettings.strength;
+				return true;
+			}
+			if (key === "bloom.radius") {
+				bloomSettings.radius = clamp(value, 0, 1);
+				bloomPass.radius = bloomSettings.radius;
+				return true;
+			}
+			if (key === "bloom.exposure") {
+				bloomSettings.exposure = clamp(value, 0, BLOOM_MAX_EXPOSURE);
+				renderer.toneMappingExposure = Math.pow(bloomSettings.exposure, 4);
+				return true;
+			}
+			return false;
+		},
 		getSceneManager() {
 			return sceneManager;
 		},
@@ -496,6 +564,10 @@ function syncMeshPool(
 
 function lerp(start: number, end: number, t: number): number {
 	return start + (end - start) * t;
+}
+
+function clamp(value: number, min: number, max: number): number {
+	return Math.max(min, Math.min(max, value));
 }
 
 type ExplosionPalette = {
