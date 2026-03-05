@@ -148,11 +148,23 @@ const SKY_SCHEMA: SceneControlSchema = {
 	},
 };
 
+const CITY_SCHEMA: SceneControlSchema = {
+	speedScale: {
+		label: "Speed",
+		levaConfig: { value: 1, min: 0, max: 3, step: 0.01 },
+	},
+	shipMovementResponse: {
+		label: "Ship Movement Response",
+		levaConfig: { value: 0.12, min: 0, max: 1, step: 0.01 },
+	},
+};
+
 const SCHEMAS: Record<SceneKind, SceneControlSchema> = {
 	starfield: STARFIELD_SCHEMA,
 	grid: GRID_SCHEMA,
 	ocean: OCEAN_SCHEMA,
 	sky: SKY_SCHEMA,
+	city: CITY_SCHEMA,
 };
 
 export function getSceneControlSchema(kind: SceneKind): SceneControlSchema {
@@ -164,4 +176,5 @@ export const SCENE_KIND_LABELS: Record<SceneKind, string> = {
 	grid: "Grid",
 	ocean: "Ocean",
 	sky: "Sky",
+	city: "City",
 };

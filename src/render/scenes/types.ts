@@ -1,7 +1,7 @@
 import type { Group } from "three";
 import type { SpectrumTimeline } from "../../audio/types";
 
-export type SceneKind = "starfield" | "grid" | "ocean" | "sky";
+export type SceneKind = "starfield" | "grid" | "ocean" | "sky" | "city";
 
 export type SceneInstance = {
 	readonly id: string;

@@ -5,6 +5,7 @@ import { createStarfieldScene } from "./starfield";
 import { createGridScene } from "./grid";
 import { createOceanScene } from "./ocean";
 import { createSkyScene } from "./sky";
+import { createCityScene } from "./city";
 
 export type StagePresetId = "space" | "custom";
 
@@ -33,6 +34,8 @@ function createSceneInstance(kind: SceneKind, id: string): SceneInstance {
 			return createOceanScene(id);
 		case "sky":
 			return createSkyScene(id);
+		case "city":
+			return createCityScene(id);
 	}
 }
 
