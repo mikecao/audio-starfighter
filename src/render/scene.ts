@@ -7,10 +7,13 @@ import {
 	DoubleSide,
 	Fog,
 	Group,
+	HemisphereLight,
 	MeshBasicMaterial,
 	Mesh,
 	MeshStandardMaterial,
 	OrthographicCamera,
+	PlaneGeometry,
+	PerspectiveCamera,
 	PointLight,
 	RingGeometry,
 	Scene,
@@ -19,6 +22,7 @@ import {
 	Vector2,
 	Vector3,
 	WebGLRenderer,
+	WebGLRenderTarget,
 } from "three";
 import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
@@ -86,6 +90,7 @@ export function setupScene(container: HTMLElement): RenderScene {
 	const ORTHO_HALF_HEIGHT = 11.5;
 
 	const scene = new Scene();
+	const perspectiveScene = new Scene();
 	const lowEnergyBg = new Color("#070707");
 	const highEnergyBg = new Color("#141414");
 	const currentBg = lowEnergyBg.clone();
@@ -96,10 +101,22 @@ export function setupScene(container: HTMLElement): RenderScene {
 		SCENE_FOG_FAR,
 	);
 	scene.fog = sceneFog;
+	const perspectiveBg = new Color("#dddddf");
+	perspectiveScene.background = perspectiveBg;
+	const perspectiveFog = new Fog("#dddddf", 90, 220);
+	perspectiveScene.fog = perspectiveFog;
 
 	const camera = new OrthographicCamera(-1, 1, 1, -1, 0.1, 200);
 	camera.position.set(0, 0, 20);
 	camera.lookAt(new Vector3(0, 0, 0));
+	const perspectiveCamera = new PerspectiveCamera(
+		46,
+		FIXED_RENDER_WIDTH / FIXED_RENDER_HEIGHT,
+		0.1,
+		260,
+	);
+	perspectiveCamera.position.set(18, 52, 64);
+	perspectiveCamera.lookAt(new Vector3(18, 0, -18));
 
 	const renderer = new WebGLRenderer({ antialias: true });
 	renderer.toneMapping = ReinhardToneMapping;
@@ -108,10 +125,29 @@ export function setupScene(container: HTMLElement): RenderScene {
 	renderer.setSize(FIXED_RENDER_WIDTH, FIXED_RENDER_HEIGHT, false);
 	renderer.domElement.classList.add("main-scene-canvas");
 	container.appendChild(renderer.domElement);
+	const perspectiveRenderTarget = new WebGLRenderTarget(
+		FIXED_RENDER_WIDTH,
+		FIXED_RENDER_HEIGHT,
+	);
+	const perspectiveCompositeMaterial = new MeshBasicMaterial({
+		map: perspectiveRenderTarget.texture,
+		fog: false,
+		depthTest: false,
+		depthWrite: false,
+	});
+	const perspectiveCompositeMesh = new Mesh(
+		new PlaneGeometry(1, 1),
+		perspectiveCompositeMaterial,
+	);
+	perspectiveCompositeMesh.position.set(0, 0, -120);
+	perspectiveCompositeMesh.renderOrder = -1000;
+	perspectiveCompositeMesh.visible = false;
+	scene.add(perspectiveCompositeMesh);
 	const composer = new EffectComposer(renderer);
 	composer.setPixelRatio(1);
 	composer.setSize(FIXED_RENDER_WIDTH, FIXED_RENDER_HEIGHT);
-	composer.addPass(new RenderPass(scene, camera));
+	const sceneRenderPass = new RenderPass(scene, camera);
+	composer.addPass(sceneRenderPass);
 	const bloomPass = new UnrealBloomPass(
 		new Vector2(FIXED_RENDER_WIDTH, FIXED_RENDER_HEIGHT),
 		BLOOM_DEFAULT_STRENGTH,
@@ -140,6 +176,14 @@ export function setupScene(container: HTMLElement): RenderScene {
 	const waveformTopLight = new PointLight("#b7ffd9", 2.2, 90, 2);
 	waveformTopLight.position.set(0, 10, -14);
 	scene.add(waveformTopLight);
+	const cityHemisphereLight = new HemisphereLight("#ffffff", "#d7d9e6", 0.92);
+	perspectiveScene.add(cityHemisphereLight);
+	const cityKeyLight = new DirectionalLight("#ffffff", 1.55);
+	cityKeyLight.position.set(-20, 34, 26);
+	perspectiveScene.add(cityKeyLight);
+	const cityFillLight = new DirectionalLight("#cfd6ff", 0.46);
+	cityFillLight.position.set(28, 14, -20);
+	perspectiveScene.add(cityFillLight);
 
 	const shipGeometry = new BoxGeometry(1.2, 0.6, 0.9);
 	const shipMaterial = new MeshStandardMaterial({
@@ -218,7 +262,7 @@ export function setupScene(container: HTMLElement): RenderScene {
 	const sparkColor = new Color();
 
 	// ── Scene Manager ──
-	const sceneManager = createSceneManager(scene);
+	const sceneManager = createSceneManager(scene, perspectiveScene);
 
 	function resize(): void {
 		const width = container.clientWidth;
@@ -255,6 +299,13 @@ export function setupScene(container: HTMLElement): RenderScene {
 		camera.top = ORTHO_HALF_HEIGHT;
 		camera.bottom = -ORTHO_HALF_HEIGHT;
 		camera.updateProjectionMatrix();
+		perspectiveCompositeMesh.scale.set(
+			halfWidth * 2,
+			ORTHO_HALF_HEIGHT * 2,
+			1,
+		);
+		perspectiveCamera.aspect = targetAspect;
+		perspectiveCamera.updateProjectionMatrix();
 	}
 
 	resize();
@@ -283,6 +334,7 @@ export function setupScene(container: HTMLElement): RenderScene {
 			const intensity = snapshot.currentIntensity;
 			currentBg.copy(lowEnergyBg).lerp(highEnergyBg, intensity);
 			sceneFog.color.copy(currentBg);
+			perspectiveFog.color.copy(perspectiveBg);
 			shipMaterial.emissive.set("#0e7490");
 			shipMaterial.emissiveIntensity = 0.08 + intensity * 0.3;
 
@@ -503,10 +555,25 @@ export function setupScene(container: HTMLElement): RenderScene {
 			}
 		},
 		render() {
+			const hasPerspectiveScenes = sceneManager.hasPerspectiveScenes();
+			perspectiveCompositeMesh.visible = hasPerspectiveScenes;
+			scene.background = hasPerspectiveScenes ? null : currentBg;
+			if (hasPerspectiveScenes) {
+				renderer.setRenderTarget(perspectiveRenderTarget);
+				renderer.setClearColor(perspectiveBg, 1);
+				renderer.clear(true, true, true);
+				renderer.render(perspectiveScene, perspectiveCamera);
+				renderer.setRenderTarget(null);
+			}
+			bloomPass.enabled = bloomSettings.enabled;
 			if (bloomSettings.enabled) {
 				composer.render();
 				return;
 			}
+
+			renderer.setRenderTarget(null);
+			renderer.setClearColor(hasPerspectiveScenes ? "#000000" : currentBg, 1);
+			renderer.clear(true, true, true);
 			renderer.render(scene, camera);
 		},
 		resize,

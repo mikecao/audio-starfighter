@@ -11,6 +11,7 @@ export type StagePresetId = "space" | "custom";
 
 export type SceneManager = {
 	getActiveScenes(): ReadonlyArray<SceneInstance>;
+	hasPerspectiveScenes(): boolean;
 	getActivePreset(): StagePresetId;
 	activatePreset(presetId: StagePresetId): void;
 	addScene(kind: SceneKind): string;
@@ -43,7 +44,18 @@ function isGridScene(instance: SceneInstance): instance is SceneInstance & GridS
 	return instance.kind === "grid";
 }
 
-export function createSceneManager(threeScene: Scene): SceneManager {
+function getParentSceneForInstance(
+	instance: SceneInstance,
+	orthoScene: Scene,
+	perspectiveScene: Scene,
+): Scene {
+	return instance.renderLayer === "perspective" ? perspectiveScene : orthoScene;
+}
+
+export function createSceneManager(
+	orthoScene: Scene,
+	perspectiveScene: Scene,
+): SceneManager {
 	const instanceMap = new Map<string, SceneInstance>();
 	let instanceList: SceneInstance[] = [];
 	let activePreset: StagePresetId = "space";
@@ -59,14 +71,18 @@ export function createSceneManager(threeScene: Scene): SceneManager {
 		const instance = createSceneInstance(kind, id);
 		instanceMap.set(id, instance);
 		instanceList.push(instance);
-		threeScene.add(instance.group);
+		getParentSceneForInstance(instance, orthoScene, perspectiveScene).add(
+			instance.group,
+		);
 		return instance;
 	}
 
 	function removeInstanceInternal(id: string): void {
 		const instance = instanceMap.get(id);
 		if (!instance) return;
-		threeScene.remove(instance.group);
+		getParentSceneForInstance(instance, orthoScene, perspectiveScene).remove(
+			instance.group,
+		);
 		instance.dispose();
 		instanceMap.delete(id);
 		instanceList = instanceList.filter((s) => s.id !== id);
@@ -74,7 +90,9 @@ export function createSceneManager(threeScene: Scene): SceneManager {
 
 	function clearAll(): void {
 		for (const instance of instanceList) {
-			threeScene.remove(instance.group);
+			getParentSceneForInstance(instance, orthoScene, perspectiveScene).remove(
+				instance.group,
+			);
 			instance.dispose();
 		}
 		instanceMap.clear();
@@ -88,6 +106,9 @@ export function createSceneManager(threeScene: Scene): SceneManager {
 	return {
 		getActiveScenes() {
 			return instanceList;
+		},
+		hasPerspectiveScenes() {
+			return instanceList.some((instance) => instance.renderLayer === "perspective");
 		},
 		getActivePreset() {
 			return activePreset;

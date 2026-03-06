@@ -2,11 +2,13 @@ import type { Group } from "three";
 import type { SpectrumTimeline } from "../../audio/types";
 
 export type SceneKind = "starfield" | "grid" | "ocean" | "sky" | "city";
+export type SceneRenderLayer = "ortho" | "perspective";
 
 export type SceneInstance = {
 	readonly id: string;
 	readonly kind: SceneKind;
 	readonly group: Group;
+	readonly renderLayer?: SceneRenderLayer;
 	update(simTimeSeconds: number, shipY: number): void;
 	set(key: string, value: unknown): boolean;
 	getSettings(): Record<string, unknown>;
