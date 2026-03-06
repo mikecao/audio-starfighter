@@ -10,14 +10,19 @@ import {
 import type { SceneInstance } from "./types";
 
 const CITY_COLUMNS = 56;
-const CITY_ROWS = 22;
+const CITY_ROWS = 38;
+const CITY_CHUNK_COUNT = 6;
 const CITY_CELL_X = 3;
-const CITY_CELL_Z = 3.25;
+const CITY_CELL_Z = 3.4;
 const CITY_BASE_Y = 0;
-const CITY_Z_START = 12;
+const CITY_Z_START = 28;
 const CITY_MIN_HEIGHT = 1.2;
 const CITY_MAX_HEIGHT = 22;
 const CITY_CHUNK_WIDTH = CITY_COLUMNS * CITY_CELL_X;
+const CITY_DEPTH = CITY_ROWS * CITY_CELL_Z + 28;
+const CITY_GROUND_Y = CITY_BASE_Y - 0.35;
+const CITY_GROUND_Z =
+	CITY_Z_START - ((CITY_ROWS - 1) * CITY_CELL_Z) * 0.5;
 const CITY_SCROLL_SPEED = 15;
 const CITY_SPEED_SCALE_DEFAULT = 1;
 const CITY_SPEED_SCALE_MIN = 0;
@@ -54,7 +59,6 @@ function normalizeShipMovementResponse(value: number): number {
 }
 
 function createCityChunk(
-	xOffset: number,
 	seedOffset: number,
 	geometry: BoxGeometry,
 	material: MeshStandardMaterial,
@@ -81,10 +85,7 @@ function createCityChunk(
 			const depth = 0.85 + depthNoise * 1.45;
 
 			const x =
-				xOffset +
-				column * CITY_CELL_X +
-				CITY_CELL_X * 0.5 -
-				CITY_CHUNK_WIDTH * 0.5;
+				column * CITY_CELL_X + CITY_CELL_X * 0.5 - CITY_CHUNK_WIDTH * 0.5;
 			const z = CITY_Z_START - row * CITY_CELL_Z;
 
 			dummy.position.set(x, CITY_BASE_Y, z);
@@ -108,7 +109,31 @@ function createCityChunk(
 		mesh.instanceColor.needsUpdate = true;
 	}
 	mesh.frustumCulled = false;
+	mesh.castShadow = true;
+	mesh.receiveShadow = true;
 	return mesh;
+}
+
+function createCityChunkGroup(
+	seedOffset: number,
+	buildingGeometry: BoxGeometry,
+	buildingMaterial: MeshStandardMaterial,
+	groundGeometry: BoxGeometry,
+	groundMaterial: MeshStandardMaterial,
+): Group {
+	const chunkGroup = new Group();
+	const buildings = createCityChunk(seedOffset, buildingGeometry, buildingMaterial);
+	const ground = new Mesh(groundGeometry, groundMaterial);
+	ground.position.set(0, CITY_GROUND_Y, CITY_GROUND_Z);
+	ground.receiveShadow = true;
+	chunkGroup.add(buildings);
+	chunkGroup.add(ground);
+	return chunkGroup;
+}
+
+function positiveModulo(value: number, divisor: number): number {
+	const remainder = value % divisor;
+	return remainder < 0 ? remainder + divisor : remainder;
 }
 
 export function createCityScene(id: string): SceneInstance {
@@ -124,20 +149,10 @@ export function createCityScene(id: string): SceneInstance {
 		emissiveIntensity: 0,
 		vertexColors: true,
 	});
-	const chunkA = createCityChunk(0, 0, buildingGeometry, buildingMaterial);
-	const chunkB = createCityChunk(
-		CITY_CHUNK_WIDTH,
-		1,
-		buildingGeometry,
-		buildingMaterial,
-	);
-	group.add(chunkA);
-	group.add(chunkB);
-
 	const groundGeometry = new BoxGeometry(
-		CITY_CHUNK_WIDTH * 2,
+		CITY_CHUNK_WIDTH + CITY_CELL_X * 2,
 		0.8,
-		CITY_ROWS * CITY_CELL_Z + 18,
+		CITY_DEPTH,
 	);
 	const groundMaterial = new MeshStandardMaterial({
 		color: "#cfcfd4",
@@ -146,13 +161,18 @@ export function createCityScene(id: string): SceneInstance {
 		emissive: "#000000",
 		emissiveIntensity: 0,
 	});
-	const ground = new Mesh(groundGeometry, groundMaterial);
-	ground.position.set(
-		CITY_CHUNK_WIDTH * 0.5,
-		CITY_BASE_Y - 0.35,
-		CITY_Z_START - ((CITY_ROWS - 1) * CITY_CELL_Z) * 0.5,
-	);
-	group.add(ground);
+	const chunks: Group[] = [];
+	for (let i = 0; i < CITY_CHUNK_COUNT; i += 1) {
+		const chunk = createCityChunkGroup(
+			i,
+			buildingGeometry,
+			buildingMaterial,
+			groundGeometry,
+			groundMaterial,
+		);
+		chunks.push(chunk);
+		group.add(chunk);
+	}
 
 	let speedScale = CITY_SPEED_SCALE_DEFAULT;
 	let shipMovementResponse = CITY_SHIP_MOVEMENT_RESPONSE_DEFAULT;
@@ -163,8 +183,15 @@ export function createCityScene(id: string): SceneInstance {
 		renderLayer: "perspective",
 		group,
 		update(simTimeSeconds, shipY) {
-			const distance = (simTimeSeconds * CITY_SCROLL_SPEED * speedScale) % CITY_CHUNK_WIDTH;
-			group.position.x = -distance;
+			const distance = simTimeSeconds * CITY_SCROLL_SPEED * speedScale;
+			const baseChunkIndex = Math.floor(distance / CITY_CHUNK_WIDTH);
+			const centerSlot = Math.floor(CITY_CHUNK_COUNT / 2);
+			for (let slot = 0; slot < CITY_CHUNK_COUNT; slot += 1) {
+				const worldChunkIndex = baseChunkIndex + slot - centerSlot;
+				const chunkIndex = positiveModulo(worldChunkIndex, CITY_CHUNK_COUNT);
+				const chunk = chunks[chunkIndex];
+				chunk.position.x = worldChunkIndex * CITY_CHUNK_WIDTH - distance;
+			}
 			group.position.z = shipY * shipMovementResponse;
 		},
 		set(key, value) {

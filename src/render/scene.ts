@@ -1,10 +1,12 @@
 import {
 	AdditiveBlending,
 	AmbientLight,
+	BufferGeometry,
 	BoxGeometry,
 	Color,
 	DirectionalLight,
 	DoubleSide,
+	Float32BufferAttribute,
 	Fog,
 	Group,
 	HemisphereLight,
@@ -12,12 +14,18 @@ import {
 	Mesh,
 	MeshStandardMaterial,
 	OrthographicCamera,
+	PCFSoftShadowMap,
 	PlaneGeometry,
 	PerspectiveCamera,
 	PointLight,
+	Points,
+	PointsMaterial,
 	RingGeometry,
+	SRGBColorSpace,
 	Scene,
 	SphereGeometry,
+	Texture,
+	TextureLoader,
 	ReinhardToneMapping,
 	Vector2,
 	Vector3,
@@ -101,10 +109,17 @@ export function setupScene(container: HTMLElement): RenderScene {
 		SCENE_FOG_FAR,
 	);
 	scene.fog = sceneFog;
-	const perspectiveBg = new Color("#dddddf");
-	perspectiveScene.background = perspectiveBg;
-	const perspectiveFog = new Fog("#dddddf", 90, 220);
+	const perspectiveBg = new Color("#050816");
+	let perspectiveBackground: Color | Texture = perspectiveBg;
+	perspectiveScene.background = perspectiveBackground;
+	const perspectiveFog = new Fog("#0a1022", 140, 360);
 	perspectiveScene.fog = perspectiveFog;
+	const skyTextureUrl = new URL("../assets/sky.jpg", import.meta.url).href;
+	new TextureLoader().load(skyTextureUrl, (texture) => {
+		texture.colorSpace = SRGBColorSpace;
+		perspectiveBackground = texture;
+		perspectiveScene.background = texture;
+	});
 
 	const camera = new OrthographicCamera(-1, 1, 1, -1, 0.1, 200);
 	camera.position.set(0, 0, 20);
@@ -115,12 +130,14 @@ export function setupScene(container: HTMLElement): RenderScene {
 		0.1,
 		260,
 	);
-	perspectiveCamera.position.set(18, 52, 64);
-	perspectiveCamera.lookAt(new Vector3(18, 0, -18));
+	perspectiveCamera.position.set(16, 42, 52);
+	perspectiveCamera.lookAt(new Vector3(16, 4, -28));
 
 	const renderer = new WebGLRenderer({ antialias: true });
 	renderer.toneMapping = ReinhardToneMapping;
 	renderer.toneMappingExposure = Math.pow(BLOOM_DEFAULT_EXPOSURE, 4);
+	renderer.shadowMap.enabled = true;
+	renderer.shadowMap.type = PCFSoftShadowMap;
 	renderer.setPixelRatio(1);
 	renderer.setSize(FIXED_RENDER_WIDTH, FIXED_RENDER_HEIGHT, false);
 	renderer.domElement.classList.add("main-scene-canvas");
@@ -180,10 +197,43 @@ export function setupScene(container: HTMLElement): RenderScene {
 	perspectiveScene.add(cityHemisphereLight);
 	const cityKeyLight = new DirectionalLight("#ffffff", 1.55);
 	cityKeyLight.position.set(-20, 34, 26);
+	cityKeyLight.castShadow = true;
+	cityKeyLight.shadow.mapSize.width = 2048;
+	cityKeyLight.shadow.mapSize.height = 2048;
+	cityKeyLight.shadow.bias = -0.0002;
+	cityKeyLight.shadow.normalBias = 0.02;
+	cityKeyLight.shadow.camera.near = 8;
+	cityKeyLight.shadow.camera.far = 180;
+	cityKeyLight.shadow.camera.left = -60;
+	cityKeyLight.shadow.camera.right = 60;
+	cityKeyLight.shadow.camera.top = 80;
+	cityKeyLight.shadow.camera.bottom = -30;
 	perspectiveScene.add(cityKeyLight);
 	const cityFillLight = new DirectionalLight("#cfd6ff", 0.46);
 	cityFillLight.position.set(28, 14, -20);
 	perspectiveScene.add(cityFillLight);
+	const starGeometry = new BufferGeometry();
+	const starPositions = new Float32Array(240 * 3);
+	for (let i = 0; i < 240; i += 1) {
+		const i3 = i * 3;
+		const spread = (i % 19) / 18;
+		const band = Math.floor(i / 19);
+		starPositions[i3] = -220 + spread * 440 + ((band % 2) - 0.5) * 8;
+		starPositions[i3 + 1] = 86 + (band % 7) * 9 + (i % 5) * 0.8;
+		starPositions[i3 + 2] = -180 - band * 7 - (i % 11) * 2.5;
+	}
+	starGeometry.setAttribute(
+		"position",
+		new Float32BufferAttribute(starPositions, 3),
+	);
+	const starMaterial = new PointsMaterial({
+		color: "#dbe8ff",
+		size: 1.55,
+		sizeAttenuation: true,
+		fog: false,
+	});
+	const nightStars = new Points(starGeometry, starMaterial);
+	perspectiveScene.add(nightStars);
 
 	const shipGeometry = new BoxGeometry(1.2, 0.6, 0.9);
 	const shipMaterial = new MeshStandardMaterial({
@@ -555,16 +605,17 @@ export function setupScene(container: HTMLElement): RenderScene {
 			}
 		},
 		render() {
-			const hasPerspectiveScenes = sceneManager.hasPerspectiveScenes();
-			perspectiveCompositeMesh.visible = hasPerspectiveScenes;
-			scene.background = hasPerspectiveScenes ? null : currentBg;
-			if (hasPerspectiveScenes) {
-				renderer.setRenderTarget(perspectiveRenderTarget);
-				renderer.setClearColor(perspectiveBg, 1);
-				renderer.clear(true, true, true);
-				renderer.render(perspectiveScene, perspectiveCamera);
-				renderer.setRenderTarget(null);
-			}
+				const hasPerspectiveScenes = sceneManager.hasPerspectiveScenes();
+				perspectiveCompositeMesh.visible = hasPerspectiveScenes;
+				scene.background = hasPerspectiveScenes ? null : currentBg;
+				if (hasPerspectiveScenes) {
+					renderer.setRenderTarget(perspectiveRenderTarget);
+					renderer.setClearColor(perspectiveBg, 1);
+					renderer.clear(true, true, true);
+					perspectiveScene.background = perspectiveBackground;
+					renderer.render(perspectiveScene, perspectiveCamera);
+					renderer.setRenderTarget(null);
+				}
 			bloomPass.enabled = bloomSettings.enabled;
 			if (bloomSettings.enabled) {
 				composer.render();
