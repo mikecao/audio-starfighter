@@ -1,7 +1,7 @@
 import type { Group } from "three";
 import type { SpectrumTimeline } from "../../audio/types";
 
-export type SceneKind = "starfield" | "grid" | "ocean" | "sky" | "city";
+export type SceneKind = "starfield" | "grid" | "ocean" | "sky" | "city" | "cubes";
 export type SceneRenderLayer = "ortho" | "perspective";
 
 export type SceneInstance = {
@@ -15,8 +15,11 @@ export type SceneInstance = {
 	dispose(): void;
 };
 
-export type GridSceneExtensions = {
+export type SpectrumReactiveSceneExtensions = {
 	setSpectrum(bins: Float32Array | null): void;
+};
+
+export type GridSceneExtensions = SpectrumReactiveSceneExtensions & {
 	setSpectrumTimeline(timeline: SpectrumTimeline | null): void;
 	setTime(timeSeconds: number): void;
 };

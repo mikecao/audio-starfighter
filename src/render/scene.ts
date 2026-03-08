@@ -21,11 +21,8 @@ import {
 	Points,
 	PointsMaterial,
 	RingGeometry,
-	SRGBColorSpace,
 	Scene,
 	SphereGeometry,
-	Texture,
-	TextureLoader,
 	ReinhardToneMapping,
 	Vector2,
 	Vector3,
@@ -110,16 +107,9 @@ export function setupScene(container: HTMLElement): RenderScene {
 	);
 	scene.fog = sceneFog;
 	const perspectiveBg = new Color("#050816");
-	let perspectiveBackground: Color | Texture = perspectiveBg;
-	perspectiveScene.background = perspectiveBackground;
+	perspectiveScene.background = perspectiveBg;
 	const perspectiveFog = new Fog("#0a1022", 140, 360);
 	perspectiveScene.fog = perspectiveFog;
-	const skyTextureUrl = new URL("../assets/sky.jpg", import.meta.url).href;
-	new TextureLoader().load(skyTextureUrl, (texture) => {
-		texture.colorSpace = SRGBColorSpace;
-		perspectiveBackground = texture;
-		perspectiveScene.background = texture;
-	});
 
 	const camera = new OrthographicCamera(-1, 1, 1, -1, 0.1, 200);
 	camera.position.set(0, 0, 20);
@@ -612,7 +602,6 @@ export function setupScene(container: HTMLElement): RenderScene {
 					renderer.setRenderTarget(perspectiveRenderTarget);
 					renderer.setClearColor(perspectiveBg, 1);
 					renderer.clear(true, true, true);
-					perspectiveScene.background = perspectiveBackground;
 					renderer.render(perspectiveScene, perspectiveCamera);
 					renderer.setRenderTarget(null);
 				}

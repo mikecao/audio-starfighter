@@ -159,12 +159,36 @@ const CITY_SCHEMA: SceneControlSchema = {
 	},
 };
 
+const CUBES_SCHEMA: SceneControlSchema = {
+	surfaceColor: {
+		label: "Surface Color",
+		levaConfig: { value: "#7dd3fc" },
+	},
+	outlineColor: {
+		label: "Outline Color",
+		levaConfig: { value: "#e0f2fe" },
+	},
+	reactivityStrength: {
+		label: "Reactivity",
+		levaConfig: { value: 1, min: 0, max: 3, step: 0.01 },
+	},
+	columns: {
+		label: "Columns",
+		levaConfig: { value: 24, min: 6, max: 64, step: 1 },
+	},
+	rows: {
+		label: "Rows",
+		levaConfig: { value: 14, min: 4, max: 36, step: 1 },
+	},
+};
+
 const SCHEMAS: Record<SceneKind, SceneControlSchema> = {
 	starfield: STARFIELD_SCHEMA,
 	grid: GRID_SCHEMA,
 	ocean: OCEAN_SCHEMA,
 	sky: SKY_SCHEMA,
 	city: CITY_SCHEMA,
+	cubes: CUBES_SCHEMA,
 };
 
 export function getSceneControlSchema(kind: SceneKind): SceneControlSchema {
@@ -177,4 +201,5 @@ export const SCENE_KIND_LABELS: Record<SceneKind, string> = {
 	ocean: "Ocean",
 	sky: "Sky",
 	city: "City",
+	cubes: "Cubes",
 };

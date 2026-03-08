@@ -1,11 +1,17 @@
 import type { Scene } from "three";
 import type { SpectrumTimeline } from "../../audio/types";
-import type { SceneInstance, SceneKind, GridSceneExtensions } from "./types";
+import type {
+	SceneInstance,
+	SceneKind,
+	GridSceneExtensions,
+	SpectrumReactiveSceneExtensions,
+} from "./types";
 import { createStarfieldScene } from "./starfield";
 import { createGridScene } from "./grid";
 import { createOceanScene } from "./ocean";
 import { createSkyScene } from "./sky";
 import { createCityScene } from "./city";
+import { createCubesScene } from "./cubes";
 
 export type StagePresetId = "space" | "custom";
 
@@ -37,11 +43,19 @@ function createSceneInstance(kind: SceneKind, id: string): SceneInstance {
 			return createSkyScene(id);
 		case "city":
 			return createCityScene(id);
+		case "cubes":
+			return createCubesScene(id);
 	}
 }
 
 function isGridScene(instance: SceneInstance): instance is SceneInstance & GridSceneExtensions {
 	return instance.kind === "grid";
+}
+
+function isSpectrumScene(
+	instance: SceneInstance,
+): instance is SceneInstance & SpectrumReactiveSceneExtensions {
+	return instance.kind === "grid" || instance.kind === "cubes";
 }
 
 function getParentSceneForInstance(
@@ -146,7 +160,7 @@ export function createSceneManager(
 		},
 		setGridSpectrum(bins) {
 			for (const instance of instanceList) {
-				if (isGridScene(instance)) {
+				if (isSpectrumScene(instance)) {
 					instance.setSpectrum(bins);
 				}
 			}
