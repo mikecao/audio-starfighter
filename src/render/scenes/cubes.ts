@@ -31,6 +31,7 @@ const CUBES_OUTLINE_COLOR_DEFAULT = "#e0f2fe";
 const CUBES_CELL_OVERLAP = 1.02;
 const CUBES_BASE_DEPTH_RATIO = 0.1;
 const CUBES_MAX_DEPTH_RATIO = 1.85;
+const CUBES_MOTION_SPEED = 0.08;
 const CUBE_EDGE_INDEX_PAIRS = [
 	[0, 1], [1, 2], [2, 3], [3, 0],
 	[4, 5], [5, 6], [6, 7], [7, 4],
@@ -47,12 +48,17 @@ const CUBE_EDGE_CORNERS = [
 	[-0.5, 0.5, 1],
 ] as const;
 
+type CubesMotionMode = "static" | "flow";
+const CUBES_MOTION_MODE_DEFAULT: CubesMotionMode = "static";
+
 type CubesSceneState = {
 	columns: number;
 	rows: number;
 	reactivityStrength: number;
 	surfaceColorHex: string;
 	outlineColorHex: string;
+	motionMode: CubesMotionMode;
+	timeSeconds: number;
 	spectrumBins: Float32Array | null;
 	instancedMesh: InstancedMesh | null;
 	outlineLines: LineSegments | null;
@@ -96,6 +102,10 @@ function normalizeColor(value: unknown): string {
 		: CUBES_SURFACE_COLOR_DEFAULT;
 }
 
+function normalizeMotionMode(value: unknown): CubesMotionMode {
+	return value === "flow" ? "flow" : CUBES_MOTION_MODE_DEFAULT;
+}
+
 function sampleSpectrumBinLinear(
 	bins: Float32Array,
 	index: number,
@@ -111,6 +121,36 @@ function sampleSpectrumBinLinear(
 	const start = bins[lower] ?? 0;
 	const end = bins[upper] ?? start;
 	return start + (end - start) * t;
+}
+
+function getSpectrumAmplitude(
+	state: CubesSceneState,
+	row: number,
+	column: number,
+): number {
+	const bins = state.spectrumBins;
+	if (!bins || bins.length === 0) {
+		return 0;
+	}
+
+	const totalCells = Math.max(2, state.rows * state.columns);
+	if (state.motionMode === "static") {
+		return sampleSpectrumBinLinear(
+			bins,
+			row * state.columns + column,
+			totalCells,
+		);
+	}
+
+	const u = state.columns <= 1 ? 0 : column / (state.columns - 1);
+	const v = state.rows <= 1 ? 0 : row / (state.rows - 1);
+	const mapped = u * 0.72 + v * 0.28;
+	const wrapped = (mapped + state.timeSeconds * CUBES_MOTION_SPEED) % 1;
+	return sampleSpectrumBinLinear(
+		bins,
+		wrapped * (totalCells - 1),
+		totalCells,
+	);
 }
 
 function rebuildMesh(
@@ -196,14 +236,7 @@ function updateMeshTransforms(
 	let instanceIndex = 0;
 	for (let row = 0; row < state.rows; row += 1) {
 		for (let column = 0; column < state.columns; column += 1) {
-			const binIndex = row * state.columns + column;
-			const amplitude = state.spectrumBins
-				? sampleSpectrumBinLinear(
-						state.spectrumBins,
-						binIndex,
-						Math.max(2, state.rows * state.columns),
-					)
-				: 0;
+			const amplitude = getSpectrumAmplitude(state, row, column);
 			const shapedAmplitude = Math.pow(clamp(amplitude, 0, 1), 0.8);
 			const depth =
 				baseDepth +
@@ -273,6 +306,8 @@ export function createCubesScene(
 		reactivityStrength: CUBES_REACTIVITY_DEFAULT,
 		surfaceColorHex: CUBES_SURFACE_COLOR_DEFAULT,
 		outlineColorHex: CUBES_OUTLINE_COLOR_DEFAULT,
+		motionMode: CUBES_MOTION_MODE_DEFAULT,
+		timeSeconds: 0,
 		spectrumBins: null,
 		instancedMesh: null,
 		outlineLines: null,
@@ -289,8 +324,11 @@ export function createCubesScene(
 		kind: "cubes",
 		renderLayer: "perspective",
 		group,
-		update() {
-			// Driven directly by incoming spectrum updates.
+		update(simTimeSeconds) {
+			state.timeSeconds = Math.max(0, simTimeSeconds);
+			if (state.motionMode !== "static") {
+				updateMeshTransforms(group, geometry, state);
+			}
 		},
 		set(key, value) {
 			switch (key) {
@@ -308,6 +346,10 @@ export function createCubesScene(
 					state.surfaceColorHex = normalizeColor(value);
 					state.outlineColorHex = normalizeColor(value);
 					syncMaterialState(state);
+					return true;
+				case "motionMode":
+					state.motionMode = normalizeMotionMode(value);
+					updateMeshTransforms(group, geometry, state);
 					return true;
 				case "reactivityStrength":
 					state.reactivityStrength = normalizeReactivity(value);
@@ -345,6 +387,7 @@ export function createCubesScene(
 			return {
 				surfaceColor: state.surfaceColorHex,
 				outlineColor: state.outlineColorHex,
+				motionMode: state.motionMode,
 				reactivityStrength: state.reactivityStrength,
 				columns: state.columns,
 				rows: state.rows,

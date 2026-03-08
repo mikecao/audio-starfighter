@@ -168,6 +168,13 @@ const CUBES_SCHEMA: SceneControlSchema = {
 		label: "Outline Color",
 		levaConfig: { value: "#e0f2fe" },
 	},
+	motionMode: {
+		label: "Motion",
+		levaConfig: {
+			value: "static",
+			options: { Static: "static", Flow: "flow" },
+		},
+	},
 	reactivityStrength: {
 		label: "Reactivity",
 		levaConfig: { value: 1, min: 0, max: 3, step: 0.01 },
