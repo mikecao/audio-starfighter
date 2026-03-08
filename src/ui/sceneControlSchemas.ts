@@ -162,17 +162,28 @@ const CITY_SCHEMA: SceneControlSchema = {
 const CUBES_SCHEMA: SceneControlSchema = {
 	surfaceColor: {
 		label: "Surface Color",
-		levaConfig: { value: "#7dd3fc" },
+		levaConfig: { value: "#000000" },
 	},
 	outlineColor: {
 		label: "Outline Color",
-		levaConfig: { value: "#e0f2fe" },
+		levaConfig: { value: "#ff0000" },
+	},
+	rotateOutlineColor: {
+		label: "Rotate Outline Color",
+		levaConfig: { value: false },
 	},
 	motionMode: {
 		label: "Motion",
 		levaConfig: {
 			value: "static",
-			options: { Static: "static", Flow: "flow" },
+			options: {
+				Static: "static",
+				Diagonal: "diagonal",
+				Horizontal: "horizontal",
+				Vertical: "vertical",
+				Radial: "radial",
+				Sweep: "sweep",
+			},
 		},
 	},
 	reactivityStrength: {

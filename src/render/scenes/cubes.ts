@@ -26,12 +26,13 @@ const CUBES_ROWS_MAX = 36;
 const CUBES_REACTIVITY_DEFAULT = 1;
 const CUBES_REACTIVITY_MIN = 0;
 const CUBES_REACTIVITY_MAX = 3;
-const CUBES_SURFACE_COLOR_DEFAULT = "#7dd3fc";
-const CUBES_OUTLINE_COLOR_DEFAULT = "#e0f2fe";
+const CUBES_SURFACE_COLOR_DEFAULT = "#000000";
+const CUBES_OUTLINE_COLOR_DEFAULT = "#ff0000";
 const CUBES_CELL_OVERLAP = 1.02;
 const CUBES_BASE_DEPTH_RATIO = 0.1;
 const CUBES_MAX_DEPTH_RATIO = 1.85;
 const CUBES_MOTION_SPEED = 0.08;
+const CUBES_OUTLINE_RAINBOW_SPEED = 0.18;
 const CUBE_EDGE_INDEX_PAIRS = [
 	[0, 1], [1, 2], [2, 3], [3, 0],
 	[4, 5], [5, 6], [6, 7], [7, 4],
@@ -48,7 +49,13 @@ const CUBE_EDGE_CORNERS = [
 	[-0.5, 0.5, 1],
 ] as const;
 
-type CubesMotionMode = "static" | "flow";
+type CubesMotionMode =
+	| "static"
+	| "diagonal"
+	| "horizontal"
+	| "vertical"
+	| "radial"
+	| "sweep";
 const CUBES_MOTION_MODE_DEFAULT: CubesMotionMode = "static";
 
 type CubesSceneState = {
@@ -57,6 +64,7 @@ type CubesSceneState = {
 	reactivityStrength: number;
 	surfaceColorHex: string;
 	outlineColorHex: string;
+	rotateOutlineColor: boolean;
 	motionMode: CubesMotionMode;
 	timeSeconds: number;
 	spectrumBins: Float32Array | null;
@@ -96,21 +104,33 @@ function normalizeReactivity(value: unknown): number {
 	);
 }
 
-function normalizeColor(value: unknown): string {
+function normalizeColor(value: unknown, fallback: string): string {
 	return typeof value === "string" && /^#[0-9a-f]{6}$/i.test(value)
 		? value
-		: CUBES_SURFACE_COLOR_DEFAULT;
+		: fallback;
 }
 
 function normalizeMotionMode(value: unknown): CubesMotionMode {
-	return value === "flow" ? "flow" : CUBES_MOTION_MODE_DEFAULT;
+	switch (value) {
+		case "flow":
+		case "diagonal":
+			return "diagonal";
+		case "horizontal":
+		case "vertical":
+		case "radial":
+		case "sweep":
+			return value;
+		default:
+			return CUBES_MOTION_MODE_DEFAULT;
+	}
 }
 
-function sampleSpectrumBinLinear(
-	bins: Float32Array,
-	index: number,
-	count: number,
-): number {
+function wrap01(value: number): number {
+	const wrapped = value % 1;
+	return wrapped < 0 ? wrapped + 1 : wrapped;
+}
+
+function sampleSpectrumBinLinear(bins: Float32Array, index: number, count: number): number {
 	if (bins.length === 0 || count <= 1) {
 		return bins[0] ?? 0;
 	}
@@ -123,7 +143,7 @@ function sampleSpectrumBinLinear(
 	return start + (end - start) * t;
 }
 
-function getSpectrumAmplitude(
+function sampleStaticSpectrumField(
 	state: CubesSceneState,
 	row: number,
 	column: number,
@@ -134,23 +154,112 @@ function getSpectrumAmplitude(
 	}
 
 	const totalCells = Math.max(2, state.rows * state.columns);
-	if (state.motionMode === "static") {
-		return sampleSpectrumBinLinear(
-			bins,
-			row * state.columns + column,
-			totalCells,
-		);
-	}
-
-	const u = state.columns <= 1 ? 0 : column / (state.columns - 1);
-	const v = state.rows <= 1 ? 0 : row / (state.rows - 1);
-	const mapped = u * 0.72 + v * 0.28;
-	const wrapped = (mapped + state.timeSeconds * CUBES_MOTION_SPEED) % 1;
 	return sampleSpectrumBinLinear(
 		bins,
-		wrapped * (totalCells - 1),
+		row * state.columns + column,
 		totalCells,
 	);
+}
+
+function wrapIndex(value: number, size: number): number {
+	const wrapped = value % size;
+	return wrapped < 0 ? wrapped + size : wrapped;
+}
+
+function sampleStaticSpectrumGridLinear(
+	state: CubesSceneState,
+	row: number,
+	column: number,
+): number {
+	const { rows, columns } = state;
+	if (rows <= 0 || columns <= 0) {
+		return 0;
+	}
+
+	const rowWrapped = wrapIndex(row, rows);
+	const columnWrapped = wrapIndex(column, columns);
+	const row0 = Math.floor(rowWrapped);
+	const row1 = (row0 + 1) % rows;
+	const column0 = Math.floor(columnWrapped);
+	const column1 = (column0 + 1) % columns;
+	const rowT = rowWrapped - row0;
+	const columnT = columnWrapped - column0;
+	const a = sampleStaticSpectrumField(state, row0, column0);
+	const b = sampleStaticSpectrumField(state, row0, column1);
+	const c = sampleStaticSpectrumField(state, row1, column0);
+	const d = sampleStaticSpectrumField(state, row1, column1);
+	const top = a + (b - a) * columnT;
+	const bottom = c + (d - c) * columnT;
+	return top + (bottom - top) * rowT;
+}
+
+function sampleStaticSpectrumNormalized(
+	state: CubesSceneState,
+	u: number,
+	v: number,
+): number {
+	return sampleStaticSpectrumGridLinear(
+		state,
+		wrap01(v) * state.rows,
+		wrap01(u) * state.columns,
+	);
+}
+
+function getSpectrumAmplitude(state: CubesSceneState, row: number, column: number): number {
+	const bins = state.spectrumBins;
+	if (!bins || bins.length === 0) {
+		return 0;
+	}
+
+	const rowDrift = state.timeSeconds * CUBES_MOTION_SPEED * state.rows;
+	const columnDrift = state.timeSeconds * CUBES_MOTION_SPEED * state.columns;
+	if (state.motionMode === "static") {
+		return sampleStaticSpectrumField(state, row, column);
+	}
+	if (state.motionMode === "horizontal") {
+		const u = (column + 0.5) / Math.max(1, state.columns);
+		const v = (row + 0.5) / Math.max(1, state.rows);
+		return sampleStaticSpectrumNormalized(
+			state,
+			1 - v,
+			u + state.timeSeconds * CUBES_MOTION_SPEED,
+		);
+	}
+	if (state.motionMode === "vertical") {
+		return sampleStaticSpectrumGridLinear(state, row + rowDrift, column);
+	}
+	if (state.motionMode === "diagonal") {
+		const totalCells = Math.max(2, state.rows * state.columns);
+		const u = state.columns <= 1 ? 0 : column / (state.columns - 1);
+		const v = state.rows <= 1 ? 0 : row / (state.rows - 1);
+		const mapped = u * 0.72 + v * 0.28;
+		const wrapped = wrap01(mapped + state.timeSeconds * CUBES_MOTION_SPEED);
+		return sampleSpectrumBinLinear(bins, wrapped * (totalCells - 1), totalCells);
+	}
+
+	const totalCells = Math.max(2, state.rows * state.columns);
+	const u = state.columns <= 1 ? 0 : column / (state.columns - 1);
+	const v = state.rows <= 1 ? 0 : row / (state.rows - 1);
+	const centeredU = u - 0.5;
+	const centeredV = v - 0.5;
+	const maxRadius = Math.sqrt(0.5 * 0.5 + 0.5 * 0.5);
+	const mapped = state.motionMode === "radial"
+		? Math.sqrt(centeredU * centeredU + centeredV * centeredV) / maxRadius
+		: (Math.atan2(centeredV, centeredU) / (Math.PI * 2)) + 0.5;
+	const wrapped = wrap01(mapped + state.timeSeconds * CUBES_MOTION_SPEED);
+	return sampleSpectrumBinLinear(bins, wrapped * (totalCells - 1), totalCells);
+}
+
+function updateOutlineMaterialColor(state: CubesSceneState): void {
+	if (state.rotateOutlineColor) {
+		state.outlineMaterial.color.setHSL(
+			wrap01(state.timeSeconds * CUBES_OUTLINE_RAINBOW_SPEED),
+			1,
+			0.56,
+		);
+		return;
+	}
+	state.outlineMaterial.color.set(state.outlineColorHex);
 }
 
 function rebuildMesh(
@@ -192,10 +301,9 @@ function rebuildMesh(
 
 function syncMaterialState(state: CubesSceneState): void {
 	const surfaceColor = new Color(state.surfaceColorHex);
-	const outlineColor = new Color(state.outlineColorHex);
 	state.solidMaterial.color.copy(surfaceColor);
 	state.solidMaterial.emissive.copy(surfaceColor).multiplyScalar(0.05);
-	state.outlineMaterial.color.copy(outlineColor);
+	updateOutlineMaterialColor(state);
 	if (state.instancedMesh) {
 		state.instancedMesh.material = state.solidMaterial;
 		state.instancedMesh.visible = true;
@@ -306,6 +414,7 @@ export function createCubesScene(
 		reactivityStrength: CUBES_REACTIVITY_DEFAULT,
 		surfaceColorHex: CUBES_SURFACE_COLOR_DEFAULT,
 		outlineColorHex: CUBES_OUTLINE_COLOR_DEFAULT,
+		rotateOutlineColor: false,
 		motionMode: CUBES_MOTION_MODE_DEFAULT,
 		timeSeconds: 0,
 		spectrumBins: null,
@@ -326,6 +435,9 @@ export function createCubesScene(
 		group,
 		update(simTimeSeconds) {
 			state.timeSeconds = Math.max(0, simTimeSeconds);
+			if (state.rotateOutlineColor) {
+				updateOutlineMaterialColor(state);
+			}
 			if (state.motionMode !== "static") {
 				updateMeshTransforms(group, geometry, state);
 			}
@@ -333,18 +445,25 @@ export function createCubesScene(
 		set(key, value) {
 			switch (key) {
 				case "surfaceColor":
-					state.surfaceColorHex = normalizeColor(value);
+					state.surfaceColorHex = normalizeColor(value, CUBES_SURFACE_COLOR_DEFAULT);
 					syncMaterialState(state);
 					return true;
 				case "outlineColor":
-					state.outlineColorHex = normalizeColor(value);
+					state.outlineColorHex = normalizeColor(value, CUBES_OUTLINE_COLOR_DEFAULT);
+					updateMeshTransforms(group, geometry, state);
+					syncMaterialState(state);
+					return true;
+				case "rotateOutlineColor":
+					state.rotateOutlineColor = Boolean(value);
+					updateMeshTransforms(group, geometry, state);
 					syncMaterialState(state);
 					return true;
 				case "outlineOverlay":
 					return true;
 				case "color":
-					state.surfaceColorHex = normalizeColor(value);
-					state.outlineColorHex = normalizeColor(value);
+					state.surfaceColorHex = normalizeColor(value, CUBES_SURFACE_COLOR_DEFAULT);
+					state.outlineColorHex = normalizeColor(value, CUBES_OUTLINE_COLOR_DEFAULT);
+					updateMeshTransforms(group, geometry, state);
 					syncMaterialState(state);
 					return true;
 				case "motionMode":
@@ -387,6 +506,7 @@ export function createCubesScene(
 			return {
 				surfaceColor: state.surfaceColorHex,
 				outlineColor: state.outlineColorHex,
+				rotateOutlineColor: state.rotateOutlineColor,
 				motionMode: state.motionMode,
 				reactivityStrength: state.reactivityStrength,
 				columns: state.columns,
