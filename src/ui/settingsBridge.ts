@@ -39,7 +39,7 @@ export function createSettingsBridge(
 ): SettingsBridge {
 	const songListeners = new Set<() => void>();
 	const hiddenListeners = new Set<(hidden: boolean) => void>();
-	let hidden = false;
+	let hidden = true;
 
 	return {
 		handlers,
