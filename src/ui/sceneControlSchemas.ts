@@ -201,6 +201,14 @@ const CUBES_SCHEMA: SceneControlSchema = {
 };
 
 const MOUNTAINS_SCHEMA: SceneControlSchema = {
+	color: {
+		label: "Color",
+		levaConfig: { value: "#f2f2f2" },
+	},
+	opacity: {
+		label: "Opacity",
+		levaConfig: { value: 1, min: 0, max: 1, step: 0.01 },
+	},
 	speed: {
 		label: "Speed",
 		levaConfig: { value: 6.2, min: 0, max: 24, step: 0.1 },

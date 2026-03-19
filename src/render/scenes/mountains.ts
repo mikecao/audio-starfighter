@@ -1,11 +1,11 @@
 import {
+	BufferAttribute,
+	BufferGeometry,
 	Color,
 	Group,
-	InstancedMesh,
-	MeshStandardMaterial,
-	Object3D,
 	PerspectiveCamera,
-	SphereGeometry,
+	Points,
+	ShaderMaterial,
 	Vector3,
 } from "three";
 import type { SceneInstance } from "./types";
@@ -24,30 +24,57 @@ const MOUNTAIN_GROUP_X = 16;
 const MOUNTAIN_GROUP_Y = -6.4;
 const MOUNTAIN_GROUP_Z = -42;
 const MOUNTAIN_DOT_RADIUS = 0.2;
+const MOUNTAIN_POINT_SIZE_BASE = 150;
 const MOUNTAIN_SCROLL_SPEED_DEFAULT = 6.2;
 const MOUNTAIN_SCROLL_SPEED_MIN = 0;
 const MOUNTAIN_SCROLL_SPEED_MAX = 24;
+const MOUNTAIN_COLOR_DEFAULT = "#f2f2f2";
+const MOUNTAIN_OPACITY_DEFAULT = 1;
+const MOUNTAIN_OPACITY_MIN = 0;
+const MOUNTAIN_OPACITY_MAX = 1;
 const MOUNTAIN_CAMERA_FOV = 41;
 const MOUNTAIN_CAMERA_POSITION = new Vector3(16, -2.1, 16.8);
 const MOUNTAIN_CAMERA_TARGET = new Vector3(16, -5.3, -31);
+const MOUNTAIN_VERTEX_SHADER = `
+	attribute float scale;
+	uniform float pointSizeBase;
+
+	void main() {
+		vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+		gl_PointSize = scale * (pointSizeBase / -mvPosition.z);
+		gl_Position = projectionMatrix * mvPosition;
+	}
+`;
+const MOUNTAIN_FRAGMENT_SHADER = `
+	uniform vec3 color;
+	uniform float opacity;
+
+	void main() {
+		if (length(gl_PointCoord - vec2(0.5, 0.5)) > 0.475) discard;
+		gl_FragColor = vec4(color, opacity);
+	}
+`;
 
 type MountainChunkState = {
 	group: Group;
-	mesh: InstancedMesh;
+	points: Points;
+	positions: Float32Array;
+	scales: Float32Array;
 	worldChunkIndex: number | null;
 	terrainVersion: number | null;
 };
 
 type MountainsSceneState = {
 	chunks: MountainChunkState[];
-	dummy: Object3D;
-	color: Color;
 	chunkWidth: number;
 	speed: number;
 	maxHeight: number;
+	colorHex: string;
+	opacity: number;
 	terrainVersion: number;
 	scrollOffset: number;
 	lastSimTimeSeconds: number | null;
+	material: ShaderMaterial;
 };
 
 function clamp(value: number, min: number, max: number): number {
@@ -117,26 +144,55 @@ function normalizeMaxHeight(value: unknown): number {
 	);
 }
 
+function normalizeColor(value: unknown): string {
+	return typeof value === "string" && /^#[0-9a-f]{6}$/i.test(value)
+		? value
+		: MOUNTAIN_COLOR_DEFAULT;
+}
+
+function normalizeOpacity(value: unknown): number {
+	if (!Number.isFinite(value as number)) {
+		return MOUNTAIN_OPACITY_DEFAULT;
+	}
+	return clamp(
+		value as number,
+		MOUNTAIN_OPACITY_MIN,
+		MOUNTAIN_OPACITY_MAX,
+	);
+}
+
 function computeMountainHeight(worldX: number, depthRatio: number, maxHeight: number): number {
 	const broad = fbm(worldX * 0.08 + 3.1, depthRatio * 3.4 + 1.2);
 	const detail = fbm(worldX * 0.16 + 7.4, depthRatio * 7.8 + 2.6);
 	const ridge = 1 - Math.abs(detail * 2 - 1);
 	const depth = clamp(depthRatio, 0, 1);
-	const horizonLift = Math.pow(smoothstep(Math.pow(depth, 1.18)), 2.35);
+	const horizonLift = Math.pow(smoothstep(Math.pow(depth, 0.72)), 1.28);
 	const shaped = Math.pow(clamp(broad * 0.72 + ridge * 0.28, 0, 1), 1.58);
 	return shaped * horizonLift * maxHeight;
 }
 
-function createChunk(geometry: SphereGeometry, material: MeshStandardMaterial): MountainChunkState {
+function syncMaterialState(state: MountainsSceneState): void {
+	(state.material.uniforms.color.value as Color).set(state.colorHex);
+	state.material.uniforms.opacity.value = state.opacity;
+	state.material.depthWrite = state.opacity >= 0.99;
+	state.material.needsUpdate = true;
+}
+
+function createChunk(material: ShaderMaterial): MountainChunkState {
 	const group = new Group();
-	const mesh = new InstancedMesh(geometry, material, MOUNTAIN_COLUMNS * MOUNTAIN_ROWS);
-	mesh.castShadow = true;
-	mesh.receiveShadow = true;
-	mesh.frustumCulled = false;
-	group.add(mesh);
+	const positions = new Float32Array(MOUNTAIN_COLUMNS * MOUNTAIN_ROWS * 3);
+	const scales = new Float32Array(MOUNTAIN_COLUMNS * MOUNTAIN_ROWS);
+	const geometry = new BufferGeometry();
+	geometry.setAttribute("position", new BufferAttribute(positions, 3));
+	geometry.setAttribute("scale", new BufferAttribute(scales, 1));
+	const points = new Points(geometry, material);
+	points.frustumCulled = false;
+	group.add(points);
 	return {
 		group,
-		mesh,
+		points,
+		positions,
+		scales,
 		worldChunkIndex: null,
 		terrainVersion: null,
 	};
@@ -162,27 +218,20 @@ function rebuildChunk(
 			const worldX = worldChunkIndex * state.chunkWidth + localX;
 			const z = MOUNTAIN_FRONT_Z - row * MOUNTAIN_CELL_Z;
 			const height = computeMountainHeight(worldX, depthRatio, state.maxHeight);
-			const scale = 0.76 + Math.pow(depthRatio, 1.35) * 0.3;
-			const y = MOUNTAIN_BASE_Y + height + MOUNTAIN_DOT_RADIUS * scale;
-
-			state.dummy.position.set(localX, y, z);
-			state.dummy.scale.setScalar(scale);
-			state.dummy.updateMatrix();
-			chunk.mesh.setMatrixAt(instanceIndex, state.dummy.matrix);
-
-			const heightAlpha = state.maxHeight <= 0
-				? 0
-				: clamp(height / state.maxHeight, 0, 1);
-			state.color.setHSL(0, 0, 0.36 + heightAlpha * 0.52);
-			chunk.mesh.setColorAt(instanceIndex, state.color);
+			const y = MOUNTAIN_BASE_Y + height + MOUNTAIN_DOT_RADIUS;
+			const scale = 0.7 + Math.pow(depthRatio, 1.2) * 0.9;
+			const positionIndex = instanceIndex * 3;
+			chunk.positions[positionIndex] = localX;
+			chunk.positions[positionIndex + 1] = y;
+			chunk.positions[positionIndex + 2] = z;
+			chunk.scales[instanceIndex] = scale;
 			instanceIndex += 1;
 		}
 	}
 
-	chunk.mesh.instanceMatrix.needsUpdate = true;
-	if (chunk.mesh.instanceColor) {
-		chunk.mesh.instanceColor.needsUpdate = true;
-	}
+	chunk.points.geometry.attributes.position.needsUpdate = true;
+	chunk.points.geometry.attributes.scale.needsUpdate = true;
+	chunk.points.geometry.computeBoundingSphere();
 	chunk.worldChunkIndex = worldChunkIndex;
 	chunk.terrainVersion = state.terrainVersion;
 }
@@ -220,29 +269,34 @@ export function createMountainsScene(id: string): SceneInstance {
 	perspectiveCamera.position.copy(MOUNTAIN_CAMERA_POSITION);
 	perspectiveCamera.lookAt(MOUNTAIN_CAMERA_TARGET);
 
-	const geometry = new SphereGeometry(MOUNTAIN_DOT_RADIUS, 10, 8);
-	const material = new MeshStandardMaterial({
-		color: "#f2f2f2",
-		roughness: 1,
-		metalness: 0,
-		emissive: "#050505",
-		emissiveIntensity: 0.05,
+	const material = new ShaderMaterial({
+		uniforms: {
+			color: { value: new Color(MOUNTAIN_COLOR_DEFAULT) },
+			opacity: { value: MOUNTAIN_OPACITY_DEFAULT },
+			pointSizeBase: { value: MOUNTAIN_POINT_SIZE_BASE },
+		},
+		vertexShader: MOUNTAIN_VERTEX_SHADER,
+		fragmentShader: MOUNTAIN_FRAGMENT_SHADER,
+		transparent: true,
+		depthWrite: true,
 	});
 
 	const state: MountainsSceneState = {
 		chunks: [],
-		dummy: new Object3D(),
-		color: new Color(),
 		chunkWidth: MOUNTAIN_COLUMNS * MOUNTAIN_CELL_X,
 		speed: MOUNTAIN_SCROLL_SPEED_DEFAULT,
 		maxHeight: MOUNTAIN_MAX_HEIGHT_DEFAULT,
+		colorHex: MOUNTAIN_COLOR_DEFAULT,
+		opacity: MOUNTAIN_OPACITY_DEFAULT,
 		terrainVersion: 0,
 		scrollOffset: 0,
 		lastSimTimeSeconds: null,
+		material,
 	};
+	syncMaterialState(state);
 
 	for (let i = 0; i < MOUNTAIN_CHUNK_COUNT; i += 1) {
-		const chunk = createChunk(geometry, material);
+		const chunk = createChunk(material);
 		state.chunks.push(chunk);
 		group.add(chunk.group);
 	}
@@ -271,6 +325,14 @@ export function createMountainsScene(id: string): SceneInstance {
 					}
 					return true;
 				}
+				case "color":
+					state.colorHex = normalizeColor(value);
+					syncMaterialState(state);
+					return true;
+				case "opacity":
+					state.opacity = normalizeOpacity(value);
+					syncMaterialState(state);
+					return true;
 				default:
 					return false;
 			}
@@ -279,10 +341,14 @@ export function createMountainsScene(id: string): SceneInstance {
 			return {
 				speed: state.speed,
 				maxHeight: state.maxHeight,
+				color: state.colorHex,
+				opacity: state.opacity,
 			};
 		},
 		dispose() {
-			geometry.dispose();
+			for (const chunk of state.chunks) {
+				chunk.points.geometry.dispose();
+			}
 			material.dispose();
 		},
 	};
