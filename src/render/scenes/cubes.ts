@@ -9,6 +9,7 @@ import {
 	LineSegments,
 	MeshStandardMaterial,
 	Object3D,
+	PerspectiveCamera,
 	Vector3,
 } from "three";
 import type { SceneInstance, SpectrumReactiveSceneExtensions } from "./types";
@@ -395,6 +396,14 @@ export function createCubesScene(
 	const group = new Group();
 	group.position.copy(CUBES_PLANE_TARGET);
 	group.lookAt(PERSPECTIVE_CAMERA_POSITION);
+	const perspectiveCamera = new PerspectiveCamera(
+		PERSPECTIVE_FOV_DEGREES,
+		PERSPECTIVE_ASPECT,
+		0.1,
+		260,
+	);
+	perspectiveCamera.position.copy(PERSPECTIVE_CAMERA_POSITION);
+	perspectiveCamera.lookAt(CUBES_PLANE_TARGET);
 
 	const geometry = new BoxGeometry(1.02, 1.02, 1);
 	geometry.translate(0, 0, 0.5);
@@ -432,6 +441,7 @@ export function createCubesScene(
 		id,
 		kind: "cubes",
 		renderLayer: "perspective",
+		perspectiveCamera,
 		group,
 		update(simTimeSeconds) {
 			state.timeSeconds = Math.max(0, simTimeSeconds);

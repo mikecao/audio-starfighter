@@ -114,14 +114,14 @@ export function setupScene(container: HTMLElement): RenderScene {
 	const camera = new OrthographicCamera(-1, 1, 1, -1, 0.1, 200);
 	camera.position.set(0, 0, 20);
 	camera.lookAt(new Vector3(0, 0, 0));
-	const perspectiveCamera = new PerspectiveCamera(
+	const fallbackPerspectiveCamera = new PerspectiveCamera(
 		46,
 		FIXED_RENDER_WIDTH / FIXED_RENDER_HEIGHT,
 		0.1,
 		260,
 	);
-	perspectiveCamera.position.set(16, 42, 52);
-	perspectiveCamera.lookAt(new Vector3(16, 4, -28));
+	fallbackPerspectiveCamera.position.set(16, 42, 52);
+	fallbackPerspectiveCamera.lookAt(new Vector3(16, 4, -28));
 
 	const renderer = new WebGLRenderer({ antialias: true });
 	renderer.toneMapping = ReinhardToneMapping;
@@ -202,6 +202,8 @@ export function setupScene(container: HTMLElement): RenderScene {
 	const cityFillLight = new DirectionalLight("#cfd6ff", 0.46);
 	cityFillLight.position.set(28, 14, -20);
 	perspectiveScene.add(cityFillLight);
+	const perspectiveBackdropGroup = new Group();
+	perspectiveScene.add(perspectiveBackdropGroup);
 	const starGeometry = new BufferGeometry();
 	const starPositions = new Float32Array(240 * 3);
 	for (let i = 0; i < 240; i += 1) {
@@ -223,7 +225,7 @@ export function setupScene(container: HTMLElement): RenderScene {
 		fog: false,
 	});
 	const nightStars = new Points(starGeometry, starMaterial);
-	perspectiveScene.add(nightStars);
+	perspectiveBackdropGroup.add(nightStars);
 
 	const shipGeometry = new BoxGeometry(1.2, 0.6, 0.9);
 	const shipMaterial = new MeshStandardMaterial({
@@ -344,8 +346,8 @@ export function setupScene(container: HTMLElement): RenderScene {
 			ORTHO_HALF_HEIGHT * 2,
 			1,
 		);
-		perspectiveCamera.aspect = targetAspect;
-		perspectiveCamera.updateProjectionMatrix();
+		fallbackPerspectiveCamera.aspect = targetAspect;
+		fallbackPerspectiveCamera.updateProjectionMatrix();
 	}
 
 	resize();
@@ -595,14 +597,51 @@ export function setupScene(container: HTMLElement): RenderScene {
 			}
 		},
 		render() {
-				const hasPerspectiveScenes = sceneManager.hasPerspectiveScenes();
+				const perspectiveInstances = sceneManager.getActiveScenes().filter(
+					(instance) => instance.renderLayer === "perspective",
+				);
+				const hasPerspectiveScenes = perspectiveInstances.length > 0;
 				perspectiveCompositeMesh.visible = hasPerspectiveScenes;
 				scene.background = hasPerspectiveScenes ? null : currentBg;
 				if (hasPerspectiveScenes) {
+					const targetAspect = FIXED_RENDER_WIDTH / FIXED_RENDER_HEIGHT;
+					for (const instance of perspectiveInstances) {
+						const perspectiveCamera = instance.perspectiveCamera ?? fallbackPerspectiveCamera;
+						perspectiveCamera.aspect = targetAspect;
+						perspectiveCamera.updateProjectionMatrix();
+					}
+
+					const visibilitySnapshot = perspectiveInstances.map(
+						(instance) => instance.group.visible,
+					);
+					for (const instance of perspectiveInstances) {
+						instance.group.visible = false;
+					}
+
 					renderer.setRenderTarget(perspectiveRenderTarget);
 					renderer.setClearColor(perspectiveBg, 1);
 					renderer.clear(true, true, true);
-					renderer.render(perspectiveScene, perspectiveCamera);
+
+					for (let i = 0; i < perspectiveInstances.length; i += 1) {
+						const instance = perspectiveInstances[i];
+						instance.group.visible = visibilitySnapshot[i];
+						perspectiveScene.background = i === 0 ? perspectiveBg : null;
+						perspectiveBackdropGroup.visible = i === 0;
+						if (i > 0) {
+							renderer.clearDepth();
+						}
+						renderer.render(
+							perspectiveScene,
+							instance.perspectiveCamera ?? fallbackPerspectiveCamera,
+						);
+						instance.group.visible = false;
+					}
+
+					perspectiveScene.background = perspectiveBg;
+					perspectiveBackdropGroup.visible = true;
+					for (let i = 0; i < perspectiveInstances.length; i += 1) {
+						perspectiveInstances[i].group.visible = visibilitySnapshot[i];
+					}
 					renderer.setRenderTarget(null);
 				}
 			bloomPass.enabled = bloomSettings.enabled;

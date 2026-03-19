@@ -12,6 +12,7 @@ import { createOceanScene } from "./ocean";
 import { createSkyScene } from "./sky";
 import { createCityScene } from "./city";
 import { createCubesScene } from "./cubes";
+import { createMountainsScene } from "./mountains";
 
 export type StagePresetId = "space" | "custom";
 
@@ -45,6 +46,8 @@ function createSceneInstance(kind: SceneKind, id: string): SceneInstance {
 			return createCityScene(id);
 		case "cubes":
 			return createCubesScene(id);
+		case "mountains":
+			return createMountainsScene(id);
 	}
 }
 

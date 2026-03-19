@@ -52,7 +52,7 @@ function buildCombatConfig(state: RunAffectingState) {
 	};
 }
 
-const ALL_SCENE_KINDS: SceneKind[] = ["starfield", "grid", "ocean", "sky", "city", "cubes"];
+const ALL_SCENE_KINDS: SceneKind[] = ["starfield", "grid", "ocean", "sky", "city", "cubes", "mountains"];
 const DEFAULT_BLOOM_SETTINGS = {
 	enabled: true,
 	threshold: 0,

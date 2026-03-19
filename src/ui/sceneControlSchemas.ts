@@ -200,6 +200,17 @@ const CUBES_SCHEMA: SceneControlSchema = {
 	},
 };
 
+const MOUNTAINS_SCHEMA: SceneControlSchema = {
+	speed: {
+		label: "Speed",
+		levaConfig: { value: 6.2, min: 0, max: 24, step: 0.1 },
+	},
+	maxHeight: {
+		label: "Max Height",
+		levaConfig: { value: 17.5, min: 0, max: 30, step: 0.1 },
+	},
+};
+
 const SCHEMAS: Record<SceneKind, SceneControlSchema> = {
 	starfield: STARFIELD_SCHEMA,
 	grid: GRID_SCHEMA,
@@ -207,6 +218,7 @@ const SCHEMAS: Record<SceneKind, SceneControlSchema> = {
 	sky: SKY_SCHEMA,
 	city: CITY_SCHEMA,
 	cubes: CUBES_SCHEMA,
+	mountains: MOUNTAINS_SCHEMA,
 };
 
 export function getSceneControlSchema(kind: SceneKind): SceneControlSchema {
@@ -220,4 +232,5 @@ export const SCENE_KIND_LABELS: Record<SceneKind, string> = {
 	sky: "Sky",
 	city: "City",
 	cubes: "Cubes",
+	mountains: "Mountains",
 };

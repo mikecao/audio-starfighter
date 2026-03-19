@@ -6,6 +6,8 @@ import {
 	Mesh,
 	MeshStandardMaterial,
 	Object3D,
+	PerspectiveCamera,
+	Vector3,
 } from "three";
 import type { SceneInstance } from "./types";
 
@@ -30,6 +32,9 @@ const CITY_SPEED_SCALE_MAX = 3;
 const CITY_SHIP_MOVEMENT_RESPONSE_DEFAULT = 0.12;
 const CITY_SHIP_MOVEMENT_RESPONSE_MIN = 0;
 const CITY_SHIP_MOVEMENT_RESPONSE_MAX = 1;
+const CITY_CAMERA_FOV = 46;
+const CITY_CAMERA_POSITION = new Vector3(16, 42, 52);
+const CITY_CAMERA_TARGET = new Vector3(16, 4, -28);
 
 function hash2(x: number, y: number): number {
 	const s = Math.sin(x * 127.1 + y * 311.7) * 43758.5453123;
@@ -138,6 +143,9 @@ function positiveModulo(value: number, divisor: number): number {
 
 export function createCityScene(id: string): SceneInstance {
 	const group = new Group();
+	const perspectiveCamera = new PerspectiveCamera(CITY_CAMERA_FOV, 1920 / 1080, 0.1, 260);
+	perspectiveCamera.position.copy(CITY_CAMERA_POSITION);
+	perspectiveCamera.lookAt(CITY_CAMERA_TARGET);
 
 	const buildingGeometry = new BoxGeometry(1, 1, 1);
 	buildingGeometry.translate(0, 0.5, 0);
@@ -181,6 +189,7 @@ export function createCityScene(id: string): SceneInstance {
 		id,
 		kind: "city",
 		renderLayer: "perspective",
+		perspectiveCamera,
 		group,
 		update(simTimeSeconds, shipY) {
 			const distance = simTimeSeconds * CITY_SCROLL_SPEED * speedScale;

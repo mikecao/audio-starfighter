@@ -1,7 +1,7 @@
-import type { Group } from "three";
+import type { Group, PerspectiveCamera } from "three";
 import type { SpectrumTimeline } from "../../audio/types";
 
-export type SceneKind = "starfield" | "grid" | "ocean" | "sky" | "city" | "cubes";
+export type SceneKind = "starfield" | "grid" | "ocean" | "sky" | "city" | "cubes" | "mountains";
 export type SceneRenderLayer = "ortho" | "perspective";
 
 export type SceneInstance = {
@@ -9,6 +9,7 @@ export type SceneInstance = {
 	readonly kind: SceneKind;
 	readonly group: Group;
 	readonly renderLayer?: SceneRenderLayer;
+	readonly perspectiveCamera?: PerspectiveCamera;
 	update(simTimeSeconds: number, shipY: number): void;
 	set(key: string, value: unknown): boolean;
 	getSettings(): Record<string, unknown>;
