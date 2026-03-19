@@ -166,7 +166,8 @@ function computeMountainHeight(worldX: number, depthRatio: number, maxHeight: nu
 	const detail = fbm(worldX * 0.16 + 7.4, depthRatio * 7.8 + 2.6);
 	const ridge = 1 - Math.abs(detail * 2 - 1);
 	const depth = clamp(depthRatio, 0, 1);
-	const horizonLift = Math.pow(smoothstep(Math.pow(depth, 0.72)), 1.28);
+	const depthBlend = Math.pow(smoothstep(Math.pow(depth, 0.72)), 1.28);
+	const horizonLift = lerp(0.08, 1, depthBlend);
 	const shaped = Math.pow(clamp(broad * 0.72 + ridge * 0.28, 0, 1), 1.58);
 	return shaped * horizonLift * maxHeight;
 }
