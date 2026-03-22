@@ -52,7 +52,7 @@ function buildCombatConfig(state: RunAffectingState) {
 	};
 }
 
-const ALL_SCENE_KINDS: SceneKind[] = ["starfield", "grid", "ocean", "sky", "city", "cubes", "mountains"];
+const ALL_SCENE_KINDS: SceneKind[] = ["city", "cubes", "grid", "mountains", "ocean", "sky", "starfield"];
 const DEFAULT_BLOOM_SETTINGS = {
 	enabled: true,
 	threshold: 0,
@@ -92,10 +92,12 @@ function SceneInstanceControls({
 		});
 	}
 
-	useControls({ [folderName]: folder(controls, { collapsed: true }) }, [
-		scene.id,
-		bridge,
-	]);
+	useControls("Stage", () => ({
+		[folderName]: folder(controls, {
+			collapsed: true,
+			render: (get: (p: string) => unknown) => get("Stage.Stage") === "custom",
+		}),
+	}), [scene.id, bridge, allowRemove]);
 
 	return null;
 }
@@ -196,26 +198,26 @@ function SettingsPanelInner({ bridge }: { bridge: SettingsBridge }) {
 		}
 		return {
 			Stage: {
-				value: "space" as StagePresetId,
-				options: {
-					Space: "space" as const,
-					"\u003CCustom\u003E": "custom" as const,
-				},
-				onChange: (v: StagePresetId) => bridge.handlers.onPresetChange(v),
+			value: "space" as StagePresetId,
+			options: {
+				Space: "space" as const,
+				"\u003CCustom\u003E": "custom" as const,
+			},
+			onChange: (v: StagePresetId) => bridge.handlers.onPresetChange(v),
 			},
 			"Add Scene": folder({
-				"Scene Type": {
-					value: "starfield" as SceneKind,
-					options: kindOptions,
-					onChange: (v: SceneKind) => { addKindRef.current = v; },
-				},
-				"Add": button(() => {
-					bridge.handlers.onAddScene(addKindRef.current);
-				}),
-			}, {
-				collapsed: false,
-				render: (get: (p: string) => unknown) => get("Stage.Stage") === "custom",
+			"Scene Type": {
+				value: "starfield" as SceneKind,
+				options: kindOptions,
+				onChange: (v: SceneKind) => { addKindRef.current = v; },
+			},
+			"Add": button(() => {
+				bridge.handlers.onAddScene(addKindRef.current);
 			}),
+		}, {
+			collapsed: false,
+			render: (get: (p: string) => unknown) => get("Stage.Stage") === "custom",
+		}),
 		};
 	}, [bridge]);
 
@@ -281,12 +283,16 @@ function SettingsPanelInner({ bridge }: { bridge: SettingsBridge }) {
 		}),
 	}, [songLoaded, runDirty, saving, bridge]);
 
-	// ── Per-instance scene controls ──
 	const isCustom = preset === "custom";
+	const sortedScenes = [...scenes].sort((a, b) => {
+		const labelCompare = SCENE_KIND_LABELS[a.kind].localeCompare(SCENE_KIND_LABELS[b.kind]);
+		if (labelCompare !== 0) return labelCompare;
+		return a.id.localeCompare(b.id);
+	});
 
 	return (
 		<>
-			{scenes.map((scene) => (
+			{sortedScenes.map((scene) => (
 				<SceneInstanceControls
 					key={scene.id}
 					scene={scene}
