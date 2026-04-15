@@ -600,15 +600,41 @@ export function setupScene(container: HTMLElement): RenderScene {
 				const perspectiveInstances = sceneManager.getActiveScenes().filter(
 					(instance) => instance.renderLayer === "perspective",
 				);
+				const perspectiveBatches = new Map<string, {
+					instances: typeof perspectiveInstances;
+					perspectiveCamera: PerspectiveCamera;
+					sortBias: number;
+				}>();
+				for (const instance of perspectiveInstances) {
+					const batchKey = instance.perspectiveBatchKey ?? instance.id;
+					const perspectiveCamera =
+						instance.perspectiveCamera ?? fallbackPerspectiveCamera;
+					const existingBatch = perspectiveBatches.get(batchKey);
+					if (existingBatch) {
+						existingBatch.instances.push(instance);
+						existingBatch.sortBias = Math.max(
+							existingBatch.sortBias,
+							instance.perspectiveSortBias ?? 0,
+						);
+						continue;
+					}
+					perspectiveBatches.set(batchKey, {
+						instances: [instance],
+						perspectiveCamera,
+						sortBias: instance.perspectiveSortBias ?? 0,
+					});
+				}
+				const sortedPerspectiveBatches = [...perspectiveBatches.values()].sort(
+					(a, b) => b.sortBias - a.sortBias,
+				);
 				const hasPerspectiveScenes = perspectiveInstances.length > 0;
 				perspectiveCompositeMesh.visible = hasPerspectiveScenes;
 				scene.background = hasPerspectiveScenes ? null : currentBg;
 				if (hasPerspectiveScenes) {
 					const targetAspect = FIXED_RENDER_WIDTH / FIXED_RENDER_HEIGHT;
-					for (const instance of perspectiveInstances) {
-						const perspectiveCamera = instance.perspectiveCamera ?? fallbackPerspectiveCamera;
-						perspectiveCamera.aspect = targetAspect;
-						perspectiveCamera.updateProjectionMatrix();
+					for (const batch of sortedPerspectiveBatches) {
+						batch.perspectiveCamera.aspect = targetAspect;
+						batch.perspectiveCamera.updateProjectionMatrix();
 					}
 
 					const visibilitySnapshot = perspectiveInstances.map(
@@ -622,9 +648,11 @@ export function setupScene(container: HTMLElement): RenderScene {
 					renderer.setClearColor(perspectiveBg, 1);
 					renderer.clear(true, true, true);
 
-					for (let i = 0; i < perspectiveInstances.length; i += 1) {
-						const instance = perspectiveInstances[i];
-						instance.group.visible = visibilitySnapshot[i];
+					for (let i = 0; i < sortedPerspectiveBatches.length; i += 1) {
+						const batch = sortedPerspectiveBatches[i];
+						for (const instance of batch.instances) {
+							instance.group.visible = true;
+						}
 						perspectiveScene.background = i === 0 ? perspectiveBg : null;
 						perspectiveBackdropGroup.visible = i === 0;
 						if (i > 0) {
@@ -632,9 +660,11 @@ export function setupScene(container: HTMLElement): RenderScene {
 						}
 						renderer.render(
 							perspectiveScene,
-							instance.perspectiveCamera ?? fallbackPerspectiveCamera,
+							batch.perspectiveCamera,
 						);
-						instance.group.visible = false;
+						for (const instance of batch.instances) {
+							instance.group.visible = false;
+						}
 					}
 
 					perspectiveScene.background = perspectiveBg;

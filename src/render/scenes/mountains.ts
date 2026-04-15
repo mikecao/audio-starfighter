@@ -3,7 +3,6 @@ import {
 	BufferGeometry,
 	Color,
 	Group,
-	Matrix4,
 	PerspectiveCamera,
 	Points,
 	ShaderMaterial,
@@ -55,6 +54,8 @@ const MOUNTAIN_FRAGMENT_SHADER = `
 		gl_FragColor = vec4(color, opacity);
 	}
 `;
+
+let nextMountainLayerIndex = 0;
 
 type MountainChunkState = {
 	group: Group;
@@ -187,22 +188,13 @@ function syncMaterialState(state: MountainsSceneState): void {
 
 function syncInversionTransform(
 	state: MountainsSceneState,
-	group: Group,
-	perspectiveCamera: PerspectiveCamera,
+	contentGroup: Group,
 ): void {
-	if (!state.inverted) {
-		group.matrix.identity();
-		group.matrixWorldNeedsUpdate = true;
-		return;
-	}
-
-	perspectiveCamera.updateMatrixWorld(true);
-	const reflection = new Matrix4().makeScale(1, -1, 1);
-	group.matrix
-		.copy(perspectiveCamera.matrixWorld)
-		.multiply(reflection)
-		.multiply(perspectiveCamera.matrixWorldInverse);
-	group.matrixWorldNeedsUpdate = true;
+	contentGroup.position.set(
+		MOUNTAIN_GROUP_X,
+		state.inverted ? -MOUNTAIN_GROUP_Y : MOUNTAIN_GROUP_Y,
+		MOUNTAIN_GROUP_Z,
+	);
 }
 
 function createChunk(material: ShaderMaterial): MountainChunkState {
@@ -284,10 +276,9 @@ function updateMountains(state: MountainsSceneState, simTimeSeconds: number): vo
 }
 
 export function createMountainsScene(id: string): SceneInstance {
+	const layerIndex = nextMountainLayerIndex++;
 	const group = new Group();
-	group.matrixAutoUpdate = false;
 	const contentGroup = new Group();
-	contentGroup.position.set(MOUNTAIN_GROUP_X, MOUNTAIN_GROUP_Y, MOUNTAIN_GROUP_Z);
 	group.add(contentGroup);
 
 	const perspectiveCamera = new PerspectiveCamera(
@@ -326,7 +317,7 @@ export function createMountainsScene(id: string): SceneInstance {
 		material,
 	};
 	syncMaterialState(state);
-	syncInversionTransform(state, group, perspectiveCamera);
+	syncInversionTransform(state, contentGroup);
 
 	for (let i = 0; i < MOUNTAIN_CHUNK_COUNT; i += 1) {
 		const chunk = createChunk(material);
@@ -341,6 +332,8 @@ export function createMountainsScene(id: string): SceneInstance {
 		kind: "mountains",
 		renderLayer: "perspective",
 		perspectiveCamera,
+		perspectiveBatchKey: "mountains",
+		perspectiveSortBias: layerIndex,
 		group,
 		update(simTimeSeconds) {
 			updateMountains(state, simTimeSeconds);
@@ -362,7 +355,7 @@ export function createMountainsScene(id: string): SceneInstance {
 					const nextInverted = normalizeInverted(value);
 					if (nextInverted !== state.inverted) {
 						state.inverted = nextInverted;
-						syncInversionTransform(state, group, perspectiveCamera);
+						syncInversionTransform(state, contentGroup);
 					}
 					return true;
 				}

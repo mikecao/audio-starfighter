@@ -10,6 +10,8 @@ export type SceneInstance = {
 	readonly group: Group;
 	readonly renderLayer?: SceneRenderLayer;
 	readonly perspectiveCamera?: PerspectiveCamera;
+	readonly perspectiveBatchKey?: string;
+	readonly perspectiveSortBias?: number;
 	update(simTimeSeconds: number, shipY: number): void;
 	set(key: string, value: unknown): boolean;
 	getSettings(): Record<string, unknown>;
