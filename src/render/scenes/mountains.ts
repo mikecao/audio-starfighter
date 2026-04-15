@@ -3,6 +3,7 @@ import {
 	BufferGeometry,
 	Color,
 	Group,
+	Matrix4,
 	PerspectiveCamera,
 	Points,
 	ShaderMaterial,
@@ -69,6 +70,7 @@ type MountainsSceneState = {
 	chunkWidth: number;
 	speed: number;
 	maxHeight: number;
+	inverted: boolean;
 	colorHex: string;
 	opacity: number;
 	terrainVersion: number;
@@ -161,6 +163,10 @@ function normalizeOpacity(value: unknown): number {
 	);
 }
 
+function normalizeInverted(value: unknown): boolean {
+	return value === true;
+}
+
 function computeMountainHeight(worldX: number, depthRatio: number, maxHeight: number): number {
 	const broad = fbm(worldX * 0.08 + 3.1, depthRatio * 3.4 + 1.2);
 	const detail = fbm(worldX * 0.16 + 7.4, depthRatio * 7.8 + 2.6);
@@ -177,6 +183,26 @@ function syncMaterialState(state: MountainsSceneState): void {
 	state.material.uniforms.opacity.value = state.opacity;
 	state.material.depthWrite = state.opacity >= 0.99;
 	state.material.needsUpdate = true;
+}
+
+function syncInversionTransform(
+	state: MountainsSceneState,
+	group: Group,
+	perspectiveCamera: PerspectiveCamera,
+): void {
+	if (!state.inverted) {
+		group.matrix.identity();
+		group.matrixWorldNeedsUpdate = true;
+		return;
+	}
+
+	perspectiveCamera.updateMatrixWorld(true);
+	const reflection = new Matrix4().makeScale(1, -1, 1);
+	group.matrix
+		.copy(perspectiveCamera.matrixWorld)
+		.multiply(reflection)
+		.multiply(perspectiveCamera.matrixWorldInverse);
+	group.matrixWorldNeedsUpdate = true;
 }
 
 function createChunk(material: ShaderMaterial): MountainChunkState {
@@ -259,7 +285,10 @@ function updateMountains(state: MountainsSceneState, simTimeSeconds: number): vo
 
 export function createMountainsScene(id: string): SceneInstance {
 	const group = new Group();
-	group.position.set(MOUNTAIN_GROUP_X, MOUNTAIN_GROUP_Y, MOUNTAIN_GROUP_Z);
+	group.matrixAutoUpdate = false;
+	const contentGroup = new Group();
+	contentGroup.position.set(MOUNTAIN_GROUP_X, MOUNTAIN_GROUP_Y, MOUNTAIN_GROUP_Z);
+	group.add(contentGroup);
 
 	const perspectiveCamera = new PerspectiveCamera(
 		MOUNTAIN_CAMERA_FOV,
@@ -269,6 +298,7 @@ export function createMountainsScene(id: string): SceneInstance {
 	);
 	perspectiveCamera.position.copy(MOUNTAIN_CAMERA_POSITION);
 	perspectiveCamera.lookAt(MOUNTAIN_CAMERA_TARGET);
+	perspectiveCamera.updateMatrixWorld(true);
 
 	const material = new ShaderMaterial({
 		uniforms: {
@@ -287,6 +317,7 @@ export function createMountainsScene(id: string): SceneInstance {
 		chunkWidth: MOUNTAIN_COLUMNS * MOUNTAIN_CELL_X,
 		speed: MOUNTAIN_SCROLL_SPEED_DEFAULT,
 		maxHeight: MOUNTAIN_MAX_HEIGHT_DEFAULT,
+		inverted: false,
 		colorHex: MOUNTAIN_COLOR_DEFAULT,
 		opacity: MOUNTAIN_OPACITY_DEFAULT,
 		terrainVersion: 0,
@@ -295,11 +326,12 @@ export function createMountainsScene(id: string): SceneInstance {
 		material,
 	};
 	syncMaterialState(state);
+	syncInversionTransform(state, group, perspectiveCamera);
 
 	for (let i = 0; i < MOUNTAIN_CHUNK_COUNT; i += 1) {
 		const chunk = createChunk(material);
 		state.chunks.push(chunk);
-		group.add(chunk.group);
+		contentGroup.add(chunk.group);
 	}
 
 	updateMountains(state, 0);
@@ -326,6 +358,14 @@ export function createMountainsScene(id: string): SceneInstance {
 					}
 					return true;
 				}
+				case "inverted": {
+					const nextInverted = normalizeInverted(value);
+					if (nextInverted !== state.inverted) {
+						state.inverted = nextInverted;
+						syncInversionTransform(state, group, perspectiveCamera);
+					}
+					return true;
+				}
 				case "color":
 					state.colorHex = normalizeColor(value);
 					syncMaterialState(state);
@@ -342,6 +382,7 @@ export function createMountainsScene(id: string): SceneInstance {
 			return {
 				speed: state.speed,
 				maxHeight: state.maxHeight,
+				inverted: state.inverted,
 				color: state.colorHex,
 				opacity: state.opacity,
 			};

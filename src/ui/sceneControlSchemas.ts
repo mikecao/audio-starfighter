@@ -217,6 +217,10 @@ const MOUNTAINS_SCHEMA: SceneControlSchema = {
 		label: "Max Height",
 		levaConfig: { value: 17.5, min: 0, max: 30, step: 0.1 },
 	},
+	inverted: {
+		label: "Inverted",
+		levaConfig: { value: false },
+	},
 };
 
 const SCHEMAS: Record<SceneKind, SceneControlSchema> = {
